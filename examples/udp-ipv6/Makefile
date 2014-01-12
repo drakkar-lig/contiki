@@ -1,6 +1,28 @@
-all: udp-server udp-client
+all: udp-server udp-client relay
 
 UIP_CONF_IPV6=1
+UIP_CONF_IPV6_RPL=0
+
+ifndef TARGET
+TARGET = sky
+endif
+
+CFLAGS += -D'LOADNG_CONF_IS_COORDINATOR()=1'
+
+CFLAGS += -DWITH_IPV6_LOADNG=1
+CFLAGS += -DUSE_OPT=1
+CFLAGS += -DUIP_CONF_IPV6_RPL=0
+#CFLAGS += -DUIP_CONF_ND6_SEND_NA=0
+
 
 CONTIKI = ../..
+ifeq ($(MAKECMDGOALS),udp-server)
+  CFLAGS += -DLOADNG_CONF_IS_SINK=1
+else
+  CFLAGS += -DLOADNG_CONF_IS_SINK=0
+endif
+
+CFLAGS += -DRESOLV_CONF_SUPPORTS_MDNS=0
+CFLAGS += -DUIP_CONF_ROUTER=1
+
 include $(CONTIKI)/Makefile.include

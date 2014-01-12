@@ -98,8 +98,13 @@ static uint8_t is_gateway;
 #include "experiment-setup.h"
 #endif
 
+<<<<<<< HEAD
 #if WITH_IPV6_RRPL
 #include "net/rrpl/rrpl.h"
+=======
+#if WITH_IPV6_LOADNG
+#include "net/loadng/loadng.h"
+>>>>>>> Fix compilation error when DEBUG enabled in core/net/mac/framer-nullmac.c
 #endif
 
 
