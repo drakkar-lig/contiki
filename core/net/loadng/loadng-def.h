@@ -42,6 +42,7 @@
 #define __LOADNG_DEF_H__
 
 #include "net/ip/uip.h"
+
 #define uip_create_linklocal_lln_routers_mcast(a) uip_ip6addr(a, 0xff02, 0, 0, 0, 0, 0, 0, 0x001b)
 #define uip_create_linklocal_empty_addr(a) uip_ip6addr(a, 0, 0, 0, 0, 0, 0, 0, 0)
 #define LOADNG_UDPPORT            6666

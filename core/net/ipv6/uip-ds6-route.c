@@ -41,6 +41,10 @@
 #include "net/ipv6/uip-ds6.h"
 #include "net/ip/uip.h"
 
+#if WITH_IPV6_LOADNG 
+#include "net/loadng/loadng.h"
+#endif
+
 #include "lib/list.h"
 #include "lib/memb.h"
 #include "net/nbr-table.h"
