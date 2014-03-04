@@ -16,7 +16,7 @@ CFLAGS += -DUIP_CONF_IPV6_RPL=0
 
 
 CONTIKI = ../..
-ifeq ($(MAKECMDGOALS),udp-server)
+ifeq ($(MAKECMDGOALS),udp-client)
   CFLAGS += -DLOADNG_CONF_IS_SINK=1
 else
   CFLAGS += -DLOADNG_CONF_IS_SINK=0
