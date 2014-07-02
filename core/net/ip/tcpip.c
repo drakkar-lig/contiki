@@ -47,9 +47,9 @@
 #include "net/ipv6/uip-ds6.h"
 #endif
 
-#if UIP_CONF_IPV6 && WITH_IPV6_LOADNG
-#include "net/loadng/loadng.h"
-#endif //WITH_IPV6_LOADNG && WITH_IPV6_LOADNG
+#if UIP_CONF_IPV6 && WITH_IPV6_RRPL
+#include "net/rrpl/rrpl.h"
+#endif //WITH_IPV6_RRPL && WITH_IPV6_RRPL
 
 #include <string.h>
 
@@ -578,7 +578,7 @@ tcpip_ipv6_output(void)
 
       /* No route was found - we send to the default route instead. */
       if(route == NULL) {
-        #if WITH_IPV6_LOADNG
+        #if WITH_IPV6_RRPL
         PRINTF("uip-ds6-route: Call LOADng to request route\n");
         loadng_request_route_to(&UIP_IP_BUF->destipaddr);
         #endif
@@ -603,7 +603,7 @@ tcpip_ipv6_output(void)
           uip_len = 0;
           return;
         }
-        #if WITH_IPV6_LOADNG && USE_OPT
+        #if WITH_IPV6_RRPL && USE_OPT
         else{// the packet is on the dflt route
           // check route to pkt src if the dest is within local network
           uip_ds6_route_t *tosrc;

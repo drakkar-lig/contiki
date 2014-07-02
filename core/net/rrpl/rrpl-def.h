@@ -28,90 +28,77 @@
  *
  * This file is part of the Contiki operating system.
  *
- * $Id: loadng-def.h,v 1.5 2010/05/28 16:33:19 bg- Exp $
+ * $Id: rrpl-def.h,v 1.5 2010/05/28 16:33:19 bg- Exp $
  */
 
 /**
  * \file
- *         Definitions for the LOADng ad hoc routing protocol
+ *         Definitions for the RRPL ad hoc routing protocol
  * \author 
  *         Chi-Anh La la@imag.fr         
  */
 
-#ifndef __LOADNG_DEF_H__
-#define __LOADNG_DEF_H__
+#ifndef __RRPL_DEF_H__
+#define __RRPL_DEF_H__
 
 #include "net/ip/uip.h"
 
 #define uip_create_linklocal_lln_routers_mcast(a) uip_ip6addr(a, 0xff02, 0, 0, 0, 0, 0, 0, 0x001b)
 #define uip_create_linklocal_empty_addr(a) uip_ip6addr(a, 0, 0, 0, 0, 0, 0, 0, 0)
-#define LOADNG_UDPPORT            6666
-#define LOADNG_NET_TRAVERSAL_TIME 10
-#define LOADNG_RREQ_RETRIES       0
-#define LOADNG_RREQ_RATELIMIT     0
-#define LOADNG_R_HOLD_TIME        0
-#define LOADNG_MAX_DIST           20
-#define LOADNG_RREP_ACK_TIMEOUT   10
-#define LOADNG_BLACKLIST_TIME     10
-#define LOADNG_RSSI_THRESHOLD    -65 // Ana measured value
+#define RRPL_UDPPORT            6666
+#define RRPL_NET_TRAVERSAL_TIME 10
+#define RRPL_RREQ_RETRIES       0
+#define RRPL_RREQ_RATELIMIT     0
+#define RRPL_R_HOLD_TIME        0
+#define RRPL_MAX_DIST           20
+#define RRPL_RREP_ACK_TIMEOUT   10
+#define RRPL_BLACKLIST_TIME     10
+#define RRPL_RSSI_THRESHOLD    -65 // Ana measured value
 /* Self multicast OPT to create a default route at all nodes (for sink only) */
 
 
-#ifdef LOADNG_CONF_IS_SINK
-#define LOADNG_IS_SINK LOADNG_CONF_IS_SINK
+#ifdef RRPL_CONF_IS_SINK
+#define RRPL_IS_SINK RRPL_CONF_IS_SINK
 #else
-#define LOADNG_IS_SINK 1
+#define RRPL_IS_SINK 1
 #endif
 
-#ifdef LOADNG_CONF_IS_COORDINATOR
-#define LOADNG_IS_COORDINATOR() LOADNG_CONF_IS_COORDINATOR()
+#ifdef RRPL_CONF_IS_COORDINATOR
+#define RRPL_IS_COORDINATOR() RRPL_CONF_IS_COORDINATOR()
 #else
-#define LOADNG_IS_COORDINATOR() 0
+#define RRPL_IS_COORDINATOR() 0
 #endif
 
-#ifdef LOADNG_CONF_IS_SKIP_LEAF
-#define LOADNG_IS_SKIP_LEAF LOADNG_CONF_IS_SKIP_LEAF
+#ifdef RRPL_CONF_IS_SKIP_LEAF
+#define RRPL_IS_SKIP_LEAF RRPL_CONF_IS_SKIP_LEAF
 #else
-#define LOADNG_IS_SKIP_LEAF 0
+#define RRPL_IS_SKIP_LEAF 0
 #endif
 
-#define LOADNG_RREP_ACK           0 
-#define LOADNG_ADDR_LEN_IPV6      15
-#define LOADNG_METRIC_HC          0 
-#define LOADNG_WEAK_LINK          0
-#define LOADNG_RSVD1              0
-#define LOADNG_RSVD2              0 
-#define LOADNG_DEFAULT_ROUTE_LIFETIME  65534
+#define RRPL_RREP_ACK           0 
+#define RRPL_ADDR_LEN_IPV6      15
+#define RRPL_METRIC_HC          0 
+#define RRPL_WEAK_LINK          0
+#define RRPL_RSVD1              0
+#define RRPL_RSVD2              0 
+#define RRPL_DEFAULT_ROUTE_LIFETIME  65534
 
-#ifdef LOADNG_CONF_RANDOM_WAIT
-#define LOADNG_RANDOM_WAIT LOADNG_CONF_RANDOM_WAIT
+#ifdef RRPL_CONF_RANDOM_WAIT
+#define RRPL_RANDOM_WAIT RRPL_CONF_RANDOM_WAIT
 #else
-#define LOADNG_RANDOM_WAIT 1
+#define RRPL_RANDOM_WAIT 1
 #endif
 
-/* Generic LOADng message */
-struct loadng_msg {
+/* Generic RRPL message */
+struct rrpl_msg {
 	uint8_t type;
 };
 
 
-/* LOADng RREQ message */
-#define LOADNG_RREQ_TYPE     0
+/* RRPL RREQ message */
+#define RRPL_RREQ_TYPE     0
 
-struct loadng_msg_rreq {
-	uint8_t type;
-	uint8_t addr_len;
-	uint16_t seqno;
-	uint8_t metric;
-	uint8_t route_cost;
-	uip_ipaddr_t dest_addr;
-	uip_ipaddr_t orig_addr;
-};
-
-/* LOADng RREP message */
-#define LOADNG_RREP_TYPE     1
-
-struct loadng_msg_rrep {
+struct rrpl_msg_rreq {
 	uint8_t type;
 	uint8_t addr_len;
 	uint16_t seqno;
@@ -121,10 +108,23 @@ struct loadng_msg_rrep {
 	uip_ipaddr_t orig_addr;
 };
 
-/* LOADng RREP-ACK message */
-#define LOADNG_RACK_TYPE     2
+/* RRPL RREP message */
+#define RRPL_RREP_TYPE     1
 
-struct loadng_msg_rack {
+struct rrpl_msg_rrep {
+	uint8_t type;
+	uint8_t addr_len;
+	uint16_t seqno;
+	uint8_t metric;
+	uint8_t route_cost;
+	uip_ipaddr_t dest_addr;
+	uip_ipaddr_t orig_addr;
+};
+
+/* RRPL RREP-ACK message */
+#define RRPL_RACK_TYPE     2
+
+struct rrpl_msg_rack {
 	uint8_t type;
 	uint8_t addr_len;
 	uip_ipaddr_t src_addr;
@@ -132,10 +132,10 @@ struct loadng_msg_rack {
 
 };
 
-/* LOADng RERR message */
-#define LOADNG_RERR_TYPE     3
+/* RRPL RERR message */
+#define RRPL_RERR_TYPE     3
 
-struct loadng_msg_rerr {
+struct rrpl_msg_rerr {
 	uint8_t type;
 	uint8_t addr_len;
 	uip_ipaddr_t src_addr;
@@ -144,10 +144,10 @@ struct loadng_msg_rerr {
 };
 
 
-/* LOADng OPT message */
-#define LOADNG_OPT_TYPE      4
+/* RRPL OPT message */
+#define RRPL_OPT_TYPE      4
 
-struct loadng_msg_opt {
+struct rrpl_msg_opt {
 	uint8_t type;
 	uint8_t addr_len;
 	uint16_t seqno;
@@ -156,13 +156,13 @@ struct loadng_msg_opt {
 	uip_ipaddr_t sink_addr;
 };
 
-/* LOADng QRY message */
-#define LOADNG_QRY_TYPE      5
+/* RRPL QRY message */
+#define RRPL_QRY_TYPE      5
 
-struct loadng_msg_qry {
+struct rrpl_msg_qry {
 	uint8_t type;
 	uint8_t addr_len;
 };
 
-#endif /* __LOADNG_DEF_H__ */
+#endif /* __RRPL_DEF_H__ */
 

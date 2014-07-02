@@ -28,31 +28,31 @@
  *
  * This file is part of the Contiki operating system.
  *
- * $Id: loadng.h,v 1.3 2010/12/13 10:04:59 bg- Exp $
+ * $Id: rrpl.h,v 1.3 2010/12/13 10:04:59 bg- Exp $
  */
 
 /**
  * \file
- *         LOADng routing header.
+ *         RRPL routing header.
  * \author 
  *         Chi-Anh La la@imag.fr         
  */
 
-#ifndef __LOADNG_H__
-#define __LOADNG_H__
+#ifndef __RRPL_H__
+#define __RRPL_H__
 
 #include "contiki.h"
 #ifdef UIP_DS6_ROUTE_STATE_TYPE
 #undef UIP_DS6_ROUTE_STATE_TYPE
 #endif
 // This is used in uip-ds6-route included further down
-#define UIP_DS6_ROUTE_STATE_TYPE loadng_route_entry_t
-typedef struct loadng_route_entry {
+#define UIP_DS6_ROUTE_STATE_TYPE rrpl_route_entry_t
+typedef struct rrpl_route_entry {
   uint16_t seqno;
   uint8_t route_cost;
   uint32_t valid_time;
   uint8_t ack_received;
-} loadng_route_entry_t;
+} rrpl_route_entry_t;
 
 #include "net/ipv6/uip-ds6.h"
 
@@ -63,13 +63,13 @@ void send_opt(void);
 void
 reinitialize_default_route(void);
 void
-loadng_request_route_to(uip_ipaddr_t *host);
+rrpl_request_route_to(uip_ipaddr_t *host);
 void
-loadng_no_route(uip_ipaddr_t *dest, uip_ipaddr_t *src);
+rrpl_no_route(uip_ipaddr_t *dest, uip_ipaddr_t *src);
 void
-loadng_set_local_prefix(uip_ipaddr_t *prefix, uint8_t len);
-uint8_t loadng_addr_matches_local_prefix(uip_ipaddr_t *host);
-uint8_t loadng_is_my_global_address(uip_ipaddr_t *addr);
-PROCESS_NAME(loadng_process);
-#endif /* __LOADNG_H__ */
+rrpl_set_local_prefix(uip_ipaddr_t *prefix, uint8_t len);
+uint8_t rrpl_addr_matches_local_prefix(uip_ipaddr_t *host);
+uint8_t rrpl_is_my_global_address(uip_ipaddr_t *addr);
+PROCESS_NAME(rrpl_process);
+#endif /* __RRPL_H__ */
 
