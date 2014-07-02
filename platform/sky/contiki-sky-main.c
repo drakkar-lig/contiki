@@ -104,6 +104,10 @@ static uint8_t is_gateway;
 #define PRINTF(...)
 #endif /* DEBUG */
 
+#if WITH_IPV6_RRPL
+#include "net/rrpl/rrpl.h"
+#endif
+
 void init_platform(void);
 
 /*---------------------------------------------------------------------------*/
@@ -369,6 +373,11 @@ main(int argc, char **argv)
          CC2420_CONF_CCA_THRESH);
 
 #else /* NETSTACK_CONF_WITH_IPV6 */
+
+#if WITH_IPV6_RRPL
+  printf("rrpl start ?\n");
+  process_start(&rrpl_process, NULL);
+#endif
 
   NETSTACK_RDC.init();
   NETSTACK_MAC.init();
