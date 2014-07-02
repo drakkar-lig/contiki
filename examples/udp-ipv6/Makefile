@@ -7,6 +7,9 @@ ifndef TARGET
 TARGET = sky
 endif
 
+
+CFLAGS += -DPROJECT_CONF_H=\"project-conf.h\"
+
 CFLAGS += -D'LOADNG_CONF_IS_COORDINATOR()=1'
 
 CFLAGS += -DWITH_IPV6_LOADNG=1
