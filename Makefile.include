@@ -84,7 +84,7 @@ ifneq ($(CONTIKI_WITH_IPV6),0)
 CONTIKI_WITH_IPV6 = 1
 endif
 endif
-include $(CONTIKI)/core/net/loadng/Makefile.loadng
+include $(CONTIKI)/core/net/rrpl/Makefile.rrpl
 
 ifeq ($(CONTIKI_WITH_IPV6),1)
   CFLAGS += -DNETSTACK_CONF_WITH_IPV6=1
