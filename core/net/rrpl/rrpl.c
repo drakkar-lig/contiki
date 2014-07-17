@@ -54,6 +54,8 @@
 #define DEBUG 1
 #include "net/ip/uip-debug.h"
 
+#define QRY_INTERVAL 5 * CLOCK_SECOND
+
 #define SEND_INTERVAL		25 * CLOCK_SECOND
 #define RETRY_CHECK_INTERVAL	5 * CLOCK_SECOND
 #define RV_CHECK_INTERVAL	10 * CLOCK_SECOND
@@ -70,6 +72,11 @@ extern uip_ds6_route_t uip_ds6_routing_table[UIP_DS6_ROUTE_NB];
 #if RRPL_RREQ_RATELIMIT
 static struct timer next_time;
 #endif
+
+#if SND_QRY
+static struct etimer eqryt;
+#endif // SND_QRY
+
 static enum {
   COMMAND_NONE,
   COMMAND_SEND_RREQ,
@@ -351,6 +358,17 @@ static uip_ds6_route_t* uip_rrpl_route_add(uip_ipaddr_t* orig_addr, uint8_t leng
     return NULL ;
   }
 }
+
+/*---------------------------------------------------------------------------*/
+static void
+enable_qry()
+{
+#if SND_QRY
+  PRINT("Setting timer for QRY");
+  etimer_set(&eqryt, (QRY_INTERVAL*random_rand()%50)/50);
+#endif // SND_QRY
+}
+
 /*---------------------------------------------------------------------------*/
 static void
 send_qry()
@@ -383,8 +401,12 @@ send_opt()
 {
   if(!RRPL_IS_COORDINATOR())
      return; //no OPT from device
-  if(!RRPL_IS_SINK && my_seq_id==0)
-     return; //wait for sink OPT
+  if(!RRPL_IS_SINK && (uip_ds6_defrt_lookup(&def_rt_addr) == NULL))
+  { 
+    // No next hop, schedule to send qry
+    enable_qry();
+    return; //wait for sink OPT
+  }
   char buf[MAX_PAYLOAD_LEN];
   PRINTF("RRPL: Send OPT from ");
   PRINT6ADDR(&myipaddr);
@@ -407,7 +429,7 @@ send_opt()
   }
   udpconn->ttl = 1;
   uip_create_linklocal_lln_routers_mcast(&udpconn->ripaddr);
-  PRINTF("RRPL: OPT length %u\n", sizeof(struct rrpl_msg_opt));
+//   PRINTF("RRPL: OPT length %u\n", sizeof(struct rrpl_msg_opt));
 // #if RDC_LAYER_ID == ID_mac_802154_rdc_driver  
 //   tcpip_set_outputfunc(output_802154);
 //   uip_udp_packet_send(udpconn, buf, sizeof(struct rrpl_msg_opt));
@@ -1154,10 +1176,20 @@ PROCESS_THREAD(rrpl_process, ev, data)
 #if RRPL_IS_COORDINATOR()
     if(etimer_expired(&et)) {
       send_opt();
-      uip_ds6_route_print();
+//       uip_ds6_route_print();
       etimer_restart(&et); 
     }
 #endif
+
+#if SND_QRY
+    if(etimer_expired(&eqryt)) {
+      if(uip_ds6_defrt_lookup(&def_rt_addr) == NULL){
+        // Still no route, snd qry and reschedule 
+        send_qry();
+        enable_qry();
+      }
+    }
+#endif // SND_QRY
 
 #if RRPL_RREQ_RETRIES
     if(etimer_expired(&dfet)) {

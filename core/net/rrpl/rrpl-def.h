@@ -54,8 +54,14 @@
 #define RRPL_RREP_ACK_TIMEOUT   10
 #define RRPL_BLACKLIST_TIME     10
 #define RRPL_RSSI_THRESHOLD    -65 // Ana measured value
-/* Self multicast OPT to create a default route at all nodes (for sink only) */
 
+#ifdef RRPL_CONF_SND_QRY
+#define SND_QRY RRPL_CONF_SND_QRY
+#else
+#define SND_QRY 0
+#endif
+
+/* Self multicast OPT to create a default route at all nodes (for sink only) */
 
 #ifdef RRPL_CONF_IS_SINK
 #define RRPL_IS_SINK RRPL_CONF_IS_SINK
