@@ -41,7 +41,7 @@
 #include "net/ipv6/uip-ds6.h"
 #include "net/ip/uip.h"
 
-#if WITH_IPV6_LOADNG
+#if WITH_IPV6_RRPL
 #include "net/rrpl/rrpl.h"
 #endif
 
@@ -384,6 +384,7 @@ uip_ds6_route_add(uip_ipaddr_t *ipaddr, uint8_t length,
   PRINT6ADDR(ipaddr);
   PRINTF(" via ");
   PRINT6ADDR(nexthop);
+  PRINTF(" prefi len:%u", r->length);
   PRINTF("\n");
   ANNOTATE("#L %u 1;blue\n", nexthop->u8[sizeof(uip_ipaddr_t) - 1]);
 

@@ -612,9 +612,9 @@ handle_incoming_rreq(void)
       uip_create_linklocal_lln_routers_mcast(&udpconn->ripaddr);
 #if RRPL_RANDOM_WAIT == 1
       PRINTF("waiting rand time\n");
-      clock_wait(random_rand()%50 * CLOCK_SECOND / 1000);
+      clock_wait(random_rand()%50 * CLOCK_SECOND / 100);
 #endif
-
+      PRINTF("done waiting rand time\n");
       uip_udp_packet_send(udpconn, rm, sizeof(struct rrpl_msg_rreq));
       memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
     }
@@ -868,12 +868,12 @@ handle_incoming_opt(void)
       return;			
     } 
 
-    if(rm->seqno > my_seq_id  ) {
+    if(SEQNO_GREATER_THAN(rm->seqno,my_seq_id)){
       /* First OPT */
       PRINTF("RRPL: New OPT sequence number received\n");
       my_seq_id = rm->seqno;
       parent_changed = 1;
-    } else {
+    } else if(rm->seqno == my_seq_id ){
       opt_weaklink = get_weaklink(rm->metric) + parent_weaklink((int8_t)LAST_RSSI);
       if(opt_weaklink < my_weaklink + parent_weaklink(my_parent_rssi)){ /* less weak links */
          parent_changed = 1;
