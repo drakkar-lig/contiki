@@ -422,7 +422,7 @@ send_opt()
   rm->rank = my_rank;
   rm->metric = RRPL_METRIC_HC;
   rm->metric = (rm->metric << 4) | (my_weaklink + parent_weaklink(my_parent_rssi));
-  if(RRPL_IS_SINK){
+  if((int)RRPL_IS_SINK){
      uip_ipaddr_copy(&rm->sink_addr, &myipaddr);
   } else {
      uip_ipaddr_copy(&rm->sink_addr, &my_sink_id);
@@ -635,8 +635,8 @@ handle_incoming_rreq(void)
 #if RRPL_RANDOM_WAIT == 1
       PRINTF("waiting rand time\n");
       clock_wait(random_rand()%50 * CLOCK_SECOND / 100);
-#endif
       PRINTF("done waiting rand time\n");
+#endif
       uip_udp_packet_send(udpconn, rm, sizeof(struct rrpl_msg_rreq));
       memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
     }
