@@ -38,7 +38,7 @@
 #define DEBUG DEBUG_PRINT
 #include "net/uip-debug.h"
 
-#define SEND_INTERVAL		15 * CLOCK_SECOND
+#define SEND_INTERVAL		7 * CLOCK_SECOND
 #define MAX_PAYLOAD_LEN		40
 
 static struct uip_udp_conn *client_conn;
@@ -111,7 +111,7 @@ set_connection_address(uip_ipaddr_t *ipaddr)
 #if RESOLV_CONF_SUPPORTS_MDNS
 #define UDP_CONNECTION_ADDR       contiki-udp-server.local
 #elif UIP_CONF_ROUTER
-#define UDP_CONNECTION_ADDR       aaaa:0:0:0:0:0:0:00001
+#define UDP_CONNECTION_ADDR       aaaa:0:0:0:212:7401:1:101
 #else
 #define UDP_CONNECTION_ADDR       fe80:0:0:0:6466:6666:6666:6666
 #endif
