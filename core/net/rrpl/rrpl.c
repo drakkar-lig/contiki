@@ -364,8 +364,8 @@ static void
 enable_qry()
 {
 #if SND_QRY
-  PRINT("Setting timer for QRY");
-  etimer_set(&eqryt, (QRY_INTERVAL*random_rand()%50)/50);
+  PRINTF("Setting timer for QRY\n");
+  etimer_set(&eqryt, (QRY_INTERVAL*(random_rand()%50))/50);
 #endif // SND_QRY
 }
 
@@ -401,13 +401,15 @@ send_opt()
 {
   if(!RRPL_IS_COORDINATOR())
      return; //no OPT from device
-  if(!RRPL_IS_SINK && (uip_ds6_defrt_lookup(&def_rt_addr) == NULL))
+  char buf[MAX_PAYLOAD_LEN];
+
+  if(((int)RRPL_IS_SINK!=1)&& (uip_ds6_defrt_lookup(&def_rt_addr) == NULL))
   { 
     // No next hop, schedule to send qry
     enable_qry();
     return; //wait for sink OPT
   }
-  char buf[MAX_PAYLOAD_LEN];
+
   PRINTF("RRPL: Send OPT from ");
   PRINT6ADDR(&myipaddr);
   PRINTF("\n"); 
@@ -987,7 +989,7 @@ tcpip_handler(void)
       handle_incoming_opt();
     }
     if(type==RRPL_QRY_TYPE){
-      PRINTF("RRPL: Received QRY\n");
+      PRINTF("RRPL: Received QRY -- Send OPT\n");
       send_opt();
     }
   }
@@ -1181,7 +1183,7 @@ PROCESS_THREAD(rrpl_process, ev, data)
     }
 #endif
 
-#if SND_QRY
+#if SND_QRY && ! RRPL_IS_SINK
     if(etimer_expired(&eqryt)) {
       if(uip_ds6_defrt_lookup(&def_rt_addr) == NULL){
         // Still no route, snd qry and reschedule 
