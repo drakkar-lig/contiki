@@ -325,6 +325,13 @@ static void uip_rrpl_nbr_add(uip_ipaddr_t* next_hop){
 #endif /* !UIP_ND6_SEND_NA */
 }
 
+void rrpl_rand_wait(){
+#if RRPL_RANDOM_WAIT == 1
+      PRINTF("waiting rand time\n");
+      clock_wait(random_rand()%50 * CLOCK_SECOND / 100);
+      PRINTF("done waiting rand time\n");
+#endif
+}
 
 static uip_ds6_route_t* uip_rrpl_route_add(uip_ipaddr_t* orig_addr, uint8_t length,
             uip_ipaddr_t* next_hop,uint8_t route_cost,uint16_t seqno)
@@ -634,11 +641,7 @@ handle_incoming_rreq(void)
       rm->route_cost++;
       udpconn->ttl = UIP_IP_BUF->ttl - 1;
       uip_create_linklocal_lln_routers_mcast(&udpconn->ripaddr);
-#if RRPL_RANDOM_WAIT == 1
-      PRINTF("waiting rand time\n");
-      clock_wait(random_rand()%50 * CLOCK_SECOND / 100);
-      PRINTF("done waiting rand time\n");
-#endif
+      rrpl_rand_wait();
       uip_udp_packet_send(udpconn, rm, sizeof(struct rrpl_msg_rreq));
       memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
     }
@@ -990,6 +993,7 @@ tcpip_handler(void)
     }
     if(type==RRPL_QRY_TYPE){
       PRINTF("RRPL: Received QRY -- Send OPT\n");
+      rrpl_rand_wait();
       send_opt();
     }
   }
