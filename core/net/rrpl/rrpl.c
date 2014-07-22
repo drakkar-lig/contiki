@@ -164,6 +164,24 @@ rrpl_check_expired_route(uint16_t interval)
   }
 
 }
+/*---------------------------------------------------------------------------*/
+
+
+
+/* Implementation of route validity time check and purge */
+
+static void
+rrpl_flush_routes()
+{
+  uip_ds6_route_t *r;
+
+  for(r = uip_ds6_route_head();
+  r != NULL;
+  r = uip_ds6_route_next(r)) {
+    uip_ds6_route_rm(r);
+  }
+
+}
 
 /*---------------------------------------------------------------------------*/
 /* Implementation of request forwarding cache to avoid multiple forwarding */
@@ -847,10 +865,24 @@ change_default_route(struct rrpl_msg_opt *rm)
   my_weaklink = get_weaklink(rm->metric); 
   // add default foute 
   defrt = uip_ds6_defrt_lookup(&def_rt_addr);
-  if(defrt !=  NULL){ //remove
-    uip_ds6_defrt_rm(defrt);
+  // First check if we are actually changing of next hop!
+  if(defrt !=  NULL){ 
+    if(!uip_ip6addr_cmp(&defrt->ipaddr,&UIP_IP_BUF->srcipaddr)){
+      PRINTF("Actually changing of defrt next hop!\n");
+      uip_ds6_defrt_rm(defrt);//remove route
+    }
+    else {
+      // We just need to refresh the route 
+      stimer_set(&defrt->lifetime, RRPL_DEFAULT_ROUTE_LIFETIME);
+      return;
+      }
   }
   
+  // Flush all routes. If I'm changing of parent, It means this new parent does not know about
+  // the nodes below me anyway, so better not keep stale entries.
+  // Moreover, keeping old entries and changing parents can break the loop avoidance mechanism.
+  rrpl_flush_routes();
+
   in_rrpl_call=1;
   
   PRINTF("RRPL: call uip_rrpl_nbr_add\n");
