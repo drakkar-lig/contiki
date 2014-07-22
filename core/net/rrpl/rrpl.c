@@ -33,11 +33,13 @@
 
 /**
  * \file
- *         Implementation of the RRPL routing protocol 
- *         IETF draft draft-clausen-lln-rrpl-00.txt
+ *         This protocol is evolved from 
+ *         the LOADng routing protocol 
+ *         IETF draft draft-clausen-lln-loadng-00.txt
  *         Version for slotted 802.15.4 
  * \author 
  *         Chi-Anh La la@imag.fr         
+ *         Martin Heusse Martin.Heusse@imag.fr
  */
 
 #include "contiki.h"
@@ -168,7 +170,7 @@ rrpl_check_expired_route(uint16_t interval)
 
 
 
-/* Implementation of route validity time check and purge */
+/* Implementation of route flush */
 
 static void
 rrpl_flush_routes()
