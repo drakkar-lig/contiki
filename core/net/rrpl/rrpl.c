@@ -859,7 +859,6 @@ change_default_route(struct rrpl_msg_opt *rm)
   
   uip_ds6_defrt_add(&UIP_IP_BUF->srcipaddr, RRPL_DEFAULT_ROUTE_LIFETIME);
   uip_ipaddr_copy(&def_rt_addr, &UIP_IP_BUF->srcipaddr);
-  uip_ipaddr_copy(&def_rt_addr, &UIP_IP_BUF->srcipaddr);
   if (!RRPL_IS_COORDINATOR()) {
     ctimer_set(&sendmsg_ctimer, random_rand() / 1000,
         (void (*)(void *))send_opt, NULL); 
