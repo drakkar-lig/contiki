@@ -9,7 +9,9 @@ process_start(&rrpl_process, NULL);
 
 - To set the behavior of each node, there are a few macros:
   - RRPL_IS_COORDINATOR: If set to 1, this node will periodically re-send OPT messages -- set to 0 for a leaf node that will not relay traffic;
-  - RRPL_CONF_IS_SINK: this node will send OPT to advertise itself as a sink -- the LBR should do this;
+  - RRPL_CONF_IS_SINK: this node will send OPT to advertise itself as a sink -- the LBR should do this (other nodes start transmitting OPT once they get one from the parent);
+  - RRPL_CONF_SND_QRY: if 1, the nodes send QRY packet to trigger the sending of OPT by surrounding nodes. This allows to run with greater SEND_INTERVAL (between OPTs);
+  - RRPL_RANDOM_WAIT makes the node wait a random time before sending OPTs in response to a QRY or when retransmitting RRREQ. Should be set to one and adjust the time (radom between 0 to 0.5s).
   - RRPL_RREQ_RETRIES, RRPL_RREQ_RATELIMIT, RRPL_R_HOLD_TIME.
   
 - Set UIP_ND6_SEND_NA to 1 if you want to use NS/NA, set it to 0 and rrpl determines the link layer address from the link local address (and vice-versa). Obviously, the objective is to get rid of NS/NA, unless you use nullmac, for instance.
