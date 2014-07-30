@@ -57,8 +57,9 @@
 #include "net/ip/uip-debug.h"
 
 #define QRY_INTERVAL 5 * CLOCK_SECOND
+#define QRY_NB 5
 
-#define SEND_INTERVAL		50 * CLOCK_SECOND
+#define SEND_INTERVAL		100 * CLOCK_SECOND
 #define RETRY_CHECK_INTERVAL	5 * CLOCK_SECOND
 #define RV_CHECK_INTERVAL	10 * CLOCK_SECOND
 #define MAX_SEQNO 65534
@@ -100,6 +101,9 @@ uip_ipaddr_t orig_addr, dest_addr, rreq_addr, def_rt_addr, my_sink_id;
 static struct uip_udp_conn *udpconn;
 static uip_ipaddr_t rerr_bad_addr, rerr_src_addr, rerr_next_addr;
 static uint8_t in_rrpl_call=0 ; // make sure we don't trigger a rreq from within rrpl
+
+static uint8_t qry_left_to_send=0 ;
+
 /*---------------------------------------------------------------------------*/
 PROCESS(rrpl_process, "RRPL process");
 /*---------------------------------------------------------------------------*/
@@ -391,8 +395,10 @@ static void
 enable_qry()
 {
 #if SND_QRY
-  PRINTF("Setting timer for QRY\n");
-  etimer_set(&eqryt, (QRY_INTERVAL*(random_rand()%50))/50);
+  if(qry_left_to_send<=0){
+    qry_left_to_send=QRY_NB;
+    etimer_set(&eqryt, (QRY_INTERVAL*(random_rand()%50))/50);
+  }
 #endif // SND_QRY
 }
 
@@ -416,7 +422,10 @@ send_qry()
   uip_create_linklocal_lln_routers_mcast(&udpconn->ripaddr);
   uip_udp_packet_send(udpconn, buf, sizeof(struct rrpl_msg_qry));
   memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
- 
+  qry_left_to_send--;
+  if(qry_left_to_send>0){
+    etimer_set(&eqryt, (QRY_INTERVAL*(random_rand()%50))/50);
+  }
 }
 /*---------------------------------------------------------------------------*/
 #if RDC_LAYER_ID == ID_mac_802154_rdc_driver
@@ -1046,8 +1055,12 @@ rrpl_request_route_to(uip_ipaddr_t *host)
     return;
   }
 #if !RRPL_IS_SINK && USE_OPT
-    PRINTF("Only sink sends RREQ\n");
-    return ; //only sink sends RREQ
+  PRINTF("Only sink sends RREQ -- set QRY\n");
+  // Schedule QRY transmission
+  PROCESS_CONTEXT_BEGIN(&rrpl_process);
+  enable_qry();
+  PROCESS_CONTEXT_END(&rrpl_process) ;
+  return ; //only sink sends RREQ
 #endif
   if(!rrpl_addr_matches_local_prefix(host)) {
     PRINTF("no RREQ for non-local address\n");
@@ -1224,8 +1237,8 @@ PROCESS_THREAD(rrpl_process, ev, data)
     if(etimer_expired(&eqryt)) {
       if(uip_ds6_defrt_lookup(&def_rt_addr) == NULL){
         // Still no route, snd qry and reschedule 
+        PRINTF("etimer qry expired, send QRY\n");
         send_qry();
-        enable_qry();
       }
     }
 #endif // SND_QRY
