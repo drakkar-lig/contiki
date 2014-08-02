@@ -833,6 +833,7 @@ handle_incoming_rerr(void)
   defrt=uip_ds6_defrt_lookup(&UIP_IP_BUF->srcipaddr);
   if(defrt!=NULL && rrpl_is_my_global_address(&rm->src_addr)){
     PRINTF("send RREP\n");
+    my_hseqno++;
     send_rrep(&my_sink_id, &defrt->ipaddr, &myipaddr, &my_hseqno, 0);
     return;
   }
