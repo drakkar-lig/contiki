@@ -812,6 +812,7 @@ send_opt()
 
   if(my_time_order>0){
     // No OPT in link reversal process!
+    PRINTF("Time order > 0, aborting\n");
     return;
   }
 
@@ -1255,6 +1256,17 @@ change_default_route(uip_ipaddr_t* new_uplink)
 //Wrong place to do this: this function is called when receiving a packet from other nodes
 //       PRINTF("Refreshing route\n");
 //       stimer_set(&defrt->lifetime, RRPL_DEFAULT_ROUTE_LIFETIME);
+      // bugfix
+        PRINTF("Same def rt: ");
+        
+        PRINT6ADDR(&def_rt_addr);
+        PRINTF("\n");
+        uip_ds6_nbr_t * neigh;
+        neigh = uip_ds6_nbr_lookup(&def_rt_addr);
+        PRINTF("state:%d", neigh->state);
+         PRINTF("\n");
+       
+      // bugfix
       return;
       }
   }
