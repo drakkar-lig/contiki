@@ -59,9 +59,9 @@
 #define QRY_INTERVAL 5 * CLOCK_SECOND
 #define QRY_NB 5
 
-#define rrpl_MIN_INC            1
-#define rrpl_MIN_TIME_ORDER     0
-#define rrpl_MAX_RANK           127
+#define RRPL_MIN_INC            1
+#define RRPL_MIN_TIME_ORDER     0
+#define RRPL_MAX_RANK           127
 
 #define SEND_INTERVAL		100 * CLOCK_SECOND
 #define RETRY_CHECK_INTERVAL	5 * CLOCK_SECOND
@@ -102,7 +102,7 @@ static uint16_t local_prefix_len;
 static uint8_t opt_seq_skip_counter;
 uip_ipaddr_t local_prefix;
 uip_ipaddr_t ipaddr, myipaddr, mcastipaddr;
-uip_ipaddr_t orig_addr, dest_addr, rreq_addr, def_rt_addr, my_sink_id;
+uip_ipaddr_t orig_addr, dest_addr, rreq_addr, def_rt_addr, my_sink_id, my_oid_addr;
 static struct uip_udp_conn *udpconn;
 static uip_ipaddr_t rerr_bad_addr, rerr_src_addr, rerr_next_addr;
 static uint8_t in_rrpl_call=0 ; // make sure we don't trigger a rreq from within rrpl
@@ -112,8 +112,8 @@ static uint8_t qry_left_to_send=0 ;
 static void update_uplink(void);
 static uint8_t is_prefered_parent(int8_t r, uint8_t t, uint8_t rf, uip_ipaddr_t *la);
 static void change_default_route(uip_ipaddr_t* new_uplink);
-
-
+static void send_upd(uip_ipaddr_t *addr);
+static void enable_qry();
 /*---------------------------------------------------------------------------*/
 PROCESS(rrpl_process, "RRPL process");
 /*---------------------------------------------------------------------------*/
@@ -307,9 +307,9 @@ link_remove(const uip_ipaddr_t *laddr)
   {
      if(uip_ipaddr_cmp(&linklist[n].linkaddr, laddr))
      {
-        memset(&linklist[n].linkaddr, 0, sizeof(&linklist[n].linkaddr));
-        linklist[n].rank = rrpl_MAX_RANK;
-        linklist[n].time_order = rrpl_MIN_TIME_ORDER;
+        memset(&linklist[n].linkaddr, 0, sizeof(linklist[n].linkaddr));
+        linklist[n].rank = RRPL_MAX_RANK;
+        linklist[n].time_order = RRPL_MIN_TIME_ORDER;
         linklist[n].uplink = 0;
         linklist[n].prefered_uplink = 0;
         //remove defrt?
@@ -331,7 +331,7 @@ link_add(const uip_ipaddr_t *laddr, int8_t rank, uint8_t timer_order, uint8_t re
 
   for(n=0;n<LINK_MAXNUM;++n)
   { 
-    if(linklist[n].rank ==  rrpl_MAX_RANK && i>n){
+    if(linklist[n].rank ==  RRPL_MAX_RANK && i>n){
        i = n;
     }
     if(uip_ipaddr_cmp(&linklist[n].linkaddr, laddr))
@@ -353,11 +353,25 @@ link_add(const uip_ipaddr_t *laddr, int8_t rank, uint8_t timer_order, uint8_t re
   update_uplink();  
 }
 
+static void
+update_rank(const uip_ipaddr_t *laddr, int8_t rank){
+  uint8_t n;
+  
+  for(n=0;n<LINK_MAXNUM;++n){
+    if(uip_ipaddr_cmp(&linklist[n].linkaddr, laddr)){
+      linklist[n].rank = rank;
+      break;
+    }
+  }
+}
+
 static void update_uplink(void){
   uint8_t n;
   uip_ds6_defrt_t *defrt;
+  PRINTF("update_uplink\n");
+  rrpl_link_print();
   for(n = 0; n < LINK_MAXNUM; ++n){  
-      if(linklist[n].time_order < my_time_order || (linklist[n].time_order == my_time_order && (linklist[n].reflect < my_reflect || (linklist[n].reflect == my_reflect && linklist[n].rank < my_rank)))){
+      if((linklist[n].rank<RRPL_MAX_RANK && linklist[n].time_order < my_time_order) || (linklist[n].time_order == my_time_order && (linklist[n].reflect < my_reflect || (linklist[n].reflect == my_reflect && linklist[n].rank < my_rank)))){
        linklist[n].uplink = 1;
        if(is_prefered_parent(linklist[n].rank, linklist[n].time_order, linklist[n].reflect, &linklist[n].linkaddr))
         {
@@ -381,7 +395,7 @@ link_check_reversal_cond()
      return 0;
   uint8_t i, n=0;
   for(i = 0; i < LINK_MAXNUM; ++i){  
-     if(linklist[i].rank !=  rrpl_MAX_RANK){
+     if(linklist[i].rank !=  RRPL_MAX_RANK){
         if(linklist[i].uplink)
           return 0;
         n++;
@@ -410,17 +424,17 @@ calculate_rank()
         } 
      } 
   }
-  if(r==rrpl_MAX_RANK)
+  if(r==RRPL_MAX_RANK)
   {
   //PRINTF("rrpl: no up link\n");
     return r;
   }
-  PRINTF("computed rank:%d\n", (r + rrpl_MIN_INC));   
+  PRINTF("computed rank:%d\n", (r + RRPL_MIN_INC));   
 
   if(t==0)   
-     return (r + rrpl_MIN_INC);
+     return (r + RRPL_MIN_INC);
   else
-     return (r - rrpl_MIN_INC);
+     return (r - RRPL_MIN_INC);
 }
 
 static uint8_t
@@ -469,8 +483,8 @@ void init_linklist(int8_t keep_current)
   //PRINTF("rrpl: init link list values\n"); 
   for(i = 0; i < LINK_MAXNUM; ++i){
     if(!(keep_current && linklist[i].prefered_uplink)){
-     linklist[i].rank =  rrpl_MAX_RANK;
-     linklist[i].time_order = rrpl_MIN_TIME_ORDER;
+     linklist[i].rank =  RRPL_MAX_RANK;
+     linklist[i].time_order = RRPL_MIN_TIME_ORDER;
      memset(&linklist[i].linkaddr, 0, sizeof(&linklist[i].linkaddr));
      linklist[i].uplink = 0;
      linklist[i].prefered_uplink = 0;
@@ -487,7 +501,7 @@ rrpl_link_print(void)
   PRINTF(" RANK [%d] | ", my_rank);
   uint8_t i;
   for(i = 0; i < LINK_MAXNUM; ++i){
-    if(linklist[i].rank != rrpl_MAX_RANK){   
+    if(linklist[i].rank != RRPL_MAX_RANK){   
        PRINT6ADDR(&linklist[i].linkaddr);
        PRINTF(" U=%u ", linklist[i].uplink);
        PRINTF(" R=%d ", linklist[i].rank);
@@ -500,6 +514,62 @@ rrpl_link_print(void)
 
 }
 
+/*---------------------------------------------------------------------------*/
+static void
+process_link_reversal(uint8_t t, int8_t r, uint8_t reflect, uip_ipaddr_t *oid)
+{
+  PRINTF("process_link_reversal()\n");
+  if(t > my_time_order || (reflect && t == my_time_order)){ 
+     my_time_order = t;
+     my_rank = r - 1;
+     my_reflect = reflect;
+     uip_ipaddr_copy(&my_oid_addr, oid);
+     //if(my_time_order > my_def_time_order){ //reflect
+     //   my_reflect = 1;
+     //   my_rank = 0;
+     //}
+     update_uplink();
+
+     if(link_check_reversal_cond()){ //reflect
+        PRINTF("rrpl: Relect detected\n");
+        //my_time_order++; 
+        //my_def_time_order = my_time_order;
+        //my_rank = 0;
+        //uip_ipaddr_copy(&my_oid_addr, &myipaddr);
+        my_reflect = 1;
+        my_rank = 0;
+        update_uplink();
+     }
+
+  } else if(t == my_time_order) {
+     PRINTF("same time order, increment time order NOW\n");
+     my_time_order++;
+     my_def_time_order = my_time_order;
+     my_rank = 0;
+     uip_ipaddr_copy(&my_oid_addr, &myipaddr);
+     update_uplink();
+  }
+
+  ctimer_set(&sendmsg_ctimer, random_rand() / 1000,
+           (void (*)(void *))send_upd, NULL);
+  
+}
+
+
+static void
+lost_defrt_whatnow(){
+  PRINTF("lost_defrt_whatnow()\n");
+  // first see if we have a backup solution
+  update_uplink();
+  if(calculate_rank()==RRPL_MAX_RANK){
+    enable_qry();
+  }
+  else{
+    if(link_check_reversal_cond()){
+      process_link_reversal(my_time_order, my_rank, my_reflect, &myipaddr);
+    }
+  }
+}
 
 /*---------------------------------------------------------------------------*/
 void
@@ -554,6 +624,9 @@ get_global_addr(uip_ipaddr_t *addr)
 }
 
 static void uip_rrpl_nbr_add(uip_ipaddr_t* next_hop){
+  PRINTF("uip_rrpl_nbr_add:");
+  PRINT6ADDR(next_hop);
+  PRINTF("\n");
 #if !UIP_ND6_SEND_NA
   uip_ds6_nbr_t *nbr = NULL;
   // it's my responsability to create+maintain neighbor
@@ -626,7 +699,7 @@ enable_qry()
 #if SND_QRY
   if(qry_left_to_send<=0){
     qry_left_to_send=QRY_NB;
-    etimer_set(&eqryt, ((QRY_NB-qry_left_to_send<<1)*QRY_INTERVAL*(random_rand()%50))/50);
+    etimer_set(&eqryt, (((QRY_NB-qry_left_to_send)<<1)*QRY_INTERVAL*(random_rand()%50))/50);
   }
 #endif // SND_QRY
 }
@@ -656,6 +729,75 @@ send_qry()
     etimer_set(&eqryt, (QRY_INTERVAL*(random_rand()%50))/50);
   }
 }
+
+/*---------------------------------------------------------------------------*/
+static void
+send_upd(uip_ipaddr_t *addr)
+{ printf("rrpl_SEND_MSG_UPD\n");
+  if(my_rank == RRPL_MAX_RANK)
+     return;
+  char buf[MAX_PAYLOAD_LEN];
+  PRINTF("rrpl: Send UPD");
+  //PRINT6ADDR(addr); /* addr can be multicast addr */
+  PRINTF(" from ");
+  PRINT6ADDR(&myipaddr);
+  PRINTF("\n"); 
+
+  struct rrpl_msg_upd *rm = (struct rrpl_msg_upd *)buf;
+
+  rm->type = RRPL_UPD_TYPE;
+  rm->type = (rm->type << 4) | RRPL_RSVD1;
+  rm->addr_len = RRPL_RSVD2; 
+  rm->addr_len = (rm->type << 4) | RRPL_ADDR_LEN_IPV6;
+  if((int)RRPL_IS_SINK){
+     uip_ipaddr_copy(&rm->sink_id, &myipaddr);
+  } else {
+     uip_ipaddr_copy(&rm->sink_id, &my_sink_id);
+  }
+  rm->seq_id = my_seq_id;
+  rm->time_order = my_time_order;
+  rm->rank = my_rank;
+  rm->reflect = my_reflect;
+  uip_ipaddr_copy(&rm->oid_addr, &my_oid_addr);
+  udpconn->ttl = 1;
+  if(addr != NULL){
+     uip_ipaddr_copy(&udpconn->ripaddr, addr);
+  } else {
+     uip_create_linklocal_lln_routers_mcast(&udpconn->ripaddr);
+  } 
+  //PRINTF("rrpl: UPD length %u\n", sizeof(struct rrpl_msg_upd));
+  uip_udp_packet_send(udpconn, buf, sizeof(struct rrpl_msg_upd));
+  memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+send_clr(void)
+{ printf("rrpl_SEND_MSG_CLR\n");
+  char buf[MAX_PAYLOAD_LEN];
+  //PRINTF("rrpl: Send CLR for ");
+  //PRINTF(" from ");
+  //PRINT6ADDR(&myipaddr);
+  //PRINTF("\n"); 
+
+  struct rrpl_msg_clr *rm = (struct rrpl_msg_clr *)buf;
+
+  rm->type = RRPL_CLR_TYPE;
+  rm->type = (rm->type << 4) | RRPL_RSVD1;
+  rm->addr_len = RRPL_RSVD2; 
+  rm->addr_len = (rm->type << 4) | RRPL_ADDR_LEN_IPV6;	
+
+  rm->seq_id = my_seq_id;
+  rm->time_order = my_time_order;
+  uip_ipaddr_copy(&rm->oid_addr, &my_oid_addr);
+  udpconn->ttl = 1;
+  uip_create_linklocal_lln_routers_mcast(&udpconn->ripaddr);
+ 
+  //PRINTF("rrpl: CLR length %u\n", sizeof(struct rrpl_msg_clr));
+  uip_udp_packet_send(udpconn, buf, sizeof(struct rrpl_msg_clr));
+  memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
+}
+
 /*---------------------------------------------------------------------------*/
 #if RDC_LAYER_ID == ID_mac_802154_rdc_driver
 void
@@ -668,10 +810,15 @@ send_opt()
      return; //no OPT from device
   char buf[MAX_PAYLOAD_LEN];
 
+  if(my_time_order>0){
+    // No OPT in link reversal process!
+    return;
+  }
+
   if(((int)RRPL_IS_SINK!=1)&& (uip_ds6_defrt_lookup(&def_rt_addr) == NULL))
   { 
     // No next hop, schedule to send qry
-    enable_qry();
+    lost_defrt_whatnow();
     return; //wait for sink OPT
   }
 
@@ -1089,7 +1236,7 @@ static void
 change_default_route(uip_ipaddr_t* new_uplink)
 {
   uip_ds6_defrt_t *defrt;
-  PRINTF("change_default_route TO ");
+  PRINTF("Call change_default_route TO ");
   PRINT6ADDR(new_uplink);
   PRINTF(" FROM ");
   PRINT6ADDR(&def_rt_addr);
@@ -1105,16 +1252,21 @@ change_default_route(uip_ipaddr_t* new_uplink)
     }
     else {
       // We just need to refresh the route 
-      stimer_set(&defrt->lifetime, RRPL_DEFAULT_ROUTE_LIFETIME);
+//Wrong place to do this: this function is called when receiving a packet from other nodes
+//       PRINTF("Refreshing route\n");
+//       stimer_set(&defrt->lifetime, RRPL_DEFAULT_ROUTE_LIFETIME);
       return;
       }
   }
   else if(uip_ip6addr_cmp(&def_rt_addr,new_uplink)){
     // At this point, it appears that we are not changing of next hop, but the defrt is NULL, 
     // So the neighbor is in fact gone. Either send an UPD, or wait for OPT with new SEQ
-    PRINTF("Removing stale link\n");
+    PRINTF("Removing stale default route link:");
+    PRINT6ADDR(&def_rt_addr);
+    PRINTF("\n");
     link_remove(&def_rt_addr);
     uip_create_linklocal_empty_addr(&def_rt_addr);
+    
     return;
   }
   // OK, so it seems we are changing of parent. Like, really...
@@ -1129,7 +1281,7 @@ change_default_route(uip_ipaddr_t* new_uplink)
   uip_rrpl_nbr_add(new_uplink);
 
   
-  uip_ds6_defrt_add(&UIP_IP_BUF->srcipaddr, RRPL_DEFAULT_ROUTE_LIFETIME);
+  uip_ds6_defrt_add(new_uplink, RRPL_DEFAULT_ROUTE_LIFETIME);
   uip_ipaddr_copy(&def_rt_addr, new_uplink);
   in_rrpl_call=0;
 }
@@ -1157,21 +1309,132 @@ handle_incoming_opt(void)
     /* First OPT */
     PRINTF("RRPL: New OPT sequence number received\n");
     my_seq_id = rm->seqno;
+    my_rank=RRPL_MAX_RANK;
     // Start from scratch, except for current next hop -- if it's there
     init_linklist((my_time_order == 0)?1:0);
+    if(uip_ip6addr_cmp(&UIP_IP_BUF->srcipaddr,&def_rt_addr)){
+      // take rank directly from opt
+      update_rank(&UIP_IP_BUF->srcipaddr, rm->rank);
+    }
     my_time_order = 0;
     my_reflect = 0;
     my_rank=calculate_rank(); // Start from the rank of current route
-
   } else if(! rm->seqno == my_seq_id )
     {return;} // Ignoring past seq_no
     
-  if(rm->rank+rrpl_MIN_INC<my_rank) // The rank can only go down
-    my_rank=rm->rank+rrpl_MIN_INC;
+  if(rm->rank+RRPL_MIN_INC<my_rank) // The rank can only go down
+    my_rank=rm->rank+RRPL_MIN_INC;
   link_add(&UIP_IP_BUF->srcipaddr, rm->rank, 0, 0,1);
   //my_weaklink = get_weaklink(rm->metric); Should be calculate_weak_link()!!
   rrpl_link_print();
 }
+
+/*---------------------------------------------------------------------------*/
+static void
+handle_incoming_upd(void)
+{
+  struct rrpl_msg_upd *rm = (struct rrpl_msg_upd *)uip_appdata;
+  PRINTF("rrpl: UPD ");
+  //PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
+  PRINTF(" -> ");
+  //PRINT6ADDR(&UIP_IP_BUF->destipaddr);
+  PRINTF(" ttl=%u ", UIP_IP_BUF->ttl);
+  PRINTF(" rank=%d ", rm->rank);
+  PRINTF(" time=%u ", rm->time_order);
+  PRINTF(" reflect=%u ", rm->reflect);
+  //PRINTF(" id ");
+  //PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
+  PRINTF(" oid ");
+  PRINT6ADDR(&rm->oid_addr);
+  //PRINTF(" sink_id ");
+  //PRINT6ADDR(&rm->sink_id);
+  PRINTF("\r\n");
+
+  if(uip_ipaddr_cmp(&UIP_IP_BUF->srcipaddr, &myipaddr)) {
+    PRINTF("rrpl: UPD loops back, not processing\n");
+    return;			
+  }
+
+
+  /* First UPD */
+  if(rm->seq_id > my_seq_id){
+    PRINTF("rrpl: No DODAG, joining the DODAG in received UPD\n");
+    init_linklist(0);
+    my_rank = RRPL_MAX_RANK; /* Reset rank */
+    uip_ipaddr_copy(&my_sink_id, &rm->sink_id);
+    my_seq_id = rm->seq_id;
+    my_time_order = rm->time_order;
+    my_reflect = rm->reflect;
+    uip_ipaddr_copy(&my_oid_addr, &rm->oid_addr);
+    link_add(&UIP_IP_BUF->srcipaddr, rm->rank, rm->time_order, rm->reflect,1); 
+    my_rank = calculate_rank();
+    //NOTE: no OPT at all for UPD
+    //ctimer_set(&sendmsg_ctimer, random_rand() / 1000,
+    //           (void (*)(void *))send_upd, NULL); 
+  } else {///if(link_lookup(&UIP_IP_BUF->srcipaddr)){ // link exists
+    //PRINTF("rrpl: Update link from OPT\n");
+    //link_add(&UIP_IP_BUF->srcipaddr, rm->rank, rm->time_order);
+  //} else {
+    //PRINTF("rrpl: Add new link from OPT\n");
+    link_add(&UIP_IP_BUF->srcipaddr, rm->rank, rm->time_order, rm->reflect,1); 
+  }
+  PRINTF("rrpl: Update rank from received UPD r=%d\n", my_rank);
+  ANNOTATE("R=%u t=%u\n", my_rank, my_time_order);  
+ 
+  rrpl_link_print();
+  if(uip_ipaddr_cmp(&rm->oid_addr, &myipaddr) && rm->reflect) {
+   PRINTF("rrpl: Reflect detected with own OID: send CLR\n");
+       ctimer_set(&sendmsg_ctimer, random_rand() / 1000,
+              (void (*)(void *))send_clr, NULL);
+   my_rank = RRPL_MAX_RANK;
+   return;			
+  }
+
+  //TODO: if rank decrease: ie move closer toward root: send UPD, if not keep current rank?
+  //TODO maintain route: check cond of no uplink
+  if(link_check_reversal_cond()){
+     process_link_reversal(rm->time_order, rm->rank, rm->reflect, &rm->oid_addr);
+  }
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+handle_incoming_clr(void)
+{
+  struct rrpl_msg_clr *rm = (struct rrpl_msg_clr *)uip_appdata;
+  PRINTF("rrpl: CLR ");
+  //PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
+  //PRINTF(" -> ");
+  //PRINT6ADDR(&UIP_IP_BUF->destipaddr);
+  //PRINTF(" ttl=%u ", UIP_IP_BUF->ttl);
+  //PRINTF(" time=%u ", rm->time_order);
+  //PRINTF(" id ");
+  //PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
+  //PRINTF(" oid ");
+  //PRINT6ADDR(&rm->oid_addr);
+  //PRINTF(" sink_id ");
+  //PRINT6ADDR(&rm->sink_id);
+  PRINTF("\r\n");
+
+  if(uip_ipaddr_cmp(&UIP_IP_BUF->srcipaddr, &myipaddr)) {
+    //PRINTF("rrpl: CLR loops back, not processing\n");
+    return;			
+  }
+  
+  
+  link_remove(&UIP_IP_BUF->srcipaddr);
+  
+  update_uplink();
+  if(!RRPL_IS_SINK){
+    if(my_rank != RRPL_MAX_RANK)
+    {
+      ctimer_set(&sendmsg_ctimer, random_rand() / 1000,
+               (void (*)(void *))send_clr, NULL);
+      my_rank = RRPL_MAX_RANK; 
+    }
+  }
+}
+
 
 /*---------------------------------------------------------------------------*/
 static void
@@ -1227,7 +1490,15 @@ tcpip_handler(void)
     if(type==RRPL_QRY_TYPE){
       PRINTF("RRPL: Received QRY -- Send OPT\n");
       rrpl_rand_wait();
-      send_opt();
+      send_opt(); // fixme: should be upd?
+    }
+    if(type==RRPL_UPD_TYPE){
+      PRINTF("RRPL: Received UPD\n");
+      handle_incoming_upd();
+    }
+    if(type==RRPL_CLR_TYPE){
+      PRINTF("RRPL: Received UPD\n");
+      handle_incoming_clr();
     }
   }
 }
@@ -1246,10 +1517,12 @@ rrpl_request_route_to(uip_ipaddr_t *host)
     return;
   }
 #if !RRPL_IS_SINK && USE_OPT
-  // Schedule QRY transmission
-  PROCESS_CONTEXT_BEGIN(&rrpl_process);
-  enable_qry();
-  PROCESS_CONTEXT_END(&rrpl_process) ;
+  // Schedule QRY transmission: if we are here, it's because we've lost our default next hop
+  if((uip_ds6_defrt_lookup(&def_rt_addr) == NULL)){
+    PROCESS_CONTEXT_BEGIN(&rrpl_process);
+    lost_defrt_whatnow();
+    PROCESS_CONTEXT_END(&rrpl_process) ;
+  }
   return ; //only sink sends RREQ
 #endif
   if(!rrpl_addr_matches_local_prefix(host)) {
@@ -1371,12 +1644,13 @@ PROCESS_THREAD(rrpl_process, ev, data)
   opt_seq_skip_counter = 0;
 #else
   my_seq_id = 0;
-  my_rank = rrpl_MAX_RANK;
+  my_rank = RRPL_MAX_RANK;
   my_weaklink = 255;
   my_parent_rssi = -126;
 #endif
   PRINTF("RRPL is sink:%d \n",(int)RRPL_IS_SINK);
   init_linklist(0);
+  my_time_order=0;
   my_hseqno = 1;
   print_local_addresses();
   get_global_addr(&myipaddr);

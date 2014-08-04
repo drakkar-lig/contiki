@@ -95,6 +95,11 @@
 #define RRPL_RANDOM_WAIT 1
 #endif
 
+#define RRPL_ADDR_LEN_IPV6     15
+#define RRPL_RSVD1 0
+#define RRPL_RSVD2 0 
+
+
 /* Generic RRPL message */
 struct rrpl_msg {
 	uint8_t type;
@@ -168,6 +173,32 @@ struct rrpl_msg_opt {
 struct rrpl_msg_qry {
 	uint8_t type;
 	uint8_t addr_len;
+};
+
+/* LRL UPD message */
+#define RRPL_UPD_TYPE     6
+
+struct rrpl_msg_upd {
+	uint8_t type;
+	uint8_t addr_len;
+	uip_ipaddr_t sink_id;
+	uint8_t seq_id;
+	uint8_t time_order;
+	int8_t rank;
+	uint8_t reflect;
+	uip_ipaddr_t oid_addr;
+};
+
+/* LRL CLR message */
+#define RRPL_CLR_TYPE     7
+
+struct rrpl_msg_clr {
+	uint8_t type;
+	uint8_t addr_len;
+	uip_ipaddr_t sink_id;
+	uint8_t seq_id;
+	uint8_t time_order;
+	uip_ipaddr_t oid_addr;
 };
 
 #endif /* __RRPL_DEF_H__ */
