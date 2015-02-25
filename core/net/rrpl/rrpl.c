@@ -56,12 +56,14 @@
 #define DEBUG 1
 #include "net/ip/uip-debug.h"
 
-#define QRY_INTERVAL 5 * CLOCK_SECOND
-#define QRY_NB 5
+/* Exponential parameter for QRY sending. @see send_qry */
+#define QRY_EXP_PARAM           0.80
 
 #define RRPL_MAX_RANK           127
 
-#define SEND_INTERVAL           100 * CLOCK_SECOND
+/* Frequency of OPT broadcasting */
+#define SEND_OPT_INTERVAL       100 * CLOCK_SECOND
+
 #define RETRY_CHECK_INTERVAL    5 * CLOCK_SECOND
 #define RV_CHECK_INTERVAL       10 * CLOCK_SECOND
 #define MAX_PAYLOAD_LEN         50
@@ -81,6 +83,10 @@ static struct timer next_time;
 #if SND_QRY && ! RRPL_IS_SINK
 static struct etimer eqryt;
 #endif // SND_QRY && ! RRPL_IS_SINK
+
+#if RRPL_IS_COORDINATOR()
+static struct etimer send_opt_et;
+#endif // RRPL_IS_COORDINATOR()
 
 static enum {
   COMMAND_NONE,
@@ -107,7 +113,8 @@ static uip_ipaddr_t rerr_bad_addr, rerr_src_addr, rerr_next_addr;
 static uint8_t in_rrpl_call = 0 ; // make sure we don't trigger a rreq from within rrpl
 
 #if SND_QRY && ! RRPL_IS_SINK
-static uint8_t qry_left_to_send = 0;
+static uint16_t qry_exp_residuum;
+static void enable_qry();
 #endif // SND_QRY && ! RRPL_IS_SINK
 
 /*---------------------------------------------------------------------------*/
@@ -399,25 +406,27 @@ uip_rrpl_route_add(uip_ipaddr_t* orig_addr, uint8_t length,
 static void
 enable_qry()
 {
-  if(qry_left_to_send <= 0) {
-    qry_left_to_send = QRY_NB;
-    etimer_set(&eqryt, (QRY_INTERVAL * (random_rand() % 50)) / 50);
-  }
+  qry_exp_residuum = SEND_OPT_INTERVAL;
+  etimer_set(&eqryt, SEND_OPT_INTERVAL - qry_exp_residuum);
 }
 #endif // SND_QRY && ! RRPL_IS_SINK
 
 /*---------------------------------------------------------------------------*/
+/* Broadcast a QRY. Restart the timer with exponentially increasing time
+ * interval between them. Asymptotically, QRY will be sent at the same rate
+ * than the OPT frequency. Time wait between two QRY sending follow this
+ * sequence : `Un = SEND_OPT_INTERVAL * (1 - QRY_EXP_PARAM ^ n)` */
 #if SND_QRY && ! RRPL_IS_SINK
 static void
 send_qry()
 {
   char buf[MAX_PAYLOAD_LEN];
-  PRINTF("RRPL: Send QRY from ");
-  PRINT6ADDR(&myipaddr);
-  PRINTF("\n");
-
   struct rrpl_msg_qry *rm = (struct rrpl_msg_qry *)buf;
 
+  PRINTF("RRPL: Broadcast QRY. Next one in %.3fms\n",
+      ((SEND_OPT_INTERVAL - ((uint32_t)qry_exp_residuum * QRY_EXP_PARAM)) * 1000 / CLOCK_SECOND));
+
+  // Create and send QRY
   rm->type = RRPL_QRY_TYPE;
   rm->type = (rm->type << 4) | RRPL_RSVD1;
   rm->addr_len = RRPL_RSVD2;
@@ -426,11 +435,10 @@ send_qry()
   uip_create_linklocal_lln_routers_mcast(&udpconn->ripaddr);
   uip_udp_packet_send(udpconn, buf, sizeof(struct rrpl_msg_qry));
   memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
-  qry_left_to_send--;
-  if(qry_left_to_send > 0) {
-    // Have to sent another qry later. Set timer.
-    etimer_set(&eqryt, (QRY_INTERVAL * (random_rand() % 50)) / 50);
-  }
+
+  // Configure timer for next time
+  qry_exp_residuum *= QRY_EXP_PARAM; // Compute exponential part
+  etimer_set(&eqryt, SEND_OPT_INTERVAL - qry_exp_residuum);
 }
 #endif // SND_QRY && ! RRPL_IS_SINK
 
@@ -667,8 +675,15 @@ handle_incoming_rreq(void)
 
   */
 
-  if(rrpl_is_my_global_address(&rm->dest_addr)) { /* RREQ for our address */
-    // FIXME: if we already have seen this RREQ, we retransmit RREP !! (see below)
+  /* Have we seen this RREQ before? */
+  if(fwc_lookup(&rm->orig_addr, &rm->seqno)) {
+    PRINTF("RRPL: RREQ cached, do not process it\n");
+    return;
+  }
+  fwc_add(&rm->orig_addr, &rm->seqno);
+
+  if(rrpl_is_my_global_address(&rm->dest_addr)) {
+    // RREQ for our address
     PRINTF("RRPL: RREQ for our address\n");
     uip_ipaddr_copy(&dest_addr, &rm->orig_addr);
     uip_ipaddr_copy(&orig_addr, &rm->dest_addr);
@@ -676,17 +691,12 @@ handle_incoming_rreq(void)
     if(my_hseqno > MAX_SEQNO)
       my_hseqno = 1;
     send_rrep(&dest_addr, &UIP_IP_BUF->srcipaddr, &orig_addr, &my_hseqno, 0); // FIXME: next hop = srcipaddr => we go on another branch of the tree…
-  } else if (RRPL_IS_COORDINATOR()) {  //only coordinator forward RREQ
-    if(UIP_IP_BUF->ttl > 1) { /* TTL still valid for forwarding */
 
-      // FIXME: should do that even if it is our address
-      /* Have we seen this RREQ before? */
-      if(fwc_lookup(&rm->orig_addr, &rm->seqno)) {
-        PRINTF("RRPL: RREQ cached, not forward it\n");
-        return;
-      }
-      fwc_add(&rm->orig_addr, &rm->seqno);
-
+#if RRPL_IS_COORDINATOR()
+  } else {
+    // Only coordinator forward RREQ
+    if(UIP_IP_BUF->ttl > 1) {
+      // TTL still valid for forwarding
       PRINTF("RRPL: forward RREQ\n");
       rm->route_cost++;
       udpconn->ttl = UIP_IP_BUF->ttl - 1;
@@ -695,8 +705,10 @@ handle_incoming_rreq(void)
       uip_udp_packet_send(udpconn, rm, sizeof(struct rrpl_msg_rreq));
       memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
     }
+#endif // RRPL_IS_COORDINATOR()
   }
 }
+
 /*---------------------------------------------------------------------------*/
 static void
 handle_incoming_rrep(void)
@@ -915,9 +927,10 @@ change_default_route(struct rrpl_msg_opt *rm)
     }
   }
 
-  // Flush all routes. If I'm changing of parent, It means this new parent does not know about
-  // the nodes below me anyway, so better not keep stale entries.
-  // Moreover, keeping old entries and changing parents can break the loop avoidance mechanism.
+  // Flush all routes. If I'm changing of parent, It means this new parent
+  // does not know about the nodes below me anyway, so better not keep stale
+  // entries. Moreover, keeping old entries and changing parents can break the
+  // loop avoidance mechanism.
   rrpl_flush_routes();
 
   in_rrpl_call = 1;
@@ -929,8 +942,7 @@ change_default_route(struct rrpl_msg_opt *rm)
   uip_ipaddr_copy(&def_rt_addr, &UIP_IP_BUF->srcipaddr);
 
 #if RRPL_IS_COORDINATOR()
-  ctimer_set(&sendmsg_ctimer, random_rand() / 1000,
-          (void (*)(void *))send_opt, NULL);
+  etimer_set(&send_opt_et, random_rand() / 1000);
 #endif
 
   // FIXME: code specific to beacon-enabled
@@ -994,6 +1006,7 @@ handle_incoming_opt(void)
     my_parent_rssi = (int8_t)LAST_RSSI;
     PRINTF("RRPL: Update from received OPT r=%u wl=%u rssi=%i\n", my_rank, my_weaklink + parent_weaklink(my_parent_rssi), my_parent_rssi);
     change_default_route(rm);
+
 #if RRPL_IS_SKIP_LEAF
     my_hseqno++;
     if(my_hseqno>MAX_SEQNO)
@@ -1054,17 +1067,28 @@ tcpip_handler(void)
         break;
       case RRPL_OPT_TYPE:
 #if RRPL_IS_SINK
-        PRINTF("RRPL: Recieved OPT. Skipping: is a sink\n");
+        PRINTF("RRPL: Received OPT. Skipping: is a sink\n");
 #else
         PRINTF("RRPL: Received OPT\n");
         handle_incoming_opt();
 #endif // RRPL_IS_SINK
         break;
       case RRPL_QRY_TYPE:
-#if RRPL_IS_COORDINATOR()
+#if RRPL_IS_SINK
         PRINTF("RRPL: Received QRY -- Send OPT\n");
         rrpl_rand_wait();
         send_opt();
+#elif RRPL_IS_COORDINATOR()
+        if(uip_ds6_defrt_lookup(&def_rt_addr) == NULL) {
+          PRINTF("RRPL: Received QRY. Skipping: no default route\n");
+        } else {
+          PRINTF("RRPL: Received QRY -- Send OPT\n");
+          PRINTF("Address: ");
+          PRINT6ADDR(&uip_ds6_defrt_lookup(&def_rt_addr)->ipaddr);
+          PRINTF("\n");
+          rrpl_rand_wait();
+          send_opt();
+        }
 #else
         PRINTF("RRPL: Received QRY. Skipping: not a coordinator\n");
 #endif // RRPL_IS_COORDINATOR()
@@ -1205,8 +1229,6 @@ rrpl_is_my_global_address(uip_ipaddr_t *addr)
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(rrpl_process, ev, data)
 {
-  static struct etimer et;
-
   PROCESS_BEGIN();
   PRINTF("RRPL process started\n");
 #if RRPL_IS_SINK
@@ -1238,11 +1260,12 @@ PROCESS_THREAD(rrpl_process, ev, data)
   PRINTF(" (local/remote port %u/%u)\n",
         UIP_HTONS(udpconn->lport), UIP_HTONS(udpconn->rport));
 
-  if (RRPL_IS_COORDINATOR()) {
-    PRINTF("RRPL: Set timer for OPT multicast %lu\n", SEND_INTERVAL);
-    etimer_set(&et, SEND_INTERVAL);
-    memset(&ipaddr, 0, sizeof(ipaddr));
-  }
+#if RRPL_IS_COORDINATOR()
+  PRINTF("RRPL: Set timer for OPT multicast %lu\n", SEND_OPT_INTERVAL);
+  etimer_set(&send_opt_et, SEND_OPT_INTERVAL);
+  memset(&ipaddr, 0, sizeof(ipaddr));
+#endif
+
 #if RRPL_RREQ_RETRIES
   PRINTF("RRPL: Set timer for RREQ retry %u\n", RETRY_CHECK_INTERVAL);
   etimer_set(&dfet, RETRY_CHECK_INTERVAL);
@@ -1256,6 +1279,12 @@ PROCESS_THREAD(rrpl_process, ev, data)
   PRINTF("RRPL: Set timer for route validity time check %u\n", RV_CHECK_INTERVAL);
   etimer_set(&rv, RV_CHECK_INTERVAL);
 #endif
+
+#if SND_QRY && ! RRPL_IS_SINK
+  // Start sending QRY to find nodes just around
+  enable_qry();
+#endif
+
   while(1) {
     PROCESS_YIELD();
 
@@ -1264,10 +1293,17 @@ PROCESS_THREAD(rrpl_process, ev, data)
     }
 
 #if RRPL_IS_COORDINATOR()
-    if(etimer_expired(&et)) {
+    // OPT timer
+    if(etimer_expired(&send_opt_et)) {
+#if RRPL_IS_SINK
       send_opt();
-//       uip_ds6_route_print();
-      etimer_restart(&et);
+      etimer_set(&send_opt_et, SEND_OPT_INTERVAL);
+#else // RRPL_IS_SINK
+      if(uip_ds6_defrt_lookup(&def_rt_addr) != NULL) {
+        send_opt();
+        etimer_set(&send_opt_et, SEND_OPT_INTERVAL);
+      }
+#endif // RRPL_IS_SINK
     }
 #endif // RRPL_IS_COORDINATOR()
 
