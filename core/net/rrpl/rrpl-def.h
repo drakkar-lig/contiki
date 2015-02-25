@@ -75,6 +75,10 @@
 #define RRPL_IS_COORDINATOR() 0
 #endif
 
+//#if RRPL_IS_SINK && !RRPL_IS_COORDINATOR()
+//#error "Node must be sink but not coordinator, impossible. Please re-check your settings."
+//#endif
+
 #ifdef RRPL_CONF_IS_SKIP_LEAF
 #define RRPL_IS_SKIP_LEAF RRPL_CONF_IS_SKIP_LEAF
 #else
