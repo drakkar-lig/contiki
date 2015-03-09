@@ -34,8 +34,8 @@
 /**
  * \file
  *         Definitions for the RRPL ad hoc routing protocol
- * \author 
- *         Chi-Anh La la@imag.fr         
+ * \author
+ *         Chi-Anh La la@imag.fr
  */
 
 #ifndef __RRPL_DEF_H__
@@ -45,9 +45,13 @@
 
 #define uip_create_linklocal_lln_routers_mcast(a) uip_ip6addr(a, 0xff02, 0, 0, 0, 0, 0, 0, 0x001b)
 #define uip_create_linklocal_empty_addr(a) uip_ip6addr(a, 0, 0, 0, 0, 0, 0, 0, 0)
-#define RRPL_UDPPORT            6666
-#define RRPL_NET_TRAVERSAL_TIME 10
-#define RRPL_RREQ_RETRIES       0
+#define RRPL_UDPPORT            6666 /* UDP port used for routing control
+                                        messages */
+#define RRPL_NET_TRAVERSAL_TIME 10 * CLOCK_SECOND / 1000
+                                     /* Typical time for a message to cross the
+                                        whole network in one way (in ticks) */
+#define RRPL_RREQ_RETRIES       0    /* Re-send RREQ if no RREP recieved. 0
+                                        implies don't retry at all */
 #define RRPL_RREQ_RATELIMIT     0
 #define RRPL_R_HOLD_TIME        0
 #define RRPL_MAX_DIST           20
@@ -75,9 +79,11 @@
 #define RRPL_IS_COORDINATOR() 0
 #endif
 
-//#if RRPL_IS_SINK && !RRPL_IS_COORDINATOR()
-//#error "Node must be sink but not coordinator, impossible. Please re-check your settings."
-//#endif
+#if RRPL_IS_SINK && !RRPL_IS_COORDINATOR()
+#warning "The node must be sink but not coordinator. This will lead surely " \
+         "to unpredictable results (and is particularly stupid). Please " \
+         "re-check your settings."
+#endif
 
 #ifdef RRPL_CONF_IS_SKIP_LEAF
 #define RRPL_IS_SKIP_LEAF RRPL_CONF_IS_SKIP_LEAF
@@ -85,12 +91,12 @@
 #define RRPL_IS_SKIP_LEAF 0
 #endif
 
-#define RRPL_RREP_ACK           0 
+#define RRPL_RREP_ACK           0
 #define RRPL_ADDR_LEN_IPV6      15
-#define RRPL_METRIC_HC          0 
+#define RRPL_METRIC_HC          0
 #define RRPL_WEAK_LINK          0
 #define RRPL_RSVD1              0
-#define RRPL_RSVD2              0 
+#define RRPL_RSVD2              0
 #define RRPL_DEFAULT_ROUTE_LIFETIME  65534
 
 #ifdef RRPL_CONF_RANDOM_WAIT
@@ -101,7 +107,7 @@
 
 /* Generic RRPL message */
 struct rrpl_msg {
-	uint8_t type;
+  uint8_t type;
 };
 
 
@@ -109,48 +115,46 @@ struct rrpl_msg {
 #define RRPL_RREQ_TYPE     0
 
 struct rrpl_msg_rreq {
-	uint8_t type;
-	uint8_t addr_len;
-	uint16_t seqno;
-	uint8_t metric;
-	uint8_t route_cost;
-	uip_ipaddr_t dest_addr;
-	uip_ipaddr_t orig_addr;
+  uint8_t type;
+  uint8_t addr_len;
+  uint16_t seqno;
+  uint8_t metric;
+  uint8_t route_cost;
+  uip_ipaddr_t dest_addr;
+  uip_ipaddr_t orig_addr;
 };
 
 /* RRPL RREP message */
 #define RRPL_RREP_TYPE     1
 
 struct rrpl_msg_rrep {
-	uint8_t type;
-	uint8_t addr_len;
-	uint16_t seqno;
-	uint8_t metric;
-	uint8_t route_cost;
-	uip_ipaddr_t dest_addr;
-	uip_ipaddr_t orig_addr;
+  uint8_t type;
+  uint8_t addr_len;
+  uint16_t seqno;
+  uint8_t metric;
+  uint8_t route_cost;
+  uip_ipaddr_t dest_addr;
+  uip_ipaddr_t orig_addr;
 };
 
 /* RRPL RREP-ACK message */
 #define RRPL_RACK_TYPE     2
 
 struct rrpl_msg_rack {
-	uint8_t type;
-	uint8_t addr_len;
-	uip_ipaddr_t src_addr;
-	uint16_t seqno;
-
+  uint8_t type;
+  uint8_t addr_len;
+  uip_ipaddr_t src_addr;
+  uint16_t seqno;
 };
 
 /* RRPL RERR message */
 #define RRPL_RERR_TYPE     3
 
 struct rrpl_msg_rerr {
-	uint8_t type;
-	uint8_t addr_len;
-	uip_ipaddr_t src_addr;
-	uip_ipaddr_t addr_in_error;
-
+  uint8_t type;
+  uint8_t addr_len;
+  uip_ipaddr_t src_addr;
+  uip_ipaddr_t addr_in_error;
 };
 
 
@@ -158,20 +162,20 @@ struct rrpl_msg_rerr {
 #define RRPL_OPT_TYPE      4
 
 struct rrpl_msg_opt {
-	uint8_t type;
-	uint8_t addr_len;
-	uint16_t seqno;
-	int8_t rank;
-        uint8_t metric;
-	uip_ipaddr_t sink_addr;
+  uint8_t type;
+  uint8_t addr_len;
+  uint16_t seqno;
+  int8_t rank;
+  uint8_t metric;
+  uip_ipaddr_t sink_addr;
 };
 
 /* RRPL QRY message */
 #define RRPL_QRY_TYPE      5
 
 struct rrpl_msg_qry {
-	uint8_t type;
-	uint8_t addr_len;
+  uint8_t type;
+  uint8_t addr_len;
 };
 
 #endif /* __RRPL_DEF_H__ */

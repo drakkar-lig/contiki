@@ -64,7 +64,9 @@
 /* Frequency of OPT broadcasting */
 #define SEND_OPT_INTERVAL       100 * CLOCK_SECOND
 
-#define RETRY_CHECK_INTERVAL    5 * CLOCK_SECOND
+/* RREQ retransmission interval (in ticks) */
+#define RETRY_RREQ_INTERVAL     5 * CLOCK_SECOND / 1000
+
 #define RV_CHECK_INTERVAL       10 * CLOCK_SECOND
 #define MAX_PAYLOAD_LEN         50
 #define DEFAULT_PREFIX_LEN      128
@@ -129,10 +131,6 @@ rrpl_route_lookup(uip_ipaddr_t *addr)
   uip_ds6_route_t *found_route;
   uint8_t longestmatch;
 
-  PRINTF("RRPL: Looking up route for ");
-  PRINT6ADDR(addr);
-  PRINTF("\n");
-
   found_route = NULL;
   longestmatch = 0;
   for(r = uip_ds6_route_head();
@@ -146,11 +144,15 @@ rrpl_route_lookup(uip_ipaddr_t *addr)
   }
 
   if(found_route != NULL) {
-    PRINTF("RRPL: route found via ");
+    PRINTF("RRPL: Look up route for destination ");
+    PRINT6ADDR(addr);
+    PRINTF(": found (via ");
     PRINT6ADDR(uip_ds6_route_nexthop(found_route));
-    PRINTF("\n");
+    PRINTF(")\n");
   } else {
-    PRINTF("RRPL: No route found\n");
+    PRINTF("RRPL: Look up route for destination ");
+    PRINT6ADDR(addr);
+    PRINTF(": not found\n");
   }
 
   return found_route;
@@ -224,9 +226,10 @@ fwc_add(const uip_ipaddr_t *orig, const uint16_t *seqno)
 
 
 /*---------------------------------------------------------------------------*/
-/* Implementation of route request cache for RRPL_RREQ_RETRIES and RRPL_NET_TRAVERSAL_TIME */
+/* Implementation of Route Request Cache for RRPL_RREQ_RETRIES and
+ * RRPL_NET_TRAVERSAL_TIME */
 #if RRPL_RREQ_RETRIES
-#define RRCACHE 2
+#define RRCACHE 2 /* Size of the cache */
 
 static struct {
   uip_ipaddr_t dest;
@@ -256,11 +259,13 @@ static void
 rrc_add(const uip_ipaddr_t *dest)
 {
   unsigned n = (((uint8_t *)dest)[0] + ((uint8_t *)dest)[15]) % RRCACHE;
-  rrcache[n].expire_time = RRPL_NET_TRAVERSAL_TIME;
+  rrcache[n].expire_time = 2 * RRPL_NET_TRAVERSAL_TIME;
   rrcache[n].request_time = 1;
   uip_ipaddr_copy(&rrcache[n].dest, dest);
 }
 
+/* Check the expired RREQ. `interval` is the time interval between last check
+ * and now (expressed in ticks). */
 static void
 rrc_check_expired_rreq(uint16_t interval)
 {
@@ -273,7 +278,7 @@ rrc_check_expired_rreq(uint16_t interval)
       if(rrcache[i].request_time == RRPL_RREQ_RETRIES) {
          rrc_remove(&rrcache[i].dest);
       } else {
-         rrcache[i].expire_time = RRPL_NET_TRAVERSAL_TIME; // FIXME: RRPL_NET_TRAVERSAL_TIME or 2*RRPL_NET_TRAVERSAL_TIME ?
+         rrcache[i].expire_time = 2 * RRPL_NET_TRAVERSAL_TIME;
       }
     }
   }
@@ -307,7 +312,7 @@ uip_ds6_route_print(void)
 static inline uint8_t
 get_weaklink(uint8_t metric)
 {
-  return (metric & 0x0f) ;
+  return (metric & 0x0f);
 }
 
 static inline uint8_t
@@ -368,7 +373,7 @@ rrpl_rand_wait()
 {
 #if RRPL_RANDOM_WAIT == 1
       PRINTF("RRPL: Waiting rand time\n");
-      clock_wait(random_rand()%50 * CLOCK_SECOND / 100);
+      clock_wait(random_rand() % 50 * CLOCK_SECOND / 100);
       PRINTF("RRPL: Done waiting rand time\n");
 #endif
 }
@@ -423,8 +428,8 @@ send_qry()
   char buf[MAX_PAYLOAD_LEN];
   struct rrpl_msg_qry *rm = (struct rrpl_msg_qry *)buf;
 
-  PRINTF("RRPL: Broadcast QRY. Next one in %.3fms\n",
-      ((SEND_OPT_INTERVAL - ((uint32_t)qry_exp_residuum * QRY_EXP_PARAM)) * 1000 / CLOCK_SECOND));
+  PRINTF("RRPL: Broadcast QRY. Next one in %u ms\n",
+      (unsigned) ((SEND_OPT_INTERVAL - ((uint32_t)qry_exp_residuum * QRY_EXP_PARAM)) * 1000 / CLOCK_SECOND));
 
   // Create and send QRY
   rm->type = RRPL_QRY_TYPE;
@@ -571,17 +576,19 @@ send_rrep(uip_ipaddr_t *dest, uip_ipaddr_t *nexthop, uip_ipaddr_t *orig,
   uip_ipaddr_copy(&rm->dest_addr, dest);
   udpconn->ttl = RRPL_MAX_DIST;
   uip_ipaddr_copy(&udpconn->ripaddr, nexthop);
-  PRINTF("RRPL: RREP length: %u\n", sizeof(struct rrpl_msg_rrep));
   uip_udp_packet_send(udpconn, buf, sizeof(struct rrpl_msg_rrep));
   memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
 }
 
 /*---------------------------------------------------------------------------*/
+/* Format and send a RERR message. `src` is mapped to `RERR.src_addr`, `dest`
+ * to `RERR.addr_in_error`, and message is transmitted to `nexthop`. */
 static void
 send_rerr(uip_ipaddr_t *src, uip_ipaddr_t *dest, uip_ipaddr_t *nexthop)
 {
   char buf[MAX_PAYLOAD_LEN];
   struct rrpl_msg_rerr *rm = (struct rrpl_msg_rerr *)buf;
+
   PRINTF("RRPL: Send RERR towards src: ");
   PRINT6ADDR(src);
   PRINTF(" for address in error: ");
@@ -589,6 +596,7 @@ send_rerr(uip_ipaddr_t *src, uip_ipaddr_t *dest, uip_ipaddr_t *nexthop)
   PRINTF(" nexthop: ");
   PRINT6ADDR(nexthop);
   PRINTF("\n");
+
   rm->type = RRPL_RERR_TYPE;
   rm->type = (rm->type << 4) | RRPL_RSVD1;
   rm->addr_len = RRPL_RSVD2;
@@ -596,8 +604,8 @@ send_rerr(uip_ipaddr_t *src, uip_ipaddr_t *dest, uip_ipaddr_t *nexthop)
   uip_ipaddr_copy(&rm->addr_in_error, dest);
   uip_ipaddr_copy(&rm->src_addr, src);
   udpconn->ttl = RRPL_MAX_DIST;
+
   uip_ipaddr_copy(&udpconn->ripaddr, nexthop);
-  PRINTF("RRPL: RERR length: %u\n", sizeof(struct rrpl_msg_rerr));
   uip_udp_packet_send(udpconn, buf, sizeof(struct rrpl_msg_rerr));
   memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
 }
@@ -654,7 +662,6 @@ handle_incoming_rreq(void)
     return;
   }
 
-
   /* Do not add reverse route while receiving RREQ, only useful with LOADng without DODAG
   rt = rrpl_route_lookup(&rm->orig_addr);
 
@@ -690,7 +697,7 @@ handle_incoming_rreq(void)
     my_hseqno++;
     if(my_hseqno > MAX_SEQNO)
       my_hseqno = 1;
-    send_rrep(&dest_addr, &UIP_IP_BUF->srcipaddr, &orig_addr, &my_hseqno, 0); // FIXME: next hop = srcipaddr => we go on another branch of the tree…
+    send_rrep(&dest_addr, &UIP_IP_BUF->srcipaddr, &orig_addr, &my_hseqno, 0);
 
 #if RRPL_IS_COORDINATOR()
   } else {
@@ -733,7 +740,7 @@ handle_incoming_rrep(void)
   PRINT6ADDR(&rm->orig_addr);
   PRINTF(" dest ");
   PRINT6ADDR(&rm->dest_addr);
-  PRINTF("\r\n");
+  PRINTF("\n");
 
   rt = rrpl_route_lookup(&rm->orig_addr);
 
@@ -761,7 +768,7 @@ handle_incoming_rrep(void)
 
   /* Forward RREP towards originator? */
   if(uip_ipaddr_cmp(&rm->dest_addr, &myipaddr)) {
-    PRINTF("RRPL: Received RREP to our own RREQ\n");
+    PRINTF("RRPL: Received RREP to ourself\n");
 #if RRPL_RREQ_RETRIES
     //remove route request cache
     rrc_remove(&rm->orig_addr);
@@ -787,7 +794,6 @@ handle_incoming_rrep(void)
     uip_ipaddr_copy(&udpconn->ripaddr, nexthop);
     uip_udp_packet_send(udpconn, rm, sizeof(struct rrpl_msg_rrep));
     memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
-
   }
 }
 
@@ -942,7 +948,7 @@ change_default_route(struct rrpl_msg_opt *rm)
   uip_ipaddr_copy(&def_rt_addr, &UIP_IP_BUF->srcipaddr);
 
 #if RRPL_IS_COORDINATOR()
-  etimer_set(&send_opt_et, random_rand() / 1000);
+  etimer_set(&send_opt_et, random_rand() % 50 * CLOCK_SECOND / 100);
 #endif
 
   // FIXME: code specific to beacon-enabled
@@ -1012,7 +1018,7 @@ handle_incoming_opt(void)
     if(my_hseqno>MAX_SEQNO)
       my_hseqno = 1;
     nexthop = uip_ds6_defrt_choose();
-       send_rrep(&rm->sink_addr, nexthop, &myipaddr, &my_hseqno, 0);
+    send_rrep(&rm->sink_addr, nexthop, &myipaddr, &my_hseqno, 0);
 #endif // RRPL_IS_SKIP_LEAF
     } else {
        PRINTF("RRPL: Not a better rank/RSSI\n");
@@ -1109,12 +1115,13 @@ rrpl_addr_matches_local_prefix(uip_ipaddr_t *host)
 void
 rrpl_request_route_to(uip_ipaddr_t *host)
 {
-
   if(in_rrpl_call) {
     return;
   }
+
 #if !RRPL_IS_SINK && USE_OPT
-  // Schedule QRY transmission: if we are here, it's because we've lost our default next hop
+  /* Schedule QRY transmission: if we are here, it's because we've lost our
+     default next hop */
   PROCESS_CONTEXT_BEGIN(&rrpl_process);
   enable_qry();
   PROCESS_CONTEXT_END(&rrpl_process) ;
@@ -1267,8 +1274,8 @@ PROCESS_THREAD(rrpl_process, ev, data)
 #endif
 
 #if RRPL_RREQ_RETRIES
-  PRINTF("RRPL: Set timer for RREQ retry %u\n", RETRY_CHECK_INTERVAL);
-  etimer_set(&dfet, RETRY_CHECK_INTERVAL);
+  PRINTF("RRPL: Set timer for RREQ retry %u ms\n", RETRY_RREQ_INTERVAL * 1000 / CLOCK_SECOND);
+  etimer_set(&dfet, RETRY_RREQ_INTERVAL);
 #endif
 
 #if RRPL_RREQ_RATELIMIT
@@ -1319,7 +1326,7 @@ PROCESS_THREAD(rrpl_process, ev, data)
 
 #if RRPL_RREQ_RETRIES
     if(etimer_expired(&dfet)) {
-      rrc_check_expired_rreq(RETRY_CHECK_INTERVAL);
+      rrc_check_expired_rreq(RETRY_RREQ_INTERVAL);
       etimer_restart(&dfet);
     }
 #endif
@@ -1334,7 +1341,7 @@ PROCESS_THREAD(rrpl_process, ev, data)
     if(ev == PROCESS_EVENT_MSG) {
         if(command == COMMAND_SEND_RREQ) {
             PRINTF("RRPL: Send RREQ\n");
-            ctimer_set(&sendmsg_ctimer, random_rand()%50 * CLOCK_SECOND / 1000,
+            ctimer_set(&sendmsg_ctimer, random_rand() % 50 * CLOCK_SECOND / 1000,
                      (void (*)(void *))send_rreq, NULL);
         } else if (command == COMMAND_SEND_RERR) {
           send_rerr(&rerr_src_addr, &rerr_bad_addr, &rerr_next_addr);

@@ -34,8 +34,8 @@
 /**
  * \file
  *         RRPL routing header.
- * \author 
- *         Chi-Anh La la@imag.fr         
+ * \author
+ *         Chi-Anh La la@imag.fr
  */
 
 #ifndef __RRPL_H__
@@ -45,6 +45,7 @@
 #ifdef UIP_DS6_ROUTE_STATE_TYPE
 #undef UIP_DS6_ROUTE_STATE_TYPE
 #endif
+
 // This is used in uip-ds6-route included further down
 #define UIP_DS6_ROUTE_STATE_TYPE rrpl_route_entry_t
 typedef struct rrpl_route_entry {
@@ -57,19 +58,27 @@ typedef struct rrpl_route_entry {
 #include "net/ipv6/uip-ds6.h"
 
 
-
-void send_opt(void);
+void
+send_opt(void);
 
 void
 reinitialize_default_route(void);
+
 void
 rrpl_request_route_to(uip_ipaddr_t *host);
+
 void
 rrpl_no_route(uip_ipaddr_t *dest, uip_ipaddr_t *src);
+
 void
 rrpl_set_local_prefix(uip_ipaddr_t *prefix, uint8_t len);
-uint8_t rrpl_addr_matches_local_prefix(uip_ipaddr_t *host);
-uint8_t rrpl_is_my_global_address(uip_ipaddr_t *addr);
-PROCESS_NAME(rrpl_process);
-#endif /* __RRPL_H__ */
 
+uint8_t
+rrpl_addr_matches_local_prefix(uip_ipaddr_t *host);
+
+uint8_t
+rrpl_is_my_global_address(uip_ipaddr_t *addr);
+
+PROCESS_NAME(rrpl_process);
+
+#endif /* __RRPL_H__ */
