@@ -833,14 +833,14 @@ handle_incoming_rerr(void)
   struct rrpl_msg_rerr *rm = (struct rrpl_msg_rerr *)uip_appdata;
   struct uip_ds6_route *rt_in_err;
   struct uip_ds6_route *rt;
+#if ! RRPL_IS_SINK
   uip_ds6_defrt_t *defrt;
+#endif // ! RRPL_IS_SINK
 
-  #if USE_OPT
+#if USE_OPT
   uip_ipaddr_t mcastLoadAddr;
   uip_create_linklocal_lln_routers_mcast(&mcastLoadAddr);
-  #endif //USE_OPT
-
-
+#endif // USE_OPT
 
   PRINTF("RRPL: RERR ");
   PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
@@ -851,48 +851,60 @@ handle_incoming_rerr(void)
   PRINT6ADDR(&rm->src_addr);
   PRINTF(" addr in error : ");
   PRINT6ADDR(&rm->addr_in_error);
-  PRINTF("\r\n");
+  PRINTF("\n");
 
-  rt_in_err = rrpl_route_lookup(&rm->addr_in_error);
-  rt = rrpl_route_lookup(&rm->src_addr);
-
-  // It may happen that the address in error is mine... Stop here !
+  /* It may happen that the address in error is mine... Stop here ! */
   if(rrpl_is_my_global_address(&rm->addr_in_error)) {
     return;
   }
 
-  /* No route? */
+  rt_in_err = rrpl_route_lookup(&rm->addr_in_error);
+  rt = rrpl_route_lookup(&rm->src_addr);
+
+  /* No route ? */
   if(rt_in_err == NULL) {
     PRINTF("RRPL: Received RERR for non-existing route\n");
   } else {
     uip_ds6_route_rm(rt_in_err); /* Remove route */
   }
 
-  #if USE_OPT
-  // if the RERR comes from a default router and it's for me, send spontaneous RREP
+#if ! RRPL_IS_SINK
+#if USE_OPT
+  /* If the RERR comes from a default router, we are, in the tree, under this
+   * router */
   defrt = uip_ds6_defrt_lookup(&UIP_IP_BUF->srcipaddr);
-  if(defrt != NULL && rrpl_is_my_global_address(&rm->src_addr)) {
-    PRINTF("RRPL: Spontaneously send RREP\n");
-    my_hseqno++;
-    send_rrep(&my_sink_id, &defrt->ipaddr, &myipaddr, &my_hseqno, 0);
-    return;
-  }
-  // otherwise, if there is a matching tupple, send along default route
-
-  #endif //USE_OPT
-  // Draft draft-clausen-lln-rrpl-10#section-14.3 : still forward even if no matching routing tupple found
-  if(rt != NULL) {
-    send_rerr(&rm->src_addr, &rm->addr_in_error, uip_ds6_route_nexthop(rt));
-  } /* Forward RERR to nexthop */
-  #if USE_OPT
-  // If the RERR was multicast and I had a route, send along default route
-  // If not multicast, send along default route
-  else if(!uip_ipaddr_cmp(&UIP_IP_BUF->destipaddr, &mcastLoadAddr) || rt_in_err != NULL) {
+  if(defrt != NULL) {
+    if(rrpl_is_my_global_address(&rm->src_addr)) {
+      /* RERR is for me, send a RREP */
+      PRINTF("RRPL: Spontaneously send RREP\n");
+      my_hseqno++;
+      if(my_hseqno > MAX_SEQNO)
+        my_hseqno = 1;
+      send_rrep(&my_sink_id, &defrt->ipaddr, &myipaddr, &my_hseqno, 0);
+      return;
+    } else {
+#endif /* USE_OPT */
+      if (rt != NULL) {
+        /* We know where is the source. Forward RERR to nexthop */
+        PRINTF("RRPL: Forward RERR to nexthop\n");
+        send_rerr(&rm->src_addr, &rm->addr_in_error, uip_ds6_route_nexthop(rt));
+      } else {
+        PRINTF("RRPL: Skipping RERR: unknown source\n");
+      }
+#if USE_OPT
+    }
+  } else if(!uip_ipaddr_cmp(&UIP_IP_BUF->destipaddr, &mcastLoadAddr) ||
+            rt_in_err != NULL) {
+    /* The RERR was multicast and I had a route, or it was send to me, so
+     * it goes along default route. */
+    PRINTF("RRPL: Forward RERR along the default route\n");
     if(!rrpl_is_my_global_address(&rm->src_addr))
       send_rerr(&rm->src_addr, &rm->addr_in_error, uip_ds6_defrt_choose());
+  } else {
+    PRINTF("RRPL: skipping RERR: unknown destination\n");
   }
-  #endif //USE_OPT
-
+#endif /* USE_OPT */
+#endif /* ! RRPL_IS_SINK */
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1129,7 +1141,7 @@ rrpl_request_route_to(uip_ipaddr_t *host)
 #endif
   if(!rrpl_addr_matches_local_prefix(host)) {
     PRINTF("No RREQ for non-local address\n");
-    //no local prefix matches this addr, no RREQ for non-local address
+    // no local prefix matches this addr, no RREQ for non-local address
     return;
   }
 #if RRPL_RREQ_RATELIMIT
@@ -1160,27 +1172,35 @@ rrpl_request_route_to(uip_ipaddr_t *host)
 }
 
 /*---------------------------------------------------------------------------*/
+/* Warn RRPL that a packet need to be routed, but there is not the needed
+ * routes into the routing table. `dest` and `src` parameters are destination
+ * and source of the packet in error. This function can be called from outer
+ * RRPL process */
 void
 rrpl_no_route(uip_ipaddr_t *dest, uip_ipaddr_t *src)
 {
   struct uip_ds6_route *rt = NULL;
   uip_ipaddr_t nexthop;
   uip_ipaddr_t *nexthptr = &nexthop;
+
+  PRINTF("RRPL: no route for paquet (dest: ");
+  PRINT6ADDR(dest);
+  PRINTF(", src: ");
+  PRINT6ADDR(src);
+  PRINTF(")\n");
+
   rt = rrpl_route_lookup(src);
-  PRINTF("rrpl_no_route(): dest:"); PRINT6ADDR(dest); PRINTF(" src:");PRINT6ADDR(src);PRINTF("\n");
-  if(rt == NULL){
-    PRINTF("rt is NULL\n");
-    #if USE_OPT
-    // multicast RERR so the neighbors are notified -- this is helpful if a node has lost memory
+  if(rt == NULL) {
+#if USE_OPT
+    /* Multicast RERR so the neighbors are notified -- this is helpful if a
+     * node has lost memory */
     uip_create_linklocal_lln_routers_mcast(nexthptr);
-    PRINTF("send to: "); PRINT6ADDR(nexthptr);PRINTF("\n");
-    #else
-    PRINTF("RRPL: Send a RERR with no route source address\n");
+#else
+    PRINTF("RRPL: No route to source address. Skipping.\n");
     return;
-    #endif //USE_OPT
-  }
-  else{
-    nexthptr=uip_ds6_route_nexthop(rt);
+#endif /* USE_OPT */
+  } else {
+    nexthptr = uip_ds6_route_nexthop(rt);
   }
   uip_ipaddr_copy(&rerr_bad_addr, dest);
   uip_ipaddr_copy(&rerr_src_addr, src);

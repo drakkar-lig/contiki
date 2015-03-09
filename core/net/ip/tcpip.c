@@ -578,10 +578,10 @@ tcpip_ipv6_output(void)
 
       /* No route was found - we send to the default route instead. */
       if(route == NULL) {
-        #if WITH_IPV6_RRPL
+#if WITH_IPV6_RRPL
         PRINTF("uip-ds6-route: Call rrpl to request route\n");
         rrpl_request_route_to(&UIP_IP_BUF->destipaddr);
-        #endif
+#endif
 
         PRINTF("tcpip_ipv6_output: no route found, using default route\n");
         nexthop = uip_ds6_defrt_choose();
@@ -603,28 +603,71 @@ tcpip_ipv6_output(void)
           uip_len = 0;
           return;
         }
-        #if WITH_IPV6_RRPL && USE_OPT
-        else{// the packet is on the dflt route
-          // check route to pkt src if the dest is within local network
+#if WITH_IPV6_RRPL && USE_OPT
+        else{ /* the packet is on the dflt route */
+          /* Check route to paquet source if the destination is within local
+           * network */
           uip_ds6_route_t *tosrc;
-          if(rrpl_addr_matches_local_prefix(&UIP_IP_BUF->destipaddr) && ! (uip_is_addr_link_local(&UIP_IP_BUF->destipaddr) ||uip_is_addr_link_local(&UIP_IP_BUF->srcipaddr) ) && ! rrpl_is_my_global_address(&UIP_IP_BUF->srcipaddr)){
-            PRINTF("src check \n ");
-            tosrc=uip_ds6_route_lookup(&UIP_IP_BUF->srcipaddr);
-            if(tosrc ==NULL){
-              PRINTF("tcpip_ipv6_output: Discarding pkt on default route with unknown SRC addr\n");
-              //No route to src, we are in trouble, this could be a loop
-              // We only allow packets to follow the dflt route if we know the route to the src
-              //fixme: sendRERR()
+          if(rrpl_addr_matches_local_prefix(&UIP_IP_BUF->destipaddr)
+              && !(uip_is_addr_link_local(&UIP_IP_BUF->destipaddr)
+                || uip_is_addr_link_local(&UIP_IP_BUF->srcipaddr))
+              && !rrpl_is_my_global_address(&UIP_IP_BUF->srcipaddr)) {
+            tosrc = uip_ds6_route_lookup(&UIP_IP_BUF->srcipaddr);
+
+            if(tosrc == NULL) {
+              /* No route to src, we are in trouble, this could be a loop.
+               * We only allow packets to follow the dflt route if we know the
+               * route to the src. */
+              PRINTF("tcpip_ipv6_output: "
+                  "Discarding packet on default route: "
+                  "unknown SRC addr\n");
+              rrpl_no_route(&UIP_IP_BUF->destipaddr, &UIP_IP_BUF->srcipaddr);
+              uip_len = 0;
+              return;
+            }
+
+            uip_ds6_nbr_t* sender = uip_ds6_nbr_ll_lookup((uip_lladdr_t*)
+                packetbuf_addr(PACKETBUF_ADDR_SENDER));
+            if (sender == NULL) {
+              PRINTF("tcpip_ipv6_output: "
+                  "Discarding packet on default route: "
+                  "previous hop is not a neighbor\n");
+              uip_len = 0;
+              return;
+            }
+
+            /* Check if packet comes from default next hop. If so the packet is
+             * on a loop. Drop it. */
+            if (uip_ipaddr_cmp(&sender->ipaddr, nexthop)) {
+              PRINTF("tcpip_ipv6_output: "
+                  "Discarding packet on default route: "
+                  "comes from our default route\n");
+              rrpl_no_route(&UIP_IP_BUF->destipaddr, &UIP_IP_BUF->srcipaddr);
+              uip_len = 0;
+              return;
+            }
+
+            /* Check if the sender is used as one route's next-hop. If not,
+             * the packet is refused: only registered sons can send packets to
+             * avoid loops. */
+            uip_ds6_route_t *r;
+            for(r = uip_ds6_route_head();
+                r != NULL;
+                r = uip_ds6_route_next(r)) {
+              if(uip_ipaddr_cmp(uip_ds6_route_nexthop(r), sender)) break;
+            }
+            if(r == NULL) {
+              /* Sender never used as next-hop. Refuse packet. */
+              PRINTF("tcpip_ipv6_output: "
+                  "Discarding packet on default route: "
+                  "previous-hop is not in routing table\n");
               rrpl_no_route(&UIP_IP_BUF->destipaddr, &UIP_IP_BUF->srcipaddr);
               uip_len = 0;
               return;
             }
           }
         }
-        
-        
-        #endif
-
+#endif /* WITH_IPV6_RRPL && USE_OPT */
 
       } else {
         /* A route was found, so we look up the nexthop neighbor for
