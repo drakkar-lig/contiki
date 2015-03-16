@@ -916,6 +916,7 @@ reinitialize_default_route(void)
   my_parent_rssi = -126;
   my_seq_id = 0;
   uip_ds6_defrt_t *defrt;
+  ANNOTATE("#L %u 0\n", def_rt_addr.u8[sizeof(def_rt_addr) - 1]);
   defrt = uip_ds6_defrt_lookup(&def_rt_addr);
   if(defrt != NULL) {
     uip_ds6_defrt_rm(defrt);
@@ -957,7 +958,9 @@ change_default_route(struct rrpl_msg_opt *rm)
   uip_rrpl_nbr_add(&UIP_IP_BUF->srcipaddr);
 
   uip_ds6_defrt_add(&UIP_IP_BUF->srcipaddr, RRPL_DEFAULT_ROUTE_LIFETIME);
+  ANNOTATE("#L %u 0\n", def_rt_addr.u8[sizeof(def_rt_addr) - 1]);
   uip_ipaddr_copy(&def_rt_addr, &UIP_IP_BUF->srcipaddr);
+  ANNOTATE("#L %u 1;red\n", def_rt_addr.u8[sizeof(def_rt_addr) - 1]);
 
 #if RRPL_IS_COORDINATOR()
   etimer_set(&send_opt_et, random_rand() % 50 * CLOCK_SECOND / 100);
