@@ -1213,6 +1213,22 @@ rrpl_no_route(uip_ipaddr_t *dest, uip_ipaddr_t *src)
 }
 
 /*---------------------------------------------------------------------------*/
+static void
+rrpl_routing_error(uip_ipaddr_t* source, uip_ipaddr_t* destination,
+    uip_lladdr_t* previoushop)
+{
+  uip_ds6_route_rm(uip_ds6_route_lookup(destination));
+
+  uip_ipaddr_copy(&rerr_src_addr, source);
+  uip_ipaddr_copy(&rerr_bad_addr, destination);
+  uip_ipaddr_copy(&rerr_next_addr,
+      uip_ds6_nbr_ipaddr_from_lladdr(previoushop));
+
+  command = COMMAND_SEND_RERR;
+  process_post(&rrpl_process, PROCESS_EVENT_MSG, NULL);
+}
+
+/*---------------------------------------------------------------------------*/
 void
 rrpl_set_local_prefix(uip_ipaddr_t *prefix, uint8_t len)
 {
@@ -1254,6 +1270,112 @@ rrpl_is_my_global_address(uip_ipaddr_t *addr)
     }
   }
   return 0;
+}
+
+/*---------------------------------------------------------------------------*/
+uip_ipaddr_t*
+rrpl_select_nexthop_for(uip_ipaddr_t* source, uip_ipaddr_t* destination,
+    uip_lladdr_t* previoushop)
+{
+#if !RRPL_IS_SINK
+  uip_ds6_route_t *r;
+#endif /* !RRPL_IS_SINK */
+  uip_ds6_route_t *route_to_dest;
+  uip_ipaddr_t *defrt, *nexthop;
+
+  if(!rrpl_addr_matches_local_prefix(&UIP_IP_BUF->destipaddr)) {
+    /* The destination is not in local network. Send the packet to sink. */
+    defrt = uip_ds6_defrt_choose();
+    if(defrt == NULL) {
+      PRINTF("RRPL: Discarding packet: no default route\n");
+    } else {
+      PRINTF("RRPL: Routing to sink: external dest\n");
+    }
+    return defrt; /* If defrt is NULL, drop the packet */
+  }
+
+  route_to_dest = uip_ds6_route_lookup(destination);
+#if !RRPL_IS_SINK
+  /* Is the previous hop into the subtree? */
+  for(r = uip_ds6_route_head();
+      r != NULL;
+      r = uip_ds6_route_next(r)) {
+    if(memcmp(uip_ds6_nbr_lladdr_from_ipaddr(uip_ds6_route_nexthop(r)),
+            previoushop, sizeof(uip_lladdr_t)) == 0) break;
+  }
+
+  if(r == NULL && !rrpl_is_my_global_address(&UIP_IP_BUF->srcipaddr)) {
+    /* The previous hop is not into the subtree */
+    if(route_to_dest == NULL) {
+      /* No host route */
+      PRINTF("RRPL: Discarding packet: previous hop is not into the subtree "
+          "and no host route is provided for dest\n");
+      rrpl_routing_error(source, destination, previoushop);
+      return NULL;
+    } else {
+      /* Valid host route */
+      nexthop = uip_ds6_route_nexthop(route_to_dest);
+      if(nexthop == NULL) {
+        /* The nexthop is not in neighbor table */
+        PRINTF("RRPL: Discarding packet: nexthop ");
+        PRINT6ADDR(nexthop);
+        PRINTF(" in routing table is not in neighbor table\n");
+        return NULL;
+      } else {
+        /* The packet goes into subtree */
+        PRINTF("RRPL: Routing through ");
+        PRINT6ADDR(nexthop);
+        PRINTF(": comes from outer and goes into the subtree\n");
+        return nexthop;
+      }
+    }
+  } else {
+#endif /* !RRPL_IS_SINK */
+    /* The previous hop is into the subtree */
+    if(route_to_dest == NULL) {
+      /* No host route */
+#if RRPL_IS_SINK
+      /* Send RREQ */
+      rrpl_request_route_to(destination);
+      return NULL;
+#else /* if not RRPL_IS_SINK */
+      /* Use default route instead */
+      nexthop = uip_ds6_defrt_choose();
+      if(nexthop == NULL) {
+        PRINTF("RRPL: Discarding packet: no default route\n");
+        return NULL;
+      }
+#endif /* RRPL_IS_SINK */
+    } else {
+      /* Use provided host route */
+      nexthop = uip_ds6_route_nexthop(route_to_dest);
+    }
+    if(nexthop == NULL) {
+      /* The nexthop is not in neighbor table */
+      PRINTF("RRPL: Discarding packet: nexthop ");
+      PRINT6ADDR(nexthop);
+      PRINTF(" in routing table is not in neighbor table\n");
+      return NULL;
+    } else if(uip_ipaddr_cmp(uip_ds6_nbr_lladdr_from_ipaddr(nexthop),
+          previoushop)) {
+      /* Previous hop and next hop is identical */
+      PRINTF("RRPL: Discarding packet: "
+          "nexthop and previoushop is identical\n");
+      rrpl_routing_error(source, destination, previoushop);
+      return NULL;
+    } else {
+      PRINTF("RRPL: Routing through ");
+      PRINT6ADDR(nexthop);
+      if(route_to_dest == NULL) {
+        PRINTF(": is default route\n");
+      } else {
+        PRINTF(": comes from another son into subtree\n");
+      }
+      return nexthop;
+    }
+#if !RRPL_IS_SINK
+  }
+#endif /* !RRPL_IS_SINK */
 }
 
 /*---------------------------------------------------------------------------*/

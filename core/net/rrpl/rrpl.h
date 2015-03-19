@@ -79,6 +79,14 @@ rrpl_addr_matches_local_prefix(uip_ipaddr_t *host);
 uint8_t
 rrpl_is_my_global_address(uip_ipaddr_t *addr);
 
+/**
+ * \brief   Select and return the nexthop to which send packet.
+ * \return  The nexthop to use, or NULL if the packet have to be discarded
+ */
+uip_ipaddr_t*
+rrpl_select_nexthop_for(uip_ipaddr_t* source, uip_ipaddr_t* destination,
+    uip_lladdr_t* previoushop);
+
 PROCESS_NAME(rrpl_process);
 
 #endif /* __RRPL_H__ */
