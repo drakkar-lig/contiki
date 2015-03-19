@@ -182,8 +182,6 @@ rrpl_check_expired_route(uint16_t interval)
 #endif // RRPL_R_HOLD_TIME
 
 
-
-
 /*---------------------------------------------------------------------------*/
 /* Implementation of route flush */
 #if ! RRPL_IS_SINK
@@ -199,6 +197,7 @@ rrpl_flush_routes()
   }
 }
 #endif
+
 
 /*---------------------------------------------------------------------------*/
 /* Implementation of request forwarding cache to avoid multiple forwarding */
@@ -309,12 +308,14 @@ uip_ds6_route_print(void)
   PRINTF("\n");
 }
 
+/*---------------------------------------------------------------------------*/
 static inline uint8_t
 get_weaklink(uint8_t metric)
 {
   return (metric & 0x0f);
 }
 
+/*---------------------------------------------------------------------------*/
 static inline uint8_t
 parent_weaklink(int8_t rssi)
 {
@@ -341,6 +342,7 @@ get_global_addr(uip_ipaddr_t *addr)
   return 0;
 }
 
+/*---------------------------------------------------------------------------*/
 static void
 uip_rrpl_nbr_add(uip_ipaddr_t* next_hop)
 {
@@ -368,7 +370,8 @@ uip_rrpl_nbr_add(uip_ipaddr_t* next_hop)
 #endif // !UIP_ND6_SEND_NA
 }
 
-void
+/*---------------------------------------------------------------------------*/
+static void
 rrpl_rand_wait()
 {
 #if RRPL_RANDOM_WAIT == 1
@@ -378,6 +381,7 @@ rrpl_rand_wait()
 #endif
 }
 
+/*---------------------------------------------------------------------------*/
 static uip_ds6_route_t*
 uip_rrpl_route_add(uip_ipaddr_t* orig_addr, uint8_t length,
             uip_ipaddr_t* next_hop, uint8_t route_cost, uint16_t seqno)
@@ -406,7 +410,93 @@ uip_rrpl_route_add(uip_ipaddr_t* orig_addr, uint8_t length,
 }
 
 /*---------------------------------------------------------------------------*/
-/* Restart QRY timer */
+static uint8_t
+rrpl_is_my_global_address(uip_ipaddr_t *addr)
+{
+  int i;
+  int state;
+
+  for(i = 0; i < UIP_DS6_ADDR_NB; i++) {
+    state = uip_ds6_if.addr_list[i].state;
+    if(uip_ds6_if.addr_list[i].isused &&
+       (state == ADDR_TENTATIVE || state == ADDR_PREFERRED)) {
+       if (uip_ipaddr_cmp(addr, &uip_ds6_if.addr_list[i].ipaddr)){
+          return 1 ;
+       }
+    }
+  }
+  return 0;
+}
+
+/*---------------------------------------------------------------------------*/
+static void
+reinitialize_default_route(void)
+{
+  my_rank = 255;
+  my_weaklink = 255;
+  my_parent_rssi = -126;
+  my_seq_id = 0;
+  uip_ds6_defrt_t *defrt;
+  ANNOTATE("#L %u 0\n", def_rt_addr.u8[sizeof(def_rt_addr) - 1]);
+  defrt = uip_ds6_defrt_lookup(&def_rt_addr);
+  if(defrt != NULL) {
+    uip_ds6_defrt_rm(defrt);
+  }
+}
+
+/*---------------------------------------------------------------------------*/
+#if ! RRPL_IS_SINK
+static void
+change_default_route(struct rrpl_msg_opt *rm)
+{
+  uip_ds6_defrt_t *defrt;
+  my_rank = rm->rank + 1;
+  my_weaklink = get_weaklink(rm->metric);
+  // add default route
+  defrt = uip_ds6_defrt_lookup(&def_rt_addr);
+  // First check if we are actually changing of next hop!
+  if(defrt != NULL) {
+    if(!uip_ip6addr_cmp(&defrt->ipaddr, &UIP_IP_BUF->srcipaddr)) {
+      PRINTF("Actually changing of defrt next hop!\n");
+      uip_ds6_defrt_rm(defrt); // remove route
+    } else {
+      // We just need to refresh the route
+      stimer_set(&defrt->lifetime, RRPL_DEFAULT_ROUTE_LIFETIME);
+      return;
+    }
+  }
+
+  // Flush all routes. If I'm changing of parent, It means this new parent
+  // does not know about the nodes below me anyway, so better not keep stale
+  // entries. Moreover, keeping old entries and changing parents can break the
+  // loop avoidance mechanism.
+  rrpl_flush_routes();
+
+  in_rrpl_call = 1;
+
+  PRINTF("RRPL: call uip_rrpl_nbr_add\n");
+  uip_rrpl_nbr_add(&UIP_IP_BUF->srcipaddr);
+
+  uip_ds6_defrt_add(&UIP_IP_BUF->srcipaddr, RRPL_DEFAULT_ROUTE_LIFETIME);
+  ANNOTATE("#L %u 0\n", def_rt_addr.u8[sizeof(def_rt_addr) - 1]);
+  uip_ipaddr_copy(&def_rt_addr, &UIP_IP_BUF->srcipaddr);
+  ANNOTATE("#L %u 1;red\n", def_rt_addr.u8[sizeof(def_rt_addr) - 1]);
+
+#if RRPL_IS_COORDINATOR()
+  etimer_set(&send_opt_et, random_rand() % 50 * CLOCK_SECOND / 100);
+#endif
+
+  // FIXME: code specific to beacon-enabled
+//   uip_lladdr_t coord_addr;
+//   memcpy(&coord_addr, &UIP_IP_BUF->srcipaddr.u8[8], UIP_LLADDR_LEN);
+//   coord_addr.addr[0] ^= 2;
+//   NETSTACK_RDC_CONFIGURATOR.coordinator_choice((void *) &coord_addr,
+//       rm->rank);
+  in_rrpl_call = 0;
+}
+#endif // ! RRPL_IS_SINK
+
+/*---------------------------------------------------------------------------*/
 #if SND_QRY && ! RRPL_IS_SINK
 static void
 enable_qry()
@@ -448,13 +538,8 @@ send_qry()
 #endif // SND_QRY && ! RRPL_IS_SINK
 
 /*---------------------------------------------------------------------------*/
-/* Broadcast a OPT message. */
 #if RRPL_IS_COORDINATOR()
-#if RDC_LAYER_ID == ID_mac_802154_rdc_driver
-void
-#else
 static void
-#endif // RDC_LAYER_ID == ID_mac_802154_rdc_driver
 send_opt()
 {
   char buf[MAX_PAYLOAD_LEN];
@@ -635,7 +720,6 @@ send_rack(uip_ipaddr_t *src, uip_ipaddr_t *nexthop, uint16_t seqno)
   memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
 }
 #endif // RRPL_RREP_ACK
-
 
 /*---------------------------------------------------------------------------*/
 static void
@@ -908,75 +992,6 @@ handle_incoming_rerr(void)
 }
 
 /*---------------------------------------------------------------------------*/
-void
-reinitialize_default_route(void)
-{
-  my_rank = 255;
-  my_weaklink = 255;
-  my_parent_rssi = -126;
-  my_seq_id = 0;
-  uip_ds6_defrt_t *defrt;
-  ANNOTATE("#L %u 0\n", def_rt_addr.u8[sizeof(def_rt_addr) - 1]);
-  defrt = uip_ds6_defrt_lookup(&def_rt_addr);
-  if(defrt != NULL) {
-    uip_ds6_defrt_rm(defrt);
-  }
-}
-
-/*---------------------------------------------------------------------------*/
-/* Change the default route to the specified one. */
-#if ! RRPL_IS_SINK
-static void
-change_default_route(struct rrpl_msg_opt *rm)
-{
-  uip_ds6_defrt_t *defrt;
-  my_rank = rm->rank + 1;
-  my_weaklink = get_weaklink(rm->metric);
-  // add default route
-  defrt = uip_ds6_defrt_lookup(&def_rt_addr);
-  // First check if we are actually changing of next hop!
-  if(defrt != NULL) {
-    if(!uip_ip6addr_cmp(&defrt->ipaddr, &UIP_IP_BUF->srcipaddr)) {
-      PRINTF("Actually changing of defrt next hop!\n");
-      uip_ds6_defrt_rm(defrt); // remove route
-    } else {
-      // We just need to refresh the route
-      stimer_set(&defrt->lifetime, RRPL_DEFAULT_ROUTE_LIFETIME);
-      return;
-    }
-  }
-
-  // Flush all routes. If I'm changing of parent, It means this new parent
-  // does not know about the nodes below me anyway, so better not keep stale
-  // entries. Moreover, keeping old entries and changing parents can break the
-  // loop avoidance mechanism.
-  rrpl_flush_routes();
-
-  in_rrpl_call = 1;
-
-  PRINTF("RRPL: call uip_rrpl_nbr_add\n");
-  uip_rrpl_nbr_add(&UIP_IP_BUF->srcipaddr);
-
-  uip_ds6_defrt_add(&UIP_IP_BUF->srcipaddr, RRPL_DEFAULT_ROUTE_LIFETIME);
-  ANNOTATE("#L %u 0\n", def_rt_addr.u8[sizeof(def_rt_addr) - 1]);
-  uip_ipaddr_copy(&def_rt_addr, &UIP_IP_BUF->srcipaddr);
-  ANNOTATE("#L %u 1;red\n", def_rt_addr.u8[sizeof(def_rt_addr) - 1]);
-
-#if RRPL_IS_COORDINATOR()
-  etimer_set(&send_opt_et, random_rand() % 50 * CLOCK_SECOND / 100);
-#endif
-
-  // FIXME: code specific to beacon-enabled
-//   uip_lladdr_t coord_addr;
-//   memcpy(&coord_addr, &UIP_IP_BUF->srcipaddr.u8[8], UIP_LLADDR_LEN);
-//   coord_addr.addr[0] ^= 2;
-//   NETSTACK_RDC_CONFIGURATOR.coordinator_choice((void *) &coord_addr,
-//       rm->rank);
-  in_rrpl_call = 0;
-}
-#endif // ! RRPL_IS_SINK
-
-/*---------------------------------------------------------------------------*/
 #if ! RRPL_IS_SINK
 static void
 handle_incoming_opt(void)
@@ -1119,98 +1134,52 @@ tcpip_handler(void)
 }
 
 /*---------------------------------------------------------------------------*/
-uint8_t
+static uint8_t
 rrpl_addr_matches_local_prefix(uip_ipaddr_t *host)
 {
   return uip_ipaddr_prefixcmp(&local_prefix, host, local_prefix_len);
 }
 
 /*---------------------------------------------------------------------------*/
-/* Look for the route to a specified host. */
-void
+#if RRPL_IS_SINK
+static void
 rrpl_request_route_to(uip_ipaddr_t *host)
 {
   if(in_rrpl_call) {
     return;
   }
 
-#if !RRPL_IS_SINK && USE_OPT
-  /* Schedule QRY transmission: if we are here, it's because we've lost our
-     default next hop */
-  PROCESS_CONTEXT_BEGIN(&rrpl_process);
-  enable_qry();
-  PROCESS_CONTEXT_END(&rrpl_process) ;
-  return; // only sink sends RREQ
-#endif
-  if(!rrpl_addr_matches_local_prefix(host)) {
-    PRINTF("No RREQ for non-local address\n");
-    // no local prefix matches this addr, no RREQ for non-local address
-    return;
-  }
-#if RRPL_RREQ_RATELIMIT
-  if(!timer_expired(&next_time)) {
-     PRINTF("RRPL: RREQ exceeds rate limit");
-     return;
-  }
-#endif
-
-  PRINTF("RRPL: Request for route ");
+  PRINTF("RRPL: Request for a route towards ");
   PRINT6ADDR(host);
   PRINTF("\n");
-  if(uip_ds6_addr_lookup(host) == NULL) {
-    uip_ipaddr_copy(&rreq_addr, host);
-    command = COMMAND_SEND_RREQ;
-    process_post(&rrpl_process, PROCESS_EVENT_MSG, NULL);
-#if RRPL_RREQ_RETRIES
-    if(!rrc_lookup(&rreq_addr)) {
-      rrc_add(&rreq_addr);
-    }
-#endif
-  } else {
-    PRINTF("RRPL: Request for our address. Do nothing\n");
+
+  if(!rrpl_addr_matches_local_prefix(host)) {
+    // Address cannot be on the managed network: address does not match.
+    PRINTF("RRPL: Skipping: No RREQ for a non-local address\n");
+    return;
   }
+
+#if RRPL_RREQ_RATELIMIT
+  if(!timer_expired(&next_time)) {
+     PRINTF("RRPL: Skipping: RREQ exceeds rate limit\n");
+     return;
+  }
+#endif /* RRPL_RREQ_RATELIMIT */
+
+  uip_ipaddr_copy(&rreq_addr, host);
+  command = COMMAND_SEND_RREQ;
+  process_post(&rrpl_process, PROCESS_EVENT_MSG, NULL);
+#if RRPL_RREQ_RETRIES
+  if(!rrc_lookup(&rreq_addr)) {
+    rrc_add(&rreq_addr);
+  }
+#endif /* RRPL_RREQ_RETRIES */
+
 #if RRPL_RREQ_RATELIMIT
   timer_set(&next_time, CLOCK_SECOND/RRPL_RREQ_RATELIMIT);
-#endif
+#endif /* RRPL_RREQ_RATELIMIT */
 }
-
-/*---------------------------------------------------------------------------*/
-/* Warn RRPL that a packet need to be routed, but there is not the needed
- * routes into the routing table. `dest` and `src` parameters are destination
- * and source of the packet in error. This function can be called from outer
- * RRPL process */
-void
-rrpl_no_route(uip_ipaddr_t *dest, uip_ipaddr_t *src)
-{
-  struct uip_ds6_route *rt = NULL;
-  uip_ipaddr_t nexthop;
-  uip_ipaddr_t *nexthptr = &nexthop;
-
-  PRINTF("RRPL: no route for paquet (dest: ");
-  PRINT6ADDR(dest);
-  PRINTF(", src: ");
-  PRINT6ADDR(src);
-  PRINTF(")\n");
-
-  rt = rrpl_route_lookup(src);
-  if(rt == NULL) {
-#if USE_OPT
-    /* Multicast RERR so the neighbors are notified -- this is helpful if a
-     * node has lost memory */
-    uip_create_linklocal_lln_routers_mcast(nexthptr);
-#else
-    PRINTF("RRPL: No route to source address. Skipping.\n");
-    return;
-#endif /* USE_OPT */
-  } else {
-    nexthptr = uip_ds6_route_nexthop(rt);
-  }
-  uip_ipaddr_copy(&rerr_bad_addr, dest);
-  uip_ipaddr_copy(&rerr_src_addr, src);
-  uip_ipaddr_copy(&rerr_next_addr, nexthptr);
-  command = COMMAND_SEND_RERR;
-  process_post(&rrpl_process, PROCESS_EVENT_MSG, NULL);
-}
+#endif /* RRPL_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
 static void
@@ -1251,25 +1220,6 @@ get_prefix_from_addr(uip_ipaddr_t *addr, uip_ipaddr_t *prefix, uint8_t len)
 
     }
   }
-}
-
-/*---------------------------------------------------------------------------*/
-uint8_t
-rrpl_is_my_global_address(uip_ipaddr_t *addr)
-{
-  int i;
-  int state;
-
-  for(i = 0; i < UIP_DS6_ADDR_NB; i++) {
-    state = uip_ds6_if.addr_list[i].state;
-    if(uip_ds6_if.addr_list[i].isused &&
-       (state == ADDR_TENTATIVE || state == ADDR_PREFERRED)) {
-       if (uip_ipaddr_cmp(addr, &uip_ds6_if.addr_list[i].ipaddr)){
-          return 1 ;
-       }
-    }
-  }
-  return 0;
 }
 
 /*---------------------------------------------------------------------------*/

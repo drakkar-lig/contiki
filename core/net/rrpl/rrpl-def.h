@@ -80,9 +80,9 @@
 #endif
 
 #if RRPL_IS_SINK && !RRPL_IS_COORDINATOR()
-#warning "The node must be sink but not coordinator. This will lead surely " \
-         "to unpredictable results (and is particularly stupid). Please " \
-         "re-check your settings."
+#warning The node must be sink but not coordinator. This will lead surely \
+         to unpredictable results (and is particularly stupid). Please \
+         re-check your settings.
 #endif
 
 #ifdef RRPL_CONF_IS_SKIP_LEAF
