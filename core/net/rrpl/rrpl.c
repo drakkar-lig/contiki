@@ -826,6 +826,12 @@ handle_incoming_rrep(void)
   PRINT6ADDR(&rm->dest_addr);
   PRINTF("\n");
 
+  // No RREP from our default route
+  if (uip_ds6_defrt_lookup(&UIP_IP_BUF->srcipaddr)) {
+    PRINTF("RRPL: Do not allow RREP from default route\n");
+    return;
+  }
+
   rt = rrpl_route_lookup(&rm->orig_addr);
 
   // New forward route?
