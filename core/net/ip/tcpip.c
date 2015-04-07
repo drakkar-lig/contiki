@@ -47,9 +47,9 @@
 #include "net/ipv6/uip-ds6.h"
 #endif
 
-#if UIP_CONF_IPV6 && WITH_IPV6_RRPL
-#include "net/rrpl/rrpl.h"
-#endif //WITH_IPV6_RRPL && WITH_IPV6_RRPL
+#if UIP_CONF_IPV6 && WITH_IPV6_LRP
+#include "net/lrp/lrp.h"
+#endif /* UIP_CONF_IPV6 && WITH_IPV6_LRP */
 
 #include <string.h>
 
@@ -572,8 +572,8 @@ tcpip_ipv6_output(void)
     if(uip_ds6_is_addr_onlink(&UIP_IP_BUF->destipaddr)){
       nexthop = &UIP_IP_BUF->destipaddr;
     } else {
-#if WITH_IPV6_RRPL
-      nexthop = rrpl_select_nexthop_for(&UIP_IP_BUF->srcipaddr,
+#if WITH_IPV6_LRP
+      nexthop = lrp_select_nexthop_for(&UIP_IP_BUF->srcipaddr,
           &UIP_IP_BUF->destipaddr,
           (uip_lladdr_t*) packetbuf_addr(PACKETBUF_ADDR_SENDER));
       if(nexthop == NULL) {
@@ -581,7 +581,7 @@ tcpip_ipv6_output(void)
         uip_len = 0;
         return;
       }
-#else /* if not WITH_IPV6_RRPL */
+#else /* if not WITH_IPV6_LRP */
       uip_ds6_route_t *route;
       /* Check if we have a route to the destination address. */
       route = uip_ds6_route_lookup(&UIP_IP_BUF->destipaddr);
@@ -638,6 +638,7 @@ tcpip_ipv6_output(void)
           return;
         }
       }
+#endif /* WITH_IPV6_LRP */
 #if TCPIP_CONF_ANNOTATE_TRANSMISSIONS
       if(nexthop != NULL) {
         static uint8_t annotate_last;
@@ -651,7 +652,6 @@ tcpip_ipv6_output(void)
         annotate_has_last = 1;
       }
 #endif /* TCPIP_CONF_ANNOTATE_TRANSMISSIONS */
-#endif /* WITH_IPV6_RRPL */
     }
 
     /* End of next hop determination */

@@ -84,7 +84,7 @@ ifneq ($(CONTIKI_WITH_IPV6),0)
 CONTIKI_WITH_IPV6 = 1
 endif
 endif
-include $(CONTIKI)/core/net/rrpl/Makefile.rrpl
+include $(CONTIKI)/core/net/lrp/Makefile.lrp
 
 ifeq ($(CONTIKI_WITH_IPV6),1)
   CFLAGS += -DNETSTACK_CONF_WITH_IPV6=1
@@ -104,7 +104,7 @@ endif
 CONTIKI_SOURCEFILES += $(CONTIKIFILES)
 
 CONTIKIDIRS += ${addprefix $(CONTIKI)/core/,dev lib net net/llsec net/mac net/rime \
-                 net/rpl net/rrpl sys cfs ctk lib/ctk loader . }
+                 net/rpl net/lrp sys cfs ctk lib/ctk loader . }
 
 oname = ${patsubst %.c,%.o,${patsubst %.S,%.o,$(1)}}
 

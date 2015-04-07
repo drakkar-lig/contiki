@@ -28,18 +28,18 @@
  *
  * This file is part of the Contiki operating system.
  *
- * $Id: rrpl.h,v 1.3 2010/12/13 10:04:59 bg- Exp $
+ * $Id: lrp.h,v 1.3 2010/12/13 10:04:59 bg- Exp $
  */
 
 /**
  * \file
- *         RRPL routing header.
+ *         LRP routing header.
  * \author
  *         Chi-Anh La la@imag.fr
  */
 
-#ifndef __RRPL_H__
-#define __RRPL_H__
+#ifndef __LRP_H__
+#define __LRP_H__
 
 #include "contiki.h"
 #ifdef UIP_DS6_ROUTE_STATE_TYPE
@@ -47,28 +47,28 @@
 #endif
 
 // This is used in uip-ds6-route included further down
-#define UIP_DS6_ROUTE_STATE_TYPE rrpl_route_entry_t
-typedef struct rrpl_route_entry {
+#define UIP_DS6_ROUTE_STATE_TYPE lrp_route_entry_t
+typedef struct lrp_route_entry {
   uint16_t seqno;
   uint8_t route_cost;
   uint32_t valid_time;
   uint8_t ack_received;
-} rrpl_route_entry_t;
+} lrp_route_entry_t;
 
 #include "net/ipv6/uip-ds6.h"
 
 
 void
-rrpl_set_local_prefix(uip_ipaddr_t *prefix, uint8_t len);
+lrp_set_local_prefix(uip_ipaddr_t *prefix, uint8_t len);
 
 /**
  * \brief   Select and return the nexthop to which send packet.
  * \return  The nexthop to use, or NULL if the packet have to be discarded
  */
 uip_ipaddr_t*
-rrpl_select_nexthop_for(uip_ipaddr_t* source, uip_ipaddr_t* destination,
+lrp_select_nexthop_for(uip_ipaddr_t* source, uip_ipaddr_t* destination,
     uip_lladdr_t* previoushop);
 
-PROCESS_NAME(rrpl_process);
+PROCESS_NAME(lrp_process);
 
-#endif /* __RRPL_H__ */
+#endif /* __LRP_H__ */

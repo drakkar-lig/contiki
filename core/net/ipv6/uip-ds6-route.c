@@ -41,8 +41,8 @@
 #include "net/ipv6/uip-ds6.h"
 #include "net/ip/uip.h"
 
-#if WITH_IPV6_RRPL
-#include "net/rrpl/rrpl.h"
+#if WITH_IPV6_LRP
+#include "net/lrp/lrp.h"
 #endif
 
 #include "lib/list.h"
