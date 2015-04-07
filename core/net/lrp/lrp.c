@@ -61,8 +61,8 @@
 
 #define LRP_MAX_RANK           127
 
-/* Frequency of OPT broadcasting */
-#define SEND_OPT_INTERVAL       100 * CLOCK_SECOND
+/* Frequency of DIO broadcasting */
+#define SEND_DIO_INTERVAL       100 * CLOCK_SECOND
 
 /* RREQ retransmission interval (in ticks) */
 #define RETRY_RREQ_INTERVAL     5 * CLOCK_SECOND / 1000
@@ -71,7 +71,7 @@
 #define MAX_PAYLOAD_LEN         50
 #define DEFAULT_PREFIX_LEN      128
 #define DEFAULT_LOCAL_PREFIX    64
-#define DEFAULT_OPT_SEQ_SKIP    4
+#define DEFAULT_DIO_SEQ_SKIP    4
 extern uip_ds6_route_t uip_ds6_routing_table[UIP_DS6_ROUTE_NB];
 #define UIP_IP_BUF ((struct uip_udpip_hdr *)&uip_buf[UIP_LLH_LEN])
 #define MAX_SEQNO               65534
@@ -79,7 +79,7 @@ extern uip_ds6_route_t uip_ds6_routing_table[UIP_DS6_ROUTE_NB];
           (((s1 > s2) && (s1 - s2 <= (MAX_SEQNO/2))) \
         || ((s2 > s1) && (s2 - s1 > (MAX_SEQNO/2))))
 #if LRP_RREQ_RATELIMIT
-static struct timer next_time;
+static struct timer rreq_ratelimit_timer;
 #endif
 
 #if SND_QRY && ! LRP_IS_SINK
@@ -87,7 +87,7 @@ static struct etimer eqryt;
 #endif /* SND_QRY && ! LRP_IS_SINK */
 
 #if LRP_IS_COORDINATOR()
-static struct etimer send_opt_et;
+static struct etimer send_dio_et;
 #endif /* LRP_IS_COORDINATOR() */
 
 static enum {
@@ -105,7 +105,7 @@ static uint8_t my_weaklink;
 static int8_t my_parent_rssi;
 static uint16_t local_prefix_len;
 #if LRP_IS_SINK
-static uint8_t opt_seq_skip_counter;
+static uint8_t dio_seq_skip_counter;
 #endif /* LRP_IS_SINK */
 uip_ipaddr_t local_prefix;
 uip_ipaddr_t ipaddr, myipaddr, mcastipaddr;
@@ -447,7 +447,7 @@ reinitialize_default_route(void)
 /*---------------------------------------------------------------------------*/
 #if ! LRP_IS_SINK
 static void
-change_default_route(struct lrp_msg_opt *rm)
+change_default_route(struct lrp_msg_dio *rm)
 {
   uip_ds6_defrt_t *defrt;
   my_rank = rm->rank + 1;
@@ -483,7 +483,7 @@ change_default_route(struct lrp_msg_opt *rm)
   ANNOTATE("#L %u 1;red\n", def_rt_addr.u8[sizeof(def_rt_addr) - 1]);
 
 #if LRP_IS_COORDINATOR()
-  etimer_set(&send_opt_et, random_rand() % 50 * CLOCK_SECOND / 100);
+  etimer_set(&send_dio_et, random_rand() % 50 * CLOCK_SECOND / 100);
 #endif
 
   // FIXME: code specific to beacon-enabled
@@ -501,16 +501,16 @@ change_default_route(struct lrp_msg_opt *rm)
 static void
 enable_qry()
 {
-  qry_exp_residuum = SEND_OPT_INTERVAL;
-  etimer_set(&eqryt, SEND_OPT_INTERVAL - qry_exp_residuum);
+  qry_exp_residuum = SEND_DIO_INTERVAL;
+  etimer_set(&eqryt, SEND_DIO_INTERVAL - qry_exp_residuum);
 }
 #endif /* SND_QRY && ! LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
 /* Broadcast a QRY. Restart the timer with exponentially increasing time
  * interval between them. Asymptotically, QRY will be sent at the same rate
- * than the OPT frequency. Time wait between two QRY sending follow this
- * sequence : `Un = SEND_OPT_INTERVAL * (1 - QRY_EXP_PARAM ^ n)` */
+ * than the DIO frequency. Time wait between two QRY sending follow this
+ * sequence : `Un = SEND_DIO_INTERVAL * (1 - QRY_EXP_PARAM ^ n)` */
 #if SND_QRY && ! LRP_IS_SINK
 static void
 send_qry()
@@ -519,7 +519,7 @@ send_qry()
   struct lrp_msg_qry *rm = (struct lrp_msg_qry *)buf;
 
   PRINTF("Broadcast QRY. Next one in %u ms\n",
-      (unsigned) ((SEND_OPT_INTERVAL - ((uint32_t)qry_exp_residuum * QRY_EXP_PARAM)) * 1000 / CLOCK_SECOND));
+      (unsigned) ((SEND_DIO_INTERVAL - ((uint32_t)qry_exp_residuum * QRY_EXP_PARAM)) * 1000 / CLOCK_SECOND));
 
   // Create and send QRY
   rm->type = LRP_QRY_TYPE;
@@ -533,14 +533,14 @@ send_qry()
 
   // Configure timer for next time
   qry_exp_residuum *= QRY_EXP_PARAM; // Compute exponential part
-  etimer_set(&eqryt, SEND_OPT_INTERVAL - qry_exp_residuum);
+  etimer_set(&eqryt, SEND_DIO_INTERVAL - qry_exp_residuum);
 }
 #endif /* SND_QRY && ! LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
 #if LRP_IS_COORDINATOR()
 static void
-send_opt()
+send_dio()
 {
   char buf[MAX_PAYLOAD_LEN];
 
@@ -548,17 +548,17 @@ send_opt()
   if(uip_ds6_defrt_lookup(&def_rt_addr) == NULL) {
     // No default next hop, schedule to send qry
     enable_qry();
-    return; // wait for sink OPT
+    return; // wait for sink DIO
   }
 #endif /* ! LRP_IS_SINK */
 
-  PRINTF("Send OPT from ");
+  PRINTF("Send DIO from ");
   PRINT6ADDR(&myipaddr);
   PRINTF("\n");
 
-  struct lrp_msg_opt *rm = (struct lrp_msg_opt *)buf;
+  struct lrp_msg_dio *rm = (struct lrp_msg_dio *)buf;
 
-  rm->type = LRP_OPT_TYPE;
+  rm->type = LRP_DIO_TYPE;
   rm->type = (rm->type << 4) | LRP_RSVD1;
   rm->addr_len = LRP_RSVD2;
   rm->addr_len = (rm->addr_len << 4) | LRP_ADDR_LEN_IPV6;
@@ -575,26 +575,26 @@ send_opt()
 
   udpconn->ttl = 1;
   uip_create_linklocal_lln_routers_mcast(&udpconn->ripaddr);
-//   PRINTF("OPT length %u\n", sizeof(struct lrp_msg_opt));
+//   PRINTF("DIO length %u\n", sizeof(struct lrp_msg_dio));
 // #if RDC_LAYER_ID == ID_mac_802154_rdc_driver
 //   tcpip_set_outputfunc(output_802154);
-//   uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_opt));
+//   uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_dio));
 //   tcpip_set_outputfunc(output);
 // #else // RDC_LAYER_ID == ID_mac_802154_rdc_driver
-  uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_opt));
+  uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_dio));
 // #endif /* RDC_LAYER_ID == ID_mac_802154_rdc_driver */
   memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
 
 #if LRP_IS_SINK
-  // Count sent OPT messages
-  if(opt_seq_skip_counter >= DEFAULT_OPT_SEQ_SKIP) {
+  // Count sent DIO messages
+  if(dio_seq_skip_counter >= DEFAULT_DIO_SEQ_SKIP) {
     // Increase sequence id => rebuild tree from scratch
-    opt_seq_skip_counter = 0;
+    dio_seq_skip_counter = 0;
     my_seq_id++;
     if(my_seq_id > MAX_SEQNO)
       my_seq_id = 1;
   } else {
-    opt_seq_skip_counter++;
+    dio_seq_skip_counter++;
   }
 #endif /* LRP_IS_SINK */
 }
@@ -927,10 +927,10 @@ handle_incoming_rerr(void)
   uip_ds6_defrt_t *defrt;
 #endif /* ! LRP_IS_SINK */
 
-#if USE_OPT
+#if USE_DIO
   uip_ipaddr_t mcastLoadAddr;
   uip_create_linklocal_lln_routers_mcast(&mcastLoadAddr);
-#endif /* USE_OPT */
+#endif /* USE_DIO */
 
   PRINTF("RERR ");
   PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
@@ -959,7 +959,7 @@ handle_incoming_rerr(void)
   }
 
 #if ! LRP_IS_SINK
-#if USE_OPT
+#if USE_DIO
   /* If the RERR comes from a default router, we are, in the tree, under this
    * router */
   defrt = uip_ds6_defrt_lookup(&UIP_IP_BUF->srcipaddr);
@@ -973,7 +973,7 @@ handle_incoming_rerr(void)
       send_rrep(&my_sink_id, &defrt->ipaddr, &myipaddr, &my_hseqno, 0);
       return;
     } else {
-#endif /* USE_OPT */
+#endif /* USE_DIO */
       if (rt != NULL) {
         /* We know where is the source. Forward RERR to nexthop */
         PRINTF("Forward RERR to nexthop\n");
@@ -981,7 +981,7 @@ handle_incoming_rerr(void)
       } else {
         PRINTF("Skipping RERR: unknown source\n");
       }
-#if USE_OPT
+#if USE_DIO
     }
   } else if(!uip_ipaddr_cmp(&UIP_IP_BUF->destipaddr, &mcastLoadAddr) ||
             rt_in_err != NULL) {
@@ -993,21 +993,21 @@ handle_incoming_rerr(void)
   } else {
     PRINTF("skipping RERR: unknown destination\n");
   }
-#endif /* USE_OPT */
+#endif /* USE_DIO */
 #endif /* ! LRP_IS_SINK */
 }
 
 /*---------------------------------------------------------------------------*/
 #if ! LRP_IS_SINK
 static void
-handle_incoming_opt(void)
+handle_incoming_dio(void)
 {
   uint8_t parent_changed = 0;
-  uint8_t opt_weaklink = 0;
+  uint8_t dio_weaklink = 0;
   // FIXME: code specific to beacon-enabled
 //   if (NETSTACK_RDC_CONFIGURATOR.use_routing_information()) {
-  struct lrp_msg_opt *rm = (struct lrp_msg_opt *)uip_appdata;
-  PRINTF("OPT message: ");
+  struct lrp_msg_dio *rm = (struct lrp_msg_dio *)uip_appdata;
+  PRINTF("DIO message: ");
   PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
   PRINTF(" -> ");
   PRINT6ADDR(&UIP_IP_BUF->destipaddr);
@@ -1017,21 +1017,21 @@ handle_incoming_opt(void)
   PRINTF(" rssi=%i\n", (int8_t)LAST_RSSI);
 
   if(uip_ipaddr_cmp(&UIP_IP_BUF->srcipaddr, &myipaddr)) {
-    PRINTF("OPT loops back, not processing\n");
+    PRINTF("DIO loops back, not processing\n");
     return;
   }
 
   if(SEQNO_GREATER_THAN(rm->seqno, my_seq_id)) {
-    // First OPT with this seqno
-    PRINTF("new OPT sequence number received\n");
+    // First DIO with this seqno
+    PRINTF("New DIO sequence number received\n");
     my_seq_id = rm->seqno;
     parent_changed = 1;
   } else if(rm->seqno == my_seq_id ){
-    opt_weaklink = get_weaklink(rm->metric) + parent_weaklink((int8_t)LAST_RSSI);
-    if(opt_weaklink < my_weaklink + parent_weaklink(my_parent_rssi)) { /* less weak links */
+    dio_weaklink = get_weaklink(rm->metric) + parent_weaklink((int8_t)LAST_RSSI);
+    if(dio_weaklink < my_weaklink + parent_weaklink(my_parent_rssi)) { /* less weak links */
       parent_changed = 1;
       PRINTF("less weak links\n");
-    } else if(opt_weaklink == my_weaklink + parent_weaklink(my_parent_rssi)){ /* weak link ties */
+    } else if(dio_weaklink == my_weaklink + parent_weaklink(my_parent_rssi)){ /* weak link ties */
       if(rm->rank < (my_rank - 1)) { /* better rank */
         parent_changed = 1;
         PRINTF("better rank\n");
@@ -1046,7 +1046,7 @@ handle_incoming_opt(void)
   if(parent_changed) {
     uip_ipaddr_copy(&my_sink_id, &rm->sink_addr);
     my_parent_rssi = (int8_t)LAST_RSSI;
-    PRINTF("Update from received OPT r=%u wl=%u rssi=%i\n", my_rank, my_weaklink + parent_weaklink(my_parent_rssi), my_parent_rssi);
+    PRINTF("Update from received DIO r=%u wl=%u rssi=%i\n", my_rank, my_weaklink + parent_weaklink(my_parent_rssi), my_parent_rssi);
     change_default_route(rm);
 
 #if LRP_IS_SKIP_LEAF
@@ -1107,29 +1107,29 @@ tcpip_handler(void)
         PRINTF("Received RACK\n");
         handle_incoming_rack();
         break;
-      case LRP_OPT_TYPE:
+      case LRP_DIO_TYPE:
 #if LRP_IS_SINK
-        PRINTF("Received OPT. Skipping: is a sink\n");
+        PRINTF("Received DIO. Skipping: is a sink\n");
 #else
-        PRINTF("Received OPT\n");
-        handle_incoming_opt();
+        PRINTF("Received DIO\n");
+        handle_incoming_dio();
 #endif /* LRP_IS_SINK */
         break;
       case LRP_QRY_TYPE:
 #if LRP_IS_SINK
-        PRINTF("Received QRY -- Send OPT\n");
+        PRINTF("Received QRY -- Send DIO\n");
         lrp_rand_wait();
-        send_opt();
+        send_dio();
 #elif LRP_IS_COORDINATOR()
         if(uip_ds6_defrt_lookup(&def_rt_addr) == NULL) {
           PRINTF("Received QRY. Skipping: no default route\n");
         } else {
-          PRINTF("Received QRY -- Send OPT\n");
+          PRINTF("Received QRY -- Send DIO\n");
           PRINTF("Address: ");
           PRINT6ADDR(&uip_ds6_defrt_lookup(&def_rt_addr)->ipaddr);
           PRINTF("\n");
           lrp_rand_wait();
-          send_opt();
+          send_dio();
         }
 #else
         PRINTF("Received QRY. Skipping: not a coordinator\n");
@@ -1166,7 +1166,7 @@ lrp_request_route_to(uip_ipaddr_t *host)
   }
 
 #if LRP_RREQ_RATELIMIT
-  if(!timer_expired(&next_time)) {
+  if(!timer_expired(&rreq_ratelimit_timer)) {
      PRINTF("Skipping: RREQ exceeds rate limit\n");
      return;
   }
@@ -1182,7 +1182,7 @@ lrp_request_route_to(uip_ipaddr_t *host)
 #endif /* LRP_RREQ_RETRIES */
 
 #if LRP_RREQ_RATELIMIT
-  timer_set(&next_time, CLOCK_SECOND/LRP_RREQ_RATELIMIT);
+  timer_set(&rreq_ratelimit_timer, LRP_RREQ_RATELIMIT);
 #endif /* LRP_RREQ_RATELIMIT */
 }
 #endif /* LRP_IS_SINK */
@@ -1344,7 +1344,7 @@ PROCESS_THREAD(lrp_process, ev, data)
   my_rank = 1;
   my_weaklink = 0;
   my_parent_rssi = 126;
-  opt_seq_skip_counter = 0;
+  dio_seq_skip_counter = 0;
 #else
   my_seq_id = 0;
   my_rank = LRP_MAX_RANK;
@@ -1369,8 +1369,8 @@ PROCESS_THREAD(lrp_process, ev, data)
         UIP_HTONS(udpconn->lport), UIP_HTONS(udpconn->rport));
 
 #if LRP_IS_COORDINATOR()
-  PRINTF("Set timer for OPT multicast %lu\n", SEND_OPT_INTERVAL);
-  etimer_set(&send_opt_et, SEND_OPT_INTERVAL);
+  PRINTF("Set timer for DIO multicast %lu\n", SEND_DIO_INTERVAL);
+  etimer_set(&send_dio_et, SEND_DIO_INTERVAL);
   memset(&ipaddr, 0, sizeof(ipaddr));
 #endif
 
@@ -1380,7 +1380,7 @@ PROCESS_THREAD(lrp_process, ev, data)
 #endif
 
 #if LRP_RREQ_RATELIMIT
-  timer_set(&next_time, CLOCK_SECOND/LRP_RREQ_RATELIMIT);
+  timer_set(&rreq_ratelimit_timer, LRP_RREQ_RATELIMIT);
 #endif
 
 #if LRP_R_HOLD_TIME
@@ -1401,15 +1401,15 @@ PROCESS_THREAD(lrp_process, ev, data)
     }
 
 #if LRP_IS_COORDINATOR()
-    // OPT timer
-    if(etimer_expired(&send_opt_et)) {
+    // DIO timer
+    if(etimer_expired(&send_dio_et)) {
 #if LRP_IS_SINK
-      send_opt();
-      etimer_set(&send_opt_et, SEND_OPT_INTERVAL);
+      send_dio();
+      etimer_set(&send_dio_et, SEND_DIO_INTERVAL);
 #else // LRP_IS_SINK
       if(uip_ds6_defrt_lookup(&def_rt_addr) != NULL) {
-        send_opt();
-        etimer_set(&send_opt_et, SEND_OPT_INTERVAL);
+        send_dio();
+        etimer_set(&send_dio_et, SEND_DIO_INTERVAL);
       }
 #endif /* LRP_IS_SINK */
     }

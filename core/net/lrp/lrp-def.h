@@ -65,8 +65,6 @@
 #define SND_QRY 0
 #endif
 
-/* Self multicast OPT to create a default route at all nodes (for sink only) */
-
 #ifdef LRP_CONF_IS_SINK
 #define LRP_IS_SINK LRP_CONF_IS_SINK
 #else
@@ -158,10 +156,10 @@ struct lrp_msg_rerr {
 };
 
 
-/* LRP OPT message */
-#define LRP_OPT_TYPE      4
+/* LRP DIO message */
+#define LRP_DIO_TYPE      4
 
-struct lrp_msg_opt {
+struct lrp_msg_dio {
   uint8_t type;
   uint8_t addr_len;
   uint16_t seqno;
