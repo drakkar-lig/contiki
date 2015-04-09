@@ -61,7 +61,7 @@
 
 #define LRP_MAX_RANK           127
 
-/* Frequency of DIO broadcasting */
+/* Frequency of DIO broadcasting (in ticks) */
 #define SEND_DIO_INTERVAL       100 * CLOCK_SECOND
 
 /* RREQ retransmission interval (in ticks) */
@@ -78,12 +78,13 @@ extern uip_ds6_route_t uip_ds6_routing_table[UIP_DS6_ROUTE_NB];
 #define SEQNO_GREATER_THAN(s1, s2)                   \
           (((s1 > s2) && (s1 - s2 <= (MAX_SEQNO/2))) \
         || ((s2 > s1) && (s2 - s1 > (MAX_SEQNO/2))))
+#define SEQNO_INCREASE(seqno) (seqno >= MAX_SEQNO ? seqno = 1 : ++seqno)
 #if LRP_RREQ_RATELIMIT
 static struct timer rreq_ratelimit_timer;
 #endif
 
 #if SND_QRY && ! LRP_IS_SINK
-static struct etimer eqryt;
+static struct etimer qry_timer;
 #endif /* SND_QRY && ! LRP_IS_SINK */
 
 #if LRP_IS_COORDINATOR()
@@ -107,58 +108,19 @@ static uint16_t local_prefix_len;
 #if LRP_IS_SINK
 static uint8_t dio_seq_skip_counter;
 #endif /* LRP_IS_SINK */
-uip_ipaddr_t local_prefix;
-uip_ipaddr_t ipaddr, myipaddr, mcastipaddr;
-uip_ipaddr_t orig_addr, dest_addr, rreq_addr, def_rt_addr, my_sink_id;
+static uip_ipaddr_t local_prefix;
+static uip_ipaddr_t myipaddr, mcastipaddr;
+static uip_ipaddr_t rreq_addr, def_rt_addr, my_sink_addr;
 static struct uip_udp_conn *udpconn;
 static uip_ipaddr_t rerr_bad_addr, rerr_src_addr, rerr_next_addr;
 static uint8_t in_lrp_call = 0 ; // make sure we don't trigger a rreq from within lrp
 
 #if SND_QRY && ! LRP_IS_SINK
 static uint16_t qry_exp_residuum;
-static void enable_qry();
 #endif /* SND_QRY && ! LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
 PROCESS(lrp_process, "LRP process");
-
-/*---------------------------------------------------------------------------*/
-/* Route lookup without triggering RREQ ! */
-static uip_ds6_route_t *
-lrp_route_lookup(uip_ipaddr_t *addr)
-{
-  uip_ds6_route_t *r;
-  uip_ds6_route_t *found_route;
-  uint8_t longestmatch;
-
-  found_route = NULL;
-  longestmatch = 0;
-  for(r = uip_ds6_route_head();
-      r != NULL;
-      r = uip_ds6_route_next(r)) {
-    if(r->length >= longestmatch &&
-      uip_ipaddr_prefixcmp(addr, &r->ipaddr, r->length)) {
-      longestmatch = r->length;
-      found_route = r;
-    }
-  }
-
-  if(found_route != NULL) {
-    PRINTF("Look up route for destination ");
-    PRINT6ADDR(addr);
-    PRINTF(": found (via ");
-    PRINT6ADDR(uip_ds6_route_nexthop(found_route));
-    PRINTF(")\n");
-  } else {
-    PRINTF("Look up route for destination ");
-    PRINT6ADDR(addr);
-    PRINTF(": not found\n");
-  }
-
-  return found_route;
-}
-
-
 
 /*---------------------------------------------------------------------------*/
 /* Implementation of route validity time check and purge */
@@ -266,7 +228,7 @@ rrc_add(const uip_ipaddr_t *dest)
 /* Check the expired RREQ. `interval` is the time interval between last check
  * and now (expressed in ticks). */
 static void
-rrc_check_expired_rreq(uint16_t interval)
+rrc_check_expired_rreq(const uint16_t interval)
 {
   int i;
   for(i = 0; i < RRCACHE; ++i) {
@@ -284,29 +246,6 @@ rrc_check_expired_rreq(uint16_t interval)
 }
 #endif /* LRP_RREQ_RETRIES */
 
-
-/*---------------------------------------------------------------------------*/
-void
-uip_ds6_route_print(void)
-{
-  uip_ds6_route_t *locroute = NULL;
-
-  PRINTF("Print route entries: ");
-  PRINT6ADDR(&myipaddr);
-
-  for(locroute = uip_ds6_route_head();
-      locroute != NULL;
-      locroute = uip_ds6_route_next(locroute)) {
-    PRINTF(" DEST ");
-    PRINT6ADDR(&locroute->ipaddr);
-    PRINTF("/%u ", locroute->length);
-    PRINTF(" NEXT ");
-    PRINT6ADDR(uip_ds6_route_nexthop(locroute));
-    PRINTF(" HC %u ", locroute->state.route_cost);
-    PRINTF(" | ");
-  }
-  PRINTF("\n");
-}
 
 /*---------------------------------------------------------------------------*/
 static inline uint8_t
@@ -351,7 +290,7 @@ uip_lrp_nbr_add(uip_ipaddr_t* next_hop)
   // it's my responsability to create+maintain neighbor
   nbr = uip_ds6_nbr_lookup(next_hop);
 
-  if (nbr==NULL){
+  if(nbr == NULL) {
     PRINTF("adding nbr from lrp\n");
     uip_lladdr_t nbr_lladdr;
     memcpy(&nbr_lladdr, &next_hop->u8[8],
@@ -361,8 +300,7 @@ uip_lrp_nbr_add(uip_ipaddr_t* next_hop)
     nbr = uip_ds6_nbr_add(next_hop, &nbr_lladdr, 0, NBR_REACHABLE);
 //    nbr->nscount = 1;
 
-  }
-  else{
+  } else {
     PRINT6ADDR(&nbr->ipaddr);
     PRINTF("\n");
   }
@@ -382,29 +320,36 @@ lrp_rand_wait()
 }
 
 /*---------------------------------------------------------------------------*/
+/* Add the described route into the routing table. Do not add route if it is
+ * worse than previous one. Return NULL if the route has not been added, or
+ * the added route. */
 static uip_ds6_route_t*
 uip_lrp_route_add(uip_ipaddr_t* orig_addr, uint8_t length,
             uip_ipaddr_t* next_hop, uint8_t route_cost, uint16_t seqno)
 {
-
-  struct uip_ds6_route *rt;
+  uip_ds6_route_t* rt;
 
   in_lrp_call = 1;
 
-  PRINTF("uip_lrp_route_add() --- nexthop :");
-  PRINT6ADDR(next_hop);
-  PRINTF(" to: ");
-  PRINT6ADDR(orig_addr);
-  PRINTF("\n");
-  uip_lrp_nbr_add(next_hop);
-
-  rt = uip_ds6_route_add(orig_addr, length, next_hop);
-
-  if(rt != NULL) {
-    rt->state.route_cost = route_cost;
-    rt->state.seqno = seqno;
-    rt->state.valid_time = LRP_R_HOLD_TIME;
+  rt = uip_ds6_route_lookup(orig_addr);
+  if (rt == NULL ||
+      SEQNO_GREATER_THAN(seqno, rt->state.seqno) ||
+      (seqno == rt->state.seqno && route_cost < rt->state.route_cost)) {
+    // Offered route is better than previous one
+    uip_lrp_nbr_add(next_hop);
+    if (rt == NULL) {
+      rt = uip_ds6_route_add(orig_addr, length, next_hop);
+    }
+    if(rt != NULL) {
+      rt->state.route_cost = route_cost;
+      rt->state.seqno = seqno;
+      rt->state.valid_time = LRP_R_HOLD_TIME;
+    }
+  } else {
+    // Offered route is worse, refusing route
+    rt = NULL;
   }
+
   in_lrp_call = 0;
   return rt;
 }
@@ -419,14 +364,38 @@ lrp_is_my_global_address(uip_ipaddr_t *addr)
   for(i = 0; i < UIP_DS6_ADDR_NB; i++) {
     state = uip_ds6_if.addr_list[i].state;
     if(uip_ds6_if.addr_list[i].isused &&
-       (state == ADDR_TENTATIVE || state == ADDR_PREFERRED)) {
-       if (uip_ipaddr_cmp(addr, &uip_ds6_if.addr_list[i].ipaddr)){
-          return 1 ;
-       }
+        (state == ADDR_TENTATIVE || state == ADDR_PREFERRED)) {
+      if(uip_ipaddr_cmp(addr, &uip_ds6_if.addr_list[i].ipaddr)) {
+        return 1;
+      }
     }
   }
   return 0;
 }
+
+/*---------------------------------------------------------------------------*/
+/* Return true if `addr` is a predecessor, that is, is used as next hop into
+ * the routing table */
+#if !LRP_IS_SINK
+static uint8_t
+lrp_is_predecessor(uip_ipaddr_t *addr)
+{
+  uip_ds6_route_t* r;
+
+  if (addr == NULL) {
+    // Unknown neighor, not a predecessor
+    return (0==1);
+  }
+
+  for(r = uip_ds6_route_head(); r != NULL; r = uip_ds6_route_next(r)) {
+    if(memcmp(uip_ds6_route_nexthop(r), addr, sizeof(uip_ipaddr_t)) == 0) {
+      // Found as route's next hop => is a predecessor
+      return (1==1);
+    }
+  }
+  return (0==1);
+}
+#endif /* !LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
 static void
@@ -445,6 +414,7 @@ reinitialize_default_route(void)
 }
 
 /*---------------------------------------------------------------------------*/
+/* Change default route for the one specified into the DIO `rm` packet. */
 #if ! LRP_IS_SINK
 static void
 change_default_route(struct lrp_msg_dio *rm)
@@ -457,7 +427,6 @@ change_default_route(struct lrp_msg_dio *rm)
   // First check if we are actually changing of next hop!
   if(defrt != NULL) {
     if(!uip_ip6addr_cmp(&defrt->ipaddr, &UIP_IP_BUF->srcipaddr)) {
-      PRINTF("Actually changing of defrt next hop!\n");
       uip_ds6_defrt_rm(defrt); // remove route
     } else {
       // We just need to refresh the route
@@ -474,7 +443,6 @@ change_default_route(struct lrp_msg_dio *rm)
 
   in_lrp_call = 1;
 
-  PRINTF("call uip_lrp_nbr_add\n");
   uip_lrp_nbr_add(&UIP_IP_BUF->srcipaddr);
 
   uip_ds6_defrt_add(&UIP_IP_BUF->srcipaddr, LRP_DEFAULT_ROUTE_LIFETIME);
@@ -497,66 +465,68 @@ change_default_route(struct lrp_msg_dio *rm)
 #endif /* ! LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
-#if SND_QRY && ! LRP_IS_SINK
-static void
-enable_qry()
-{
-  qry_exp_residuum = SEND_DIO_INTERVAL;
-  etimer_set(&eqryt, SEND_DIO_INTERVAL - qry_exp_residuum);
-}
-#endif /* SND_QRY && ! LRP_IS_SINK */
-
-/*---------------------------------------------------------------------------*/
-/* Broadcast a QRY. Restart the timer with exponentially increasing time
- * interval between them. Asymptotically, QRY will be sent at the same rate
- * than the DIO frequency. Time wait between two QRY sending follow this
- * sequence : `Un = SEND_DIO_INTERVAL * (1 - QRY_EXP_PARAM ^ n)` */
-#if SND_QRY && ! LRP_IS_SINK
+/* Format and broadcast a QRY packet. */
+#if SND_QRY && !LRP_IS_SINK
 static void
 send_qry()
 {
   char buf[MAX_PAYLOAD_LEN];
   struct lrp_msg_qry *rm = (struct lrp_msg_qry *)buf;
 
-  PRINTF("Broadcast QRY. Next one in %u ms\n",
-      (unsigned) ((SEND_DIO_INTERVAL - ((uint32_t)qry_exp_residuum * QRY_EXP_PARAM)) * 1000 / CLOCK_SECOND));
+  PRINTF("Broadcast QRY\n");
 
-  // Create and send QRY
   rm->type = LRP_QRY_TYPE;
   rm->type = (rm->type << 4) | LRP_RSVD1;
   rm->addr_len = LRP_RSVD2;
   rm->addr_len = (rm->addr_len << 4) | LRP_ADDR_LEN_IPV6;
   udpconn->ttl = 1;
+
   uip_create_linklocal_lln_routers_mcast(&udpconn->ripaddr);
   uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_qry));
   memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
+}
+#endif /* SND_QRY && !LRP_IS_SINK */
+
+/*---------------------------------------------------------------------------*/
+/* Retransmit a QRY if there is no default route. Restart the QRY timer with
+ * exponentially increasing time interval between them. Asymptotically, QRY
+ * will be sent at the same rate as the DIO frequency. Time wait between two
+ * QRY sending follow this sequence :
+ * `Un = SEND_DIO_INTERVAL * (1 - QRY_EXP_PARAM ^ n)` */
+#if SND_QRY && ! LRP_IS_SINK
+static void
+retransmit_qry()
+{
+  if(uip_ds6_defrt_lookup(&def_rt_addr) != NULL) {
+    PRINTF("Deactivating QRY timer: have a default route\n");
+    qry_exp_residuum = -1;
+    return;
+  }
+
+  send_qry();
 
   // Configure timer for next time
-  qry_exp_residuum *= QRY_EXP_PARAM; // Compute exponential part
-  etimer_set(&eqryt, SEND_DIO_INTERVAL - qry_exp_residuum);
+  if (qry_exp_residuum == -1) {
+    // Initialisation
+    qry_exp_residuum = SEND_DIO_INTERVAL;
+  }
+  qry_exp_residuum *= QRY_EXP_PARAM;
+  etimer_set(&qry_timer, SEND_DIO_INTERVAL - qry_exp_residuum);
+  PRINTF("QRY timer reset (%lums)\n",
+      SEND_DIO_INTERVAL - qry_exp_residuum);
 }
 #endif /* SND_QRY && ! LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
+/* Format and broadcast a DIO packet. */
 #if LRP_IS_COORDINATOR()
 static void
 send_dio()
 {
   char buf[MAX_PAYLOAD_LEN];
-
-#if ! LRP_IS_SINK
-  if(uip_ds6_defrt_lookup(&def_rt_addr) == NULL) {
-    // No default next hop, schedule to send qry
-    enable_qry();
-    return; // wait for sink DIO
-  }
-#endif /* ! LRP_IS_SINK */
-
-  PRINTF("Send DIO from ");
-  PRINT6ADDR(&myipaddr);
-  PRINTF("\n");
-
   struct lrp_msg_dio *rm = (struct lrp_msg_dio *)buf;
+
+  PRINTF("Send DIO\n");
 
   rm->type = LRP_DIO_TYPE;
   rm->type = (rm->type << 4) | LRP_RSVD1;
@@ -566,16 +536,10 @@ send_dio()
   rm->rank = my_rank;
   rm->metric = LRP_METRIC_HC;
   rm->metric = (rm->metric << 4) | (my_weaklink + parent_weaklink(my_parent_rssi));
-
-#if LRP_IS_SINK
-  uip_ipaddr_copy(&rm->sink_addr, &myipaddr);
-#else // LRP_IS_SINK
-  uip_ipaddr_copy(&rm->sink_addr, &my_sink_id);
-#endif /* LRP_IS_SINK */
-
+  uip_ipaddr_copy(&rm->sink_addr, &my_sink_addr);
   udpconn->ttl = 1;
+
   uip_create_linklocal_lln_routers_mcast(&udpconn->ripaddr);
-//   PRINTF("DIO length %u\n", sizeof(struct lrp_msg_dio));
 // #if RDC_LAYER_ID == ID_mac_802154_rdc_driver
 //   tcpip_set_outputfunc(output_802154);
 //   uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_dio));
@@ -590,9 +554,7 @@ send_dio()
   if(dio_seq_skip_counter >= DEFAULT_DIO_SEQ_SKIP) {
     // Increase sequence id => rebuild tree from scratch
     dio_seq_skip_counter = 0;
-    my_seq_id++;
-    if(my_seq_id > MAX_SEQNO)
-      my_seq_id = 1;
+    SEQNO_INCREASE(my_seq_id);
   } else {
     dio_seq_skip_counter++;
   }
@@ -601,26 +563,22 @@ send_dio()
 #endif /* LRP_IS_COORDINATOR */
 
 /*---------------------------------------------------------------------------*/
+/* Format and broadcast a RREQ packet. */
 static void
 send_rreq()
 {
-
   char buf[MAX_PAYLOAD_LEN];
+  struct lrp_msg_rreq *rm = (struct lrp_msg_rreq *)buf;
+
   PRINTF("Send RREQ for ");
   PRINT6ADDR(&rreq_addr);
-  PRINTF(" from ");
-  PRINT6ADDR(&myipaddr);
   PRINTF("\n");
-
-  struct lrp_msg_rreq *rm = (struct lrp_msg_rreq *)buf;
 
   rm->type = LRP_RREQ_TYPE;
   rm->type = (rm->type << 4) | LRP_RSVD1;
   rm->addr_len = LRP_RSVD2;
   rm->addr_len = (rm->addr_len << 4) | LRP_ADDR_LEN_IPV6;
-  my_hseqno++;
-  if(my_hseqno>MAX_SEQNO)
-    my_hseqno = 1;
+  SEQNO_INCREASE(my_hseqno);
   rm->seqno = my_hseqno;
   rm->metric = LRP_METRIC_HC;
   rm->metric = (rm->metric << 4) | LRP_WEAK_LINK;
@@ -628,26 +586,28 @@ send_rreq()
   uip_ipaddr_copy(&rm->dest_addr, &rreq_addr);
   uip_ipaddr_copy(&rm->orig_addr, &myipaddr);
   udpconn->ttl = LRP_MAX_DIST;
+
   uip_create_linklocal_lln_routers_mcast(&udpconn->ripaddr);
-  PRINTF("RREQ length %u\n", sizeof(struct lrp_msg_rreq));
   uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_rreq));
   memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
 }
 
 /*---------------------------------------------------------------------------*/
+/* Format and send a RREP packet to `nexthop`. */
 static void
-send_rrep(uip_ipaddr_t *dest, uip_ipaddr_t *nexthop, uip_ipaddr_t *orig,
-          uint16_t *seqno, unsigned hop_count)
+send_rrep(const uip_ipaddr_t *dest, const uip_ipaddr_t *nexthop,
+    const uip_ipaddr_t *orig, const uint16_t *seqno, const unsigned hop_count)
 {
   char buf[MAX_PAYLOAD_LEN];
   struct lrp_msg_rrep *rm = (struct lrp_msg_rrep *)buf;
-  PRINTF("Send RREP for orig ");
-  PRINT6ADDR(orig);
-  PRINTF(" dest ");
-  PRINT6ADDR(dest);
-  PRINTF(" nexthop ");
+
+  PRINTF("Send RREP -> ");
   PRINT6ADDR(nexthop);
-  PRINTF(" hopcount=%u\n", hop_count);
+  PRINTF(" orig=");
+  PRINT6ADDR(orig);
+  PRINTF(" dest=");
+  PRINT6ADDR(dest);
+  PRINTF(" hopcnt=%u\n", hop_count);
 
   rm->type = LRP_RREP_TYPE;
   rm->type = (rm->type << 4) | LRP_RSVD1;
@@ -659,27 +619,26 @@ send_rrep(uip_ipaddr_t *dest, uip_ipaddr_t *nexthop, uip_ipaddr_t *orig,
   rm->route_cost = hop_count;
   uip_ipaddr_copy(&rm->orig_addr, orig);
   uip_ipaddr_copy(&rm->dest_addr, dest);
-  udpconn->ttl = LRP_MAX_DIST;
+  udpconn->ttl = 1;
+
   uip_ipaddr_copy(&udpconn->ripaddr, nexthop);
   uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_rrep));
   memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
 }
 
 /*---------------------------------------------------------------------------*/
-/* Format and send a RERR message. `src` is mapped to `RERR.src_addr`, `dest`
- * to `RERR.addr_in_error`, and message is transmitted to `nexthop`. */
+/* Format and send a RERR to `nexthop`. */
 static void
-send_rerr(uip_ipaddr_t *src, uip_ipaddr_t *dest, uip_ipaddr_t *nexthop)
+send_rerr(const uip_ipaddr_t *src, const uip_ipaddr_t *dest,
+    const uip_ipaddr_t *nexthop)
 {
   char buf[MAX_PAYLOAD_LEN];
   struct lrp_msg_rerr *rm = (struct lrp_msg_rerr *)buf;
 
-  PRINTF("Send RERR towards src: ");
-  PRINT6ADDR(src);
-  PRINTF(" for address in error: ");
-  PRINT6ADDR(dest);
-  PRINTF(" nexthop: ");
+  PRINTF("Send RERR -> ");
   PRINT6ADDR(nexthop);
+  PRINTF(" address_in_error=");
+  PRINT6ADDR(dest);
   PRINTF("\n");
 
   rm->type = LRP_RERR_TYPE;
@@ -688,7 +647,7 @@ send_rerr(uip_ipaddr_t *src, uip_ipaddr_t *dest, uip_ipaddr_t *nexthop)
   rm->addr_len = (rm->addr_len << 4) | LRP_ADDR_LEN_IPV6;
   uip_ipaddr_copy(&rm->addr_in_error, dest);
   uip_ipaddr_copy(&rm->src_addr, src);
-  udpconn->ttl = LRP_MAX_DIST;
+  udpconn->ttl = 1;
 
   uip_ipaddr_copy(&udpconn->ripaddr, nexthop);
   uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_rerr));
@@ -696,26 +655,30 @@ send_rerr(uip_ipaddr_t *src, uip_ipaddr_t *dest, uip_ipaddr_t *nexthop)
 }
 
 /*---------------------------------------------------------------------------*/
+/* Format and send a RACK to `nexthop`. */
 #if LRP_RREP_ACK
 static void
-send_rack(uip_ipaddr_t *src, uip_ipaddr_t *nexthop, uint16_t seqno)
+send_rack(const uip_ipaddr_t *src, const uip_ipaddr_t *nexthop,
+    const uint16_t seqno)
 {
   char buf[MAX_PAYLOAD_LEN];
   struct lrp_msg_rack *rm = (struct lrp_msg_rack *)buf;
-  PRINTF("Send RACK for src ");
-  PRINT6ADDR(src);
-  PRINTF(" nexthop ");
+
+  PRINTF("Send RACK -> ");
   PRINT6ADDR(nexthop);
+  PRINTF(" src=");
+  PRINT6ADDR(src);
   PRINTF("\n");
+
   rm->type = LRP_RACK_TYPE;
   rm->type = (rm->type << 4) | LRP_RSVD1;
   rm->addr_len = LRP_RSVD2;
   rm->addr_len = (rm->addr_len << 4) | LRP_ADDR_LEN_IPV6;
   uip_ipaddr_copy(&rm->src_addr, src);
   rm->seqno = seqno;
-  udpconn->ttl = LRP_MAX_DIST;
+  udpconn->ttl = 1;
+
   uip_ipaddr_copy(&udpconn->ripaddr, nexthop);
-  PRINTF("RACK length: %u\n", sizeof(struct lrp_msg_rack));
   uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_rack));
   memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
 }
@@ -727,75 +690,67 @@ handle_incoming_rreq(void)
 {
   struct lrp_msg_rreq *rm = (struct lrp_msg_rreq *)uip_appdata;
   uip_ipaddr_t dest_addr, orig_addr;
+#if !USE_DIO
+  uip_ds6_route_t* rt;
+#endif
 
-  PRINTF("RREQ ");
+  PRINTF("Received RREQ ");
   PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
   PRINTF(" -> ");
   PRINT6ADDR(&UIP_IP_BUF->destipaddr);
-  PRINTF(" ttl=%u ", UIP_IP_BUF->ttl);
-  PRINTF(" hop=%u ", rm->route_cost);
-  PRINTF(" seq=%u ", rm->seqno);
-  PRINTF(" orig ");
+  PRINTF(" orig=");
   PRINT6ADDR(&rm->orig_addr);
-  PRINTF(" dest ");
+  PRINTF(" dest=");
   PRINT6ADDR(&rm->dest_addr);
-  PRINTF("\r\n");
+  PRINTF(" seq=%u", rm->seqno);
+  PRINTF(" hop=%u\n", rm->route_cost);
 
   if(lrp_is_my_global_address(&rm->orig_addr)) {
-    PRINTF("RREQ loops back, not process it\n");
+    PRINTF("Skipping: RREQ loops back\n");
     return;
   }
 
-  /* Do not add reverse route while receiving RREQ, only useful with LOADng without DODAG
-  rt = lrp_route_lookup(&rm->orig_addr);
-
-  if(rt == NULL){
-    PRINTF("Inserting route from RREQ\n");
-    rt = uip_ds6_route_add(&rm->orig_addr, DEFAULT_PREFIX_LEN,
-            &UIP_IP_BUF->srcipaddr, rm->route_cost, rm->seqno, LRP_R_HOLD_TIME);
-  } else if(SEQNO_GREATER_THAN(rm->seqno,rt->state.seqno)
-            || (rm->seqno==rt->state.seqno && rm->route_cost < rt->state.route_cost)){
-    PRINTF("Update route from RREQ\n");
-    uip_ipaddr_copy(&rt->nexthop, &UIP_IP_BUF->srcipaddr);
-    rt->state.seqno = rm->seqno;
-    rt->state.route_cost = rm->route_cost;
-    rt->state.valid_time = LRP_R_HOLD_TIME;
+#if !USE_DIO
+  // Add reverse route while receiving RREQ
+  rt = uip_lrp_route_add(&rm->orig_addr, DEFAULT_PREFIX_LEN,
+      &UIP_IP_BUF->srcipaddr, rm->route_cost, rm->seqno);
+  if(rt != NULL) {
+    PRINTF("Route inserted from RREQ\n");
   } else {
-    PRINTF("Not a better route for inserting (RREQ)\n");
+    PRINTF("Skipping: not a better route\n");
+    return;
   }
-
-  */
-
-  /* Have we seen this RREQ before? */
+#else
+  // Have we seen this RREQ before?
   if(fwc_lookup(&rm->orig_addr, &rm->seqno)) {
-    PRINTF("RREQ cached, do not process it\n");
+    PRINTF("Skipping: RREQ cached\n");
     return;
   }
   fwc_add(&rm->orig_addr, &rm->seqno);
+#endif /* !USE_OPT */
 
   if(lrp_is_my_global_address(&rm->dest_addr)) {
     // RREQ for our address
-    PRINTF("RREQ for our address\n");
     uip_ipaddr_copy(&dest_addr, &rm->orig_addr);
     uip_ipaddr_copy(&orig_addr, &rm->dest_addr);
-    my_hseqno++;
-    if(my_hseqno > MAX_SEQNO)
-      my_hseqno = 1;
+    SEQNO_INCREASE(my_hseqno);
     send_rrep(&dest_addr, &UIP_IP_BUF->srcipaddr, &orig_addr, &my_hseqno, 0);
 
 #if LRP_IS_COORDINATOR()
-  } else {
     // Only coordinator forward RREQ
-    if(UIP_IP_BUF->ttl > 1) {
-      // TTL still valid for forwarding
-      PRINTF("forward RREQ\n");
-      rm->route_cost++;
-      udpconn->ttl = UIP_IP_BUF->ttl - 1;
-      uip_create_linklocal_lln_routers_mcast(&udpconn->ripaddr);
-      lrp_rand_wait();
-      uip_udp_packet_send(udpconn, rm, sizeof(struct lrp_msg_rreq));
-      memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
+  } else {
+    if(UIP_IP_BUF->ttl == 1) {
+      PRINTF("Skipping: TTL expired\n");
+      return;
     }
+    // TTL still valid for forwarding
+    PRINTF("Forward RREQ\n");
+    rm->route_cost++;
+    udpconn->ttl = UIP_IP_BUF->ttl - 1;
+    uip_create_linklocal_lln_routers_mcast(&udpconn->ripaddr);
+    lrp_rand_wait();
+    uip_udp_packet_send(udpconn, rm, sizeof(struct lrp_msg_rreq));
+    memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
 #endif /* LRP_IS_COORDINATOR() */
   }
 }
@@ -808,23 +763,21 @@ handle_incoming_rrep(void)
   struct uip_ds6_route *rt;
   uip_ipaddr_t *nexthop;
 
-  // No multicast RREP: drop
-  if(uip_ipaddr_cmp(&UIP_IP_BUF->destipaddr, &mcastipaddr)) {
-    return;
-  }
-
-  PRINTF("RREP ");
+  PRINTF("Received RREP ");
   PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
   PRINTF(" -> ");
   PRINT6ADDR(&UIP_IP_BUF->destipaddr);
-  PRINTF(" ttl=%u ", UIP_IP_BUF->ttl);
-  PRINTF(" hop=%u ", rm->route_cost);
-  PRINTF(" seq=%u ", rm->seqno);
-  PRINTF(" orig ");
+  PRINTF(" orig=");
   PRINT6ADDR(&rm->orig_addr);
-  PRINTF(" dest ");
+  PRINTF(" dest=");
   PRINT6ADDR(&rm->dest_addr);
-  PRINTF("\n");
+  PRINTF(" hopcnt=%u\n", rm->route_cost);
+
+  // No multicast RREP: drop
+  if(uip_ipaddr_cmp(&UIP_IP_BUF->destipaddr, &mcastipaddr)) {
+    PRINTF("Skipping: multicasted RREP");
+    return;
+  }
 
   // No RREP from our default route
   if (uip_ds6_defrt_lookup(&UIP_IP_BUF->srcipaddr)) {
@@ -832,58 +785,49 @@ handle_incoming_rrep(void)
     return;
   }
 
-  rt = lrp_route_lookup(&rm->orig_addr);
-
-  // New forward route?
-  if(rt == NULL) {
-    PRINTF("Inserting route from RREP\n");
-    rt = uip_lrp_route_add(&rm->orig_addr, DEFAULT_PREFIX_LEN,
-            &UIP_IP_BUF->srcipaddr, rm->route_cost, rm->seqno);
-    if(rt != NULL) {
+  rt = uip_lrp_route_add(&rm->orig_addr, DEFAULT_PREFIX_LEN,
+      &UIP_IP_BUF->srcipaddr, rm->route_cost, rm->seqno);
+  if(rt != NULL) {
+    PRINTF("Route inserted from RREP\n");
 #if LRP_RREP_ACK
-      rt->state.ack_received = 0; /* Pending route for ACK */
+    rt->state.ack_received = 0; /* Pending route for ACK */
 #else
-      rt->state.ack_received = 1;
+    rt->state.ack_received = 1;
 #endif
-    }
-  } else if(SEQNO_GREATER_THAN(rm->seqno, rt->state.seqno)
-          || (rm->seqno == rt->state.seqno && rm->route_cost < rt->state.route_cost)) {
-    PRINTF("Update route from RREP\n");
-    uip_ds6_route_rm(rt);
-    uip_lrp_route_add(&rm->orig_addr, DEFAULT_PREFIX_LEN,
-            &UIP_IP_BUF->srcipaddr, rm->route_cost, rm->seqno);
   } else {
-    PRINTF("Not a better route for inserting (RREP)\n");
+    PRINTF("Former route is better\n");
   }
 
-  /* Forward RREP towards originator? */
   if(uip_ipaddr_cmp(&rm->dest_addr, &myipaddr)) {
-    PRINTF("Received RREP to ourself\n");
+    // RREP is for our address
 #if LRP_RREQ_RETRIES
-    //remove route request cache
+    // Remove route request cache
     rrc_remove(&rm->orig_addr);
-#endif
-  } else {
-    //rt = lrp_route_lookup(&rm->dest_addr);
-    nexthop = uip_ds6_defrt_choose();
-    if(nexthop == NULL) {
-      PRINTF("RREP received, but no default route to originator\n");
-      // No ACK and RREP forwarding
-      return;
-    }
-    // Send ACK
 #if LRP_RREP_ACK
     send_rack(&rm->orig_addr, &UIP_IP_BUF->srcipaddr, rm->seqno);
 #endif
+    return;
+#endif
+  } else {
+#if USE_DIO
+    nexthop = uip_ds6_defrt_choose();
+    if(nexthop == NULL) {
+      PRINTF("Unable to forward RREP: no default route\n");
+      return; // No ACK and RREP forwarding
+    }
+#else
+    nexthop = uip_ds6_route_lookup(&rm->dest_addr);
+    if (nexthop == NULL) {
+      PRINTF("Unable to forward RREP: unknown destination\n");
+      return; // No ACK and RREP forwarding
+    }
+#endif /* USE_DIO */
 
-    PRINTF("Forward RREP to ");
-    PRINT6ADDR(nexthop);
-    PRINTF("\n");
-    rm->route_cost++;
-    udpconn->ttl = 1;
-    uip_ipaddr_copy(&udpconn->ripaddr, nexthop);
-    uip_udp_packet_send(udpconn, rm, sizeof(struct lrp_msg_rrep));
-    memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
+#if LRP_RREP_ACK
+    send_rack(&rm->orig_addr, &UIP_IP_BUF->srcipaddr, rm->seqno);
+#endif
+    send_rrep(&rm->dest_addr, nexthop, &rm->orig_addr, &rm->seqno,
+        rm->route_cost + 1);
   }
 }
 
@@ -894,18 +838,16 @@ handle_incoming_rack(void)
   struct lrp_msg_rack *rm = (struct lrp_msg_rack *)uip_appdata;
   struct uip_ds6_route *rt;
 
-
-  PRINTF("RACK ");
+  PRINTF("Received RACK ");
   PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
   PRINTF(" -> ");
   PRINT6ADDR(&UIP_IP_BUF->destipaddr);
-  PRINTF(" ttl=%u ", UIP_IP_BUF->ttl);
   PRINTF(" seq=%u ", rm->seqno);
-  PRINTF(" src ");
+  PRINTF(" src=");
   PRINT6ADDR(&rm->src_addr);
   PRINTF("\n");
 
-  rt = lrp_route_lookup(&rm->src_addr);
+  rt = uip_ds6_route_lookup(&rm->src_addr);
 
   /* No route? */
   if(rt == NULL) {
@@ -913,7 +855,6 @@ handle_incoming_rack(void)
   } else {
     rt->state.ack_received = 1; /* Make pending route valid */
   }
-
 }
 
 /*---------------------------------------------------------------------------*/
@@ -921,146 +862,117 @@ static void
 handle_incoming_rerr(void)
 {
   struct lrp_msg_rerr *rm = (struct lrp_msg_rerr *)uip_appdata;
-  struct uip_ds6_route *rt_in_err;
+#if !USE_DIO
   struct uip_ds6_route *rt;
-#if ! LRP_IS_SINK
-  uip_ds6_defrt_t *defrt;
-#endif /* ! LRP_IS_SINK */
+#endif /* !USE_DIO */
 
-#if USE_DIO
-  uip_ipaddr_t mcastLoadAddr;
-  uip_create_linklocal_lln_routers_mcast(&mcastLoadAddr);
-#endif /* USE_DIO */
-
-  PRINTF("RERR ");
+  PRINTF("Recieved RERR ");
   PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
   PRINTF(" -> ");
   PRINT6ADDR(&UIP_IP_BUF->destipaddr);
-  PRINTF(" ttl=%u ", UIP_IP_BUF->ttl);
-  PRINTF(" towards ");
-  PRINT6ADDR(&rm->src_addr);
-  PRINTF(" addr in error : ");
+  PRINTF(" addr_in_error=");
   PRINT6ADDR(&rm->addr_in_error);
   PRINTF("\n");
 
-  /* It may happen that the address in error is mine... Stop here ! */
-  if(lrp_is_my_global_address(&rm->addr_in_error)) {
+  /* Remove route */
+  uip_ds6_route_rm(uip_ds6_route_lookup(&rm->addr_in_error));
+
+#if !USE_DIO
+  rt = uip_ds6_route_lookup(&rm->src_addr);
+  if (rt == NULL) {
+    PRINTF("Skipping RERR: unknown source\n");
     return;
-  }
-
-  rt_in_err = lrp_route_lookup(&rm->addr_in_error);
-  rt = lrp_route_lookup(&rm->src_addr);
-
-  /* No route ? */
-  if(rt_in_err == NULL) {
-    PRINTF("Received RERR for non-existing route\n");
   } else {
-    uip_ds6_route_rm(rt_in_err); /* Remove route */
+    PRINTF("Forward RERR to nexthop\n");
+    send_rerr(&rm->src_addr, &rm->addr_in_error, uip_ds6_route_nexthop(rt));
   }
-
-#if ! LRP_IS_SINK
-#if USE_DIO
-  /* If the RERR comes from a default router, we are, in the tree, under this
-   * router */
-  defrt = uip_ds6_defrt_lookup(&UIP_IP_BUF->srcipaddr);
-  if(defrt != NULL) {
-    if(lrp_is_my_global_address(&rm->src_addr)) {
-      /* RERR is for me, send a RREP */
-      PRINTF("Spontaneously send RREP\n");
-      my_hseqno++;
-      if(my_hseqno > MAX_SEQNO)
-        my_hseqno = 1;
-      send_rrep(&my_sink_id, &defrt->ipaddr, &myipaddr, &my_hseqno, 0);
-      return;
-    } else {
-#endif /* USE_DIO */
-      if (rt != NULL) {
-        /* We know where is the source. Forward RERR to nexthop */
-        PRINTF("Forward RERR to nexthop\n");
-        send_rerr(&rm->src_addr, &rm->addr_in_error, uip_ds6_route_nexthop(rt));
-      } else {
-        PRINTF("Skipping RERR: unknown source\n");
-      }
-#if USE_DIO
-    }
-  } else if(!uip_ipaddr_cmp(&UIP_IP_BUF->destipaddr, &mcastLoadAddr) ||
-            rt_in_err != NULL) {
-    /* The RERR was multicast and I had a route, or it was send to me, so
-     * it goes along default route. */
-    PRINTF("Forward RERR along the default route\n");
-    if(!lrp_is_my_global_address(&rm->src_addr))
-      send_rerr(&rm->src_addr, &rm->addr_in_error, uip_ds6_defrt_choose());
+#else
+#if !LRP_IS_SINK
+  if (lrp_is_predecessor(&UIP_IP_BUF->srcipaddr)) {
+    PRINTF("Cleaning broken host route\n");
+    send_rerr(&rm->src_addr, &rm->addr_in_error, uip_ds6_defrt_choose());
   } else {
-    PRINTF("skipping RERR: unknown destination\n");
+    PRINTF("Successor doesn't know us. Spontaneously send RREP\n");
+    SEQNO_INCREASE(my_hseqno);
+    send_rrep(&my_sink_addr, uip_ds6_defrt_choose(), &myipaddr, &my_hseqno, 0);
   }
-#endif /* USE_DIO */
-#endif /* ! LRP_IS_SINK */
+#endif /* !LRP_IS_SINK */
+#endif /* !USE_DIO */
 }
 
 /*---------------------------------------------------------------------------*/
-#if ! LRP_IS_SINK
 static void
 handle_incoming_dio(void)
 {
+#if LRP_IS_SINK
+  PRINTF("Skipping DIO: is a sink\n");
+#else
+
   uint8_t parent_changed = 0;
   uint8_t dio_weaklink = 0;
   // FIXME: code specific to beacon-enabled
 //   if (NETSTACK_RDC_CONFIGURATOR.use_routing_information()) {
   struct lrp_msg_dio *rm = (struct lrp_msg_dio *)uip_appdata;
-  PRINTF("DIO message: ");
+
+  PRINTF("Received DIO ");
   PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
   PRINTF(" -> ");
   PRINT6ADDR(&UIP_IP_BUF->destipaddr);
-  PRINTF(" ttl=%u ", UIP_IP_BUF->ttl);
-  PRINTF(" rank=%d ", rm->rank);
-  PRINTF(" seq=%d ", rm->seqno);
+  PRINTF(" rank=%d", rm->rank);
+  PRINTF(" seq=%d", rm->seqno);
   PRINTF(" rssi=%i\n", (int8_t)LAST_RSSI);
 
-  if(uip_ipaddr_cmp(&UIP_IP_BUF->srcipaddr, &myipaddr)) {
-    PRINTF("DIO loops back, not processing\n");
-    return;
-  }
-
   if(SEQNO_GREATER_THAN(rm->seqno, my_seq_id)) {
-    // First DIO with this seqno
-    PRINTF("New DIO sequence number received\n");
+    PRINTF("Accepting offer: New sequence number\n");
     my_seq_id = rm->seqno;
     parent_changed = 1;
-  } else if(rm->seqno == my_seq_id ){
-    dio_weaklink = get_weaklink(rm->metric) + parent_weaklink((int8_t)LAST_RSSI);
-    if(dio_weaklink < my_weaklink + parent_weaklink(my_parent_rssi)) { /* less weak links */
+  } else if(rm->seqno == my_seq_id) {
+    // Seqno ties
+    dio_weaklink = get_weaklink(rm->metric) +
+      parent_weaklink((int8_t)LAST_RSSI);
+    if(dio_weaklink < my_weaklink + parent_weaklink(my_parent_rssi)) {
+      PRINTF("Accepting offer: Less weak links\n");
       parent_changed = 1;
-      PRINTF("less weak links\n");
-    } else if(dio_weaklink == my_weaklink + parent_weaklink(my_parent_rssi)){ /* weak link ties */
-      if(rm->rank < (my_rank - 1)) { /* better rank */
+    } else if(dio_weaklink == my_weaklink + parent_weaklink(my_parent_rssi)){
+      // Weak link ties
+      if(rm->rank < (my_rank - 1)) {
+        PRINTF("Accepting offer: Better rank\n");
         parent_changed = 1;
-        PRINTF("better rank\n");
       }
-//      else if (!uip_ipaddr_cmp(&UIP_IP_BUF->srcipaddr, &def_rt_addr) && my_parent_rssi < (int8_t)LAST_RSSI){
-//        parent_changed = 1;
-//        PRINTF("addr  -- "); PRINT6ADDR(&UIP_IP_BUF->srcipaddr);printf("   "); PRINT6ADDR(&def_rt_addr);printf("\n");
-//      }
     }
   }
 
-  if(parent_changed) {
-    uip_ipaddr_copy(&my_sink_id, &rm->sink_addr);
+  if(parent_changed == 1) {
+    uip_ipaddr_copy(&my_sink_addr, &rm->sink_addr);
     my_parent_rssi = (int8_t)LAST_RSSI;
-    PRINTF("Update from received DIO r=%u wl=%u rssi=%i\n", my_rank, my_weaklink + parent_weaklink(my_parent_rssi), my_parent_rssi);
     change_default_route(rm);
-
-#if LRP_IS_SKIP_LEAF
-    my_hseqno++;
-    if(my_hseqno>MAX_SEQNO)
-      my_hseqno = 1;
-    nexthop = uip_ds6_defrt_choose();
-    send_rrep(&rm->sink_addr, nexthop, &myipaddr, &my_hseqno, 0);
-#endif /* LRP_IS_SKIP_LEAF */
-    } else {
-       PRINTF("Not a better rank/RSSI\n");
-    }
+  } else {
+    PRINTF("Skipping: bad offer\n");
+  }
+#endif /* LRP_IS_SINK */
 }
-#endif /* ! LRP_IS_SINK */
+
+/*---------------------------------------------------------------------------*/
+static void
+handle_incoming_qry(void)
+{
+#if !LRP_IS_COORDINATOR()
+  PRINTF("Skipping QRY: is a leaf\n");
+  return;
+#else
+  PRINTF("Received QRY\n");
+
+#if !LRP_IS_SINK
+  if(uip_ds6_defrt_lookup(&def_rt_addr) == NULL) {
+    PRINTF("Skipping: no default route\n");
+    return;
+  }
+#endif
+  PRINTF("Send DIO\n");
+  lrp_rand_wait();
+  send_dio();
+#endif /* !LRP_IS_COORDINATOR() */
+}
 
 /*---------------------------------------------------------------------------*/
 static void
@@ -1092,59 +1004,35 @@ tcpip_handler(void)
     type = m->type >> 4;
     switch(type) {
       case LRP_RREQ_TYPE:
-        PRINTF("Received RREQ\n");
         handle_incoming_rreq();
         break;
       case LRP_RREP_TYPE:
-        PRINTF("Received RREP\n");
         handle_incoming_rrep();
         break;
       case LRP_RERR_TYPE:
-        PRINTF("Received RERR\n");
         handle_incoming_rerr();
         break;
       case LRP_RACK_TYPE:
-        PRINTF("Received RACK\n");
         handle_incoming_rack();
         break;
       case LRP_DIO_TYPE:
-#if LRP_IS_SINK
-        PRINTF("Received DIO. Skipping: is a sink\n");
-#else
-        PRINTF("Received DIO\n");
         handle_incoming_dio();
-#endif /* LRP_IS_SINK */
         break;
       case LRP_QRY_TYPE:
-#if LRP_IS_SINK
-        PRINTF("Received QRY -- Send DIO\n");
-        lrp_rand_wait();
-        send_dio();
-#elif LRP_IS_COORDINATOR()
-        if(uip_ds6_defrt_lookup(&def_rt_addr) == NULL) {
-          PRINTF("Received QRY. Skipping: no default route\n");
-        } else {
-          PRINTF("Received QRY -- Send DIO\n");
-          PRINTF("Address: ");
-          PRINT6ADDR(&uip_ds6_defrt_lookup(&def_rt_addr)->ipaddr);
-          PRINTF("\n");
-          lrp_rand_wait();
-          send_dio();
-        }
-#else
-        PRINTF("Received QRY. Skipping: not a coordinator\n");
-#endif /* LRP_IS_COORDINATOR() */
+        handle_incoming_qry();
         break;
     }
   }
 }
 
 /*---------------------------------------------------------------------------*/
+#if LRP_IS_SINK
 static uint8_t
 lrp_addr_matches_local_prefix(uip_ipaddr_t *host)
 {
   return uip_ipaddr_prefixcmp(&local_prefix, host, local_prefix_len);
 }
+#endif /* LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
 #if LRP_IS_SINK
@@ -1155,7 +1043,7 @@ lrp_request_route_to(uip_ipaddr_t *host)
     return;
   }
 
-  PRINTF("Request for a route towards ");
+  PRINTF("Request a route towards ");
   PRINT6ADDR(host);
   PRINTF("\n");
 
@@ -1188,12 +1076,11 @@ lrp_request_route_to(uip_ipaddr_t *host)
 #endif /* LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
+#if LRP_IS_COORDINATOR() && !LRP_IS_SINK
 static void
 lrp_routing_error(uip_ipaddr_t* source, uip_ipaddr_t* destination,
     uip_lladdr_t* previoushop)
 {
-  uip_ds6_route_rm(uip_ds6_route_lookup(destination));
-
   uip_ipaddr_copy(&rerr_src_addr, source);
   uip_ipaddr_copy(&rerr_bad_addr, destination);
   uip_ipaddr_copy(&rerr_next_addr,
@@ -1202,6 +1089,7 @@ lrp_routing_error(uip_ipaddr_t* source, uip_ipaddr_t* destination,
   command = COMMAND_SEND_RERR;
   process_post(&lrp_process, PROCESS_EVENT_MSG, NULL);
 }
+#endif /* LRP_IS_COORDINATOR() && !LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
 void
@@ -1212,7 +1100,7 @@ lrp_set_local_prefix(uip_ipaddr_t *prefix, uint8_t len)
 }
 
 /*---------------------------------------------------------------------------*/
-void
+static void
 get_prefix_from_addr(uip_ipaddr_t *addr, uip_ipaddr_t *prefix, uint8_t len)
 {
   uint8_t i;
@@ -1223,7 +1111,6 @@ get_prefix_from_addr(uip_ipaddr_t *addr, uip_ipaddr_t *prefix, uint8_t len)
        prefix->u8[i] = addr->u8[i];
     } else {
        prefix->u8[i] = 0;
-
     }
   }
 }
@@ -1233,69 +1120,40 @@ uip_ipaddr_t*
 lrp_select_nexthop_for(uip_ipaddr_t* source, uip_ipaddr_t* destination,
     uip_lladdr_t* previoushop)
 {
-#if !LRP_IS_SINK
-  uip_ds6_route_t *r;
-#endif /* !LRP_IS_SINK */
   uip_ds6_route_t *route_to_dest;
-  uip_ipaddr_t *defrt, *nexthop;
+  uip_ipaddr_t *nexthop;
 
-  if(!lrp_addr_matches_local_prefix(&UIP_IP_BUF->destipaddr)) {
-    /* The destination is not in local network. Send the packet to sink. */
-    defrt = uip_ds6_defrt_choose();
-    if(defrt == NULL) {
-      PRINTF("Discarding packet: no default route\n");
-    } else {
-      PRINTF("Routing to sink: external dest\n");
-    }
-    return defrt; /* If defrt is NULL, drop the packet */
-  }
+#if !LRP_IS_COORDINATOR()
+  // Node is a leaf, always choose default route
+  nexthop = uip_ds6_defrt_choose();
+  route_to_dest = NULL;
+#else
 
   route_to_dest = uip_ds6_route_lookup(destination);
 #if !LRP_IS_SINK
-  /* Is the previous hop into the subtree? */
-  for(r = uip_ds6_route_head();
-      r != NULL;
-      r = uip_ds6_route_next(r)) {
-    if(memcmp(uip_ds6_nbr_lladdr_from_ipaddr(uip_ds6_route_nexthop(r)),
-            previoushop, sizeof(uip_lladdr_t)) == 0) break;
-  }
-
-  if(r == NULL && !lrp_is_my_global_address(&UIP_IP_BUF->srcipaddr)) {
-    /* The previous hop is not into the subtree */
+  if(!lrp_is_predecessor(uip_ds6_nbr_ipaddr_from_lladdr(previoushop)) &&
+      !lrp_is_my_global_address(source)) {
+    // The previous hop is higher
     if(route_to_dest == NULL) {
-      /* No host route */
-      PRINTF("Discarding packet: previous hop is not into the subtree "
-          "and no host route is provided for dest\n");
+      // No host route
+      PRINTF("Discarding packet: previous and next hop are higher\n");
       lrp_routing_error(source, destination, previoushop);
       return NULL;
     } else {
-      /* Valid host route */
+      // Valid host route
       nexthop = uip_ds6_route_nexthop(route_to_dest);
-      if(nexthop == NULL) {
-        /* The nexthop is not in neighbor table */
-        PRINTF("Discarding packet: nexthop ");
-        PRINT6ADDR(nexthop);
-        PRINTF(" in routing table is not in neighbor table\n");
-        return NULL;
-      } else {
-        /* The packet goes into subtree */
-        PRINTF("Routing through ");
-        PRINT6ADDR(nexthop);
-        PRINTF(": comes from outer and goes into the subtree\n");
-        return nexthop;
-      }
     }
   } else {
 #endif /* !LRP_IS_SINK */
-    /* The previous hop is into the subtree */
+    // The previous hop is lower
     if(route_to_dest == NULL) {
-      /* No host route */
+      // No host route
 #if LRP_IS_SINK
-      /* Send RREQ */
+      // Send RREQ
       lrp_request_route_to(destination);
       return NULL;
-#else /* if not LRP_IS_SINK */
-      /* Use default route instead */
+#else
+      // Use default route instead
       nexthop = uip_ds6_defrt_choose();
       if(nexthop == NULL) {
         PRINTF("Discarding packet: no default route\n");
@@ -1303,35 +1161,28 @@ lrp_select_nexthop_for(uip_ipaddr_t* source, uip_ipaddr_t* destination,
       }
 #endif /* LRP_IS_SINK */
     } else {
-      /* Use provided host route */
+      // Use provided host route
       nexthop = uip_ds6_route_nexthop(route_to_dest);
-    }
-    if(nexthop == NULL) {
-      /* The nexthop is not in neighbor table */
-      PRINTF("Discarding packet: nexthop ");
-      PRINT6ADDR(nexthop);
-      PRINTF(" in routing table is not in neighbor table\n");
-      return NULL;
-    } else if(uip_ipaddr_cmp(uip_ds6_nbr_lladdr_from_ipaddr(nexthop),
-          previoushop)) {
-      /* Previous hop and next hop is identical */
-      PRINTF("Discarding packet: "
-          "nexthop and previoushop is identical\n");
-      lrp_routing_error(source, destination, previoushop);
-      return NULL;
-    } else {
-      PRINTF("Routing through ");
-      PRINT6ADDR(nexthop);
-      if(route_to_dest == NULL) {
-        PRINTF(": is default route\n");
-      } else {
-        PRINTF(": comes from another son into subtree\n");
-      }
-      return nexthop;
     }
 #if !LRP_IS_SINK
   }
 #endif /* !LRP_IS_SINK */
+#endif /* !LRP_IS_COORDINATOR() */
+
+  if(nexthop == NULL) {
+    // The nexthop is not in neighbour table
+    PRINTF("Discarding packet: nexthop in routing table is not in "
+        "neighbour table\n");
+  } else {
+    PRINTF("Routing through ");
+    PRINT6ADDR(nexthop);
+    if(route_to_dest == NULL) {
+      PRINTF(" (default route)\n");
+    } else {
+      PRINTF(" (host route)\n");
+    }
+  }
+  return nexthop;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -1341,7 +1192,7 @@ PROCESS_THREAD(lrp_process, ev, data)
   PRINTF("LRP process started\n");
 #if LRP_IS_SINK
   my_seq_id = 1;
-  my_rank = 1;
+  my_rank = 0;
   my_weaklink = 0;
   my_parent_rssi = 126;
   dio_seq_skip_counter = 0;
@@ -1357,25 +1208,21 @@ PROCESS_THREAD(lrp_process, ev, data)
   print_local_addresses();
   get_global_addr(&myipaddr);
   get_prefix_from_addr(&myipaddr, &local_prefix, DEFAULT_LOCAL_PREFIX);
+#if LRP_IS_SINK
+  uip_ipaddr_copy(&my_sink_addr, &myipaddr);
+#endif
   uip_create_linklocal_lln_routers_mcast(&mcastipaddr);
   uip_create_linklocal_empty_addr(&def_rt_addr);
   uip_ds6_maddr_add(&mcastipaddr);
-  /* new connection UDP */
+
   udpconn = udp_new(NULL, UIP_HTONS(LRP_UDPPORT), NULL);
   udp_bind(udpconn, UIP_HTONS(LRP_UDPPORT));
-
   PRINTF("Created an UDP socket");
   PRINTF(" (local/remote port %u/%u)\n",
         UIP_HTONS(udpconn->lport), UIP_HTONS(udpconn->rport));
 
-#if LRP_IS_COORDINATOR()
-  PRINTF("Set timer for DIO multicast %lu\n", SEND_DIO_INTERVAL);
-  etimer_set(&send_dio_et, SEND_DIO_INTERVAL);
-  memset(&ipaddr, 0, sizeof(ipaddr));
-#endif
-
 #if LRP_RREQ_RETRIES
-  PRINTF("Set timer for RREQ retry %u ms\n", RETRY_RREQ_INTERVAL * 1000 / CLOCK_SECOND);
+  PRINTF("Set timer for RREQ retry %lums\n", RETRY_RREQ_INTERVAL * 1000 / CLOCK_SECOND);
   etimer_set(&dfet, RETRY_RREQ_INTERVAL);
 #endif
 
@@ -1390,7 +1237,8 @@ PROCESS_THREAD(lrp_process, ev, data)
 
 #if SND_QRY && ! LRP_IS_SINK
   // Start sending QRY to find nodes just around
-  enable_qry();
+  qry_exp_residuum = -1;
+  retransmit_qry();
 #endif
 
   while(1) {
@@ -1406,7 +1254,7 @@ PROCESS_THREAD(lrp_process, ev, data)
 #if LRP_IS_SINK
       send_dio();
       etimer_set(&send_dio_et, SEND_DIO_INTERVAL);
-#else // LRP_IS_SINK
+#else /* LRP_IS_SINK */
       if(uip_ds6_defrt_lookup(&def_rt_addr) != NULL) {
         send_dio();
         etimer_set(&send_dio_et, SEND_DIO_INTERVAL);
@@ -1415,15 +1263,12 @@ PROCESS_THREAD(lrp_process, ev, data)
     }
 #endif /* LRP_IS_COORDINATOR() */
 
-#if SND_QRY && ! LRP_IS_SINK
+#if SND_QRY && !LRP_IS_SINK
     // QRY timer
-    if(etimer_expired(&eqryt)) {
-      if(uip_ds6_defrt_lookup(&def_rt_addr) == NULL) {
-        // Still no route, send QRY and reschedule
-        send_qry();
-      }
+    if(qry_exp_residuum != -1 && etimer_expired(&qry_timer)) {
+      retransmit_qry();
     }
-#endif /* SND_QRY && ! LRP_IS_SINK */
+#endif /* SND_QRY && !LRP_IS_SINK */
 
 #if LRP_RREQ_RETRIES
     if(etimer_expired(&dfet)) {
@@ -1440,17 +1285,15 @@ PROCESS_THREAD(lrp_process, ev, data)
 #endif /* LRP_R_HOLD_TIME */
 
     if(ev == PROCESS_EVENT_MSG) {
-        if(command == COMMAND_SEND_RREQ) {
-            PRINTF("Send RREQ\n");
-            ctimer_set(&sendmsg_ctimer, random_rand() % 50 * CLOCK_SECOND / 1000,
-                     (void (*)(void *))send_rreq, NULL);
-        } else if (command == COMMAND_SEND_RERR) {
-          send_rerr(&rerr_src_addr, &rerr_bad_addr, &rerr_next_addr);
-        }
-        command = COMMAND_NONE;
+      if(command == COMMAND_SEND_RREQ) {
+        ctimer_set(&sendmsg_ctimer, random_rand() % 50 * CLOCK_SECOND / 1000,
+            (void (*)(void *))send_rreq, NULL);
+      } else if (command == COMMAND_SEND_RERR) {
+        send_rerr(&rerr_src_addr, &rerr_bad_addr, &rerr_next_addr);
+      }
+      command = COMMAND_NONE;
     }
   }
-
   PROCESS_END();
 }
 

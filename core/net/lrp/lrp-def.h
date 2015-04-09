@@ -74,20 +74,14 @@
 #ifdef LRP_CONF_IS_COORDINATOR
 #define LRP_IS_COORDINATOR() LRP_CONF_IS_COORDINATOR()
 #else
-#define LRP_IS_COORDINATOR() 0
+#define LRP_IS_COORDINATOR() 1
 #endif
 
 #if LRP_IS_SINK && !LRP_IS_COORDINATOR()
-#warning The node must be sink but not coordinator. This will lead surely \
-         to unpredictable results (and is particularly stupid). Please \
-         re-check your settings.
+#error The node is sink but not coordinator, which is particularly \
+  problematic (and stupid). Please check again your settings.
 #endif
 
-#ifdef LRP_CONF_IS_SKIP_LEAF
-#define LRP_IS_SKIP_LEAF LRP_CONF_IS_SKIP_LEAF
-#else
-#define LRP_IS_SKIP_LEAF 0
-#endif
 
 #define LRP_RREP_ACK           0
 #define LRP_ADDR_LEN_IPV6      15

@@ -63,7 +63,7 @@ lrp_set_local_prefix(uip_ipaddr_t *prefix, uint8_t len);
 
 /**
  * \brief   Select and return the nexthop to which send packet.
- * \return  The nexthop to use, or NULL if the packet have to be discarded
+ * \return  The nexthop to use, or NULL if the packet has to be discarded
  */
 uip_ipaddr_t*
 lrp_select_nexthop_for(uip_ipaddr_t* source, uip_ipaddr_t* destination,
