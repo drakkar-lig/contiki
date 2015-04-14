@@ -43,16 +43,24 @@
 
 #include "net/ip/uip.h"
 
-#define uip_create_linklocal_lln_routers_mcast(a) uip_ip6addr(a, 0xff02, 0, 0, 0, 0, 0, 0, 0x001b)
-#define uip_create_linklocal_empty_addr(a) uip_ip6addr(a, 0, 0, 0, 0, 0, 0, 0, 0)
+#include "net/uip.h"
+#define uip_create_linklocal_lln_routers_mcast(a) \
+  uip_ip6addr(a, 0xff02, 0, 0, 0, 0, 0, 0, 0x001b)
+#define uip_create_linklocal_empty_addr(a) \
+  uip_ip6addr(a, 0, 0, 0, 0, 0, 0, 0, 0)
 #define LRP_UDPPORT            6666 /* UDP port used for routing control
-                                        messages */
-#define LRP_NET_TRAVERSAL_TIME 10 * CLOCK_SECOND / 1000
-                                     /* Typical time for a message to cross the
-                                        whole network in one way (in ticks) */
+                                       messages */
+#define LRP_NET_TRAVERSAL_TIME 10 * CLOCK_SECOND
+                                    /* Typical time for a message to cross the
+                                       whole network in one way (in ticks) */
 #define LRP_RREQ_RETRIES       0    /* Re-send RREQ if no RREP recieved. 0
-                                        implies don't retry at all */
-#define LRP_RREQ_RATELIMIT     0
+                                       implies don't retry at all */
+#define LRP_RREQ_MININTERVAL   0    /* Minimum interval between two RREQ
+                                       transmissions (in ticks). 0 to
+                                       deactivate retransmissions. */
+#define LRP_BRK_MININTERVAL    (2 * LRP_NET_TRAVERSAL_TIME)
+                                    /* Minimum interval between two BRK
+                                     * transmissions (in ticks). */
 #define LRP_R_HOLD_TIME        0
 #define LRP_MAX_DIST           20
 #define LRP_RREP_ACK_TIMEOUT   10
@@ -132,12 +140,14 @@ struct lrp_msg_rrep {
 /* LRP RREP-ACK message */
 #define LRP_RACK_TYPE     2
 
+#if LRP_RREP_ACK
 struct lrp_msg_rack {
   uint8_t type;
   uint8_t addr_len;
   uip_ipaddr_t src_addr;
   uint16_t seqno;
 };
+#endif /* LRP_RREP_ACK */
 
 /* LRP RERR message */
 #define LRP_RERR_TYPE     3
@@ -153,21 +163,49 @@ struct lrp_msg_rerr {
 /* LRP DIO message */
 #define LRP_DIO_TYPE      4
 
+#if USE_DIO
 struct lrp_msg_dio {
   uint8_t type;
   uint8_t addr_len;
   uint16_t seqno;
-  int8_t rank;
+  uint8_t rank;
   uint8_t metric;
   uip_ipaddr_t sink_addr;
 };
+#endif /* USE_DIO */
 
 /* LRP QRY message */
 #define LRP_QRY_TYPE      5
 
+#if USE_DIO
 struct lrp_msg_qry {
   uint8_t type;
   uint8_t addr_len;
+};
+#endif /* USE_DIO */
+
+/* LRP QRY message */
+#define LRP_BRK_TYPE      6
+
+struct lrp_msg_brk {
+  uint8_t type;
+  uint8_t addr_len;
+  uint16_t seqno;
+  uint8_t rank;
+  uip_ipaddr_t broken_link_node;
+};
+
+/* LRP QRY message */
+#define LRP_UPD_TYPE      7
+
+struct lrp_msg_upd {
+  uint8_t type;
+  uint8_t addr_len;
+  uint16_t seqno;
+  uint8_t rank;
+  uint8_t metric;
+  uip_ipaddr_t sink_addr;
+  uip_ipaddr_t broken_link_node;
 };
 
 #endif /* __LRP_DEF_H__ */
