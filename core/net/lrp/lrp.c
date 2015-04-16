@@ -59,7 +59,7 @@
 /* Exponential parameter for QRY sending. @see retransmit_qry */
 #define QRY_EXP_PARAM           0.80
 
-#define LRP_MAX_RANK           127
+#define LRP_MAX_RANK            127
 
 /* Frequency of DIO broadcasting (in ticks) */
 #define SEND_DIO_INTERVAL       500 * CLOCK_SECOND
@@ -319,29 +319,38 @@ get_global_addr(uip_ipaddr_t *addr)
 
 /*---------------------------------------------------------------------------*/
 static void
-uip_lrp_nbr_add(uip_ipaddr_t* next_hop)
+lrp_nbr_add(uip_ipaddr_t* next_hop)
 {
 #if !UIP_ND6_SEND_NA
-  uip_ds6_nbr_t *nbr = NULL;
-  // it's my responsability to create+maintain neighbor
-  nbr = uip_ds6_nbr_lookup(next_hop);
+  uip_lladdr_t nbr_lladdr;
+#endif
+  uip_ds6_nbr_t *nbr = uip_ds6_nbr_lookup(next_hop);
 
   if(nbr == NULL) {
-    PRINTF("adding nbr from lrp\n");
-    uip_lladdr_t nbr_lladdr;
+    PRINTF("Adding ");
+    PRINT6ADDR(next_hop);
+    PRINTF(" to neighbor table");
+#if !UIP_ND6_SEND_NA
+    // it's my responsability to create+maintain neighbor
+    PRINTF(" (without NA),");
     memcpy(&nbr_lladdr, &next_hop->u8[8],
            UIP_LLADDR_LEN);
-
     nbr_lladdr.addr[0] ^= 2;
-    nbr = uip_ds6_nbr_add(next_hop, &nbr_lladdr, 0, NBR_REACHABLE);
+    PRINTF(" with lladdress ");
+    PRINTLLADDR(&nbr_lladdr);
+    uip_ds6_nbr_add(next_hop, &nbr_lladdr, 0, NBR_REACHABLE);
 //    nbr->nscount = 1;
-
-  } else {
-    PRINT6ADDR(&nbr->ipaddr);
-    PRINTF("\n");
-  }
-
+#else /* if not !UIP_ND6_SEND_NA */
+    PRINTF(" (waiting for a NA)\n");
+    uip_ds6_nbr_add(next_hop, NULL, 0, NBR_INCOMPLETE);
 #endif /* !UIP_ND6_SEND_NA */
+  } else {
+    PRINTF("Neighbor ");
+    PRINT6ADDR(next_hop);
+    PRINTF(" is already known (as");
+    PRINTLLADDR(uip_ds6_nbr_get_ll(nbr));
+    PRINTF(")\n");
+  }
 }
 
 /*---------------------------------------------------------------------------*/
@@ -389,18 +398,15 @@ change_default_route(uip_ipaddr_t* def_route,
   defrt = uip_ds6_defrt_lookup(uip_ds6_defrt_choose());
   if(defrt == NULL || !uip_ip6addr_cmp(&defrt->ipaddr, def_route)) {
     // New default route, remove previous one
-    PRINTF("DD: New default route\n");
+    PRINTF("New default route\n");
     uip_ds6_defrt_rm(defrt);
     // Flush routes through new default route
-    PRINTF("DD: ");
-    PRINT6ADDR(def_route);
-    PRINTF("\n");
     uip_ds6_route_rm_by_nexthop(def_route);
-    uip_lrp_nbr_add(def_route);
+    lrp_nbr_add(def_route);
     defrt = uip_ds6_defrt_add(def_route, LRP_DEFAULT_ROUTE_LIFETIME);
   } else {
     // We just need to refresh the route
-    PRINTF("DD: Refreshing default route\n");
+    PRINTF("Refreshing default route\n");
     stimer_set(&defrt->lifetime, LRP_DEFAULT_ROUTE_LIFETIME);
   }
 
@@ -424,7 +430,7 @@ change_default_route(uip_ipaddr_t* def_route,
  * inserted route or NULL */
 #if LRP_IS_COORDINATOR()
 static uip_ds6_route_t*
-uip_lrp_route_add(uip_ipaddr_t* orig_addr, const uint8_t length,
+lrp_route_add(uip_ipaddr_t* orig_addr, const uint8_t length,
     uip_ipaddr_t* next_hop, const uint8_t route_cost, const uint16_t seqno)
 {
   uip_ds6_route_t* rt;
@@ -432,7 +438,7 @@ uip_lrp_route_add(uip_ipaddr_t* orig_addr, const uint8_t length,
   rt = uip_ds6_route_lookup(orig_addr);
   if(rt != NULL) uip_ds6_route_rm(rt);
 
-  uip_lrp_nbr_add(next_hop);
+  lrp_nbr_add(next_hop);
   rt = uip_ds6_route_add(orig_addr, length, next_hop);
   if(rt != NULL) {
     rt->state.route_cost = route_cost;
@@ -459,7 +465,7 @@ offer_route(uip_ipaddr_t* orig_addr, const uint8_t length,
       SEQNO_GREATER_THAN(seqno, rt->state.seqno) ||
       (seqno == rt->state.seqno && route_cost < rt->state.route_cost)) {
     // Offered route is better than previous one
-    return uip_lrp_route_add(orig_addr, length, next_hop, route_cost, seqno);
+    return lrp_route_add(orig_addr, length, next_hop, route_cost, seqno);
   } else {
     // Offered route is worse, refusing route
     return NULL;
