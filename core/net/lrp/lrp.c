@@ -98,7 +98,7 @@ static struct etimer send_dio_et;
 // extern int8_t last_rssi; // for stm32w
 extern signed char cc2420_last_rssi;
 static uint16_t my_hseqno, my_sink_seqno, local_prefix_len;
-static int8_t my_rank, my_weaklink, my_parent_rssi;
+static int8_t my_rank, my_weaklink;
 #if LRP_IS_SINK
 static uint8_t dio_seq_skip_counter;
 #endif /* LRP_IS_SINK */
@@ -135,7 +135,7 @@ lrp_check_expired_route(uint16_t interval)
 
 
 /*---------------------------------------------------------------------------*/
-/* Implementation of request forwarding cache to avoid multiple forwarding */
+/* Implementation of RREQ Forwarding Cache to avoid multiple forwarding */
 #if !LRP_IS_SINK
 #define FWCACHE 2
 
@@ -222,8 +222,8 @@ rrc_check_expired_rreq(const uint16_t interval)
 
 
 /*---------------------------------------------------------------------------*/
-/* Implementation of broken routes cache to avoid multiple broadcasting and to
- * be able to retransmit UPD in reverted */
+/* Implementation of Broken Routes cache to avoid multiple forwarding of BRK
+ * messages and to be able to retransmit UPD on the reverted path */
 #if LRP_IS_COORDINATOR() && !LRP_IS_SINK
 #define BRCACHE 2
 
@@ -318,6 +318,10 @@ get_global_addr(uip_ipaddr_t *addr)
 }
 
 /*---------------------------------------------------------------------------*/
+/* Signal to neighbor table a new neighbor. If node cannot send NA
+ * (!UIP_ND6_SEND_NA), then remote lladdr is automatically computed. Else,
+ * neighbor is entred as "incomplete" entry, and NS/NA will be performed to
+ * confirm neighbor presence and get its lladdr. */
 static void
 lrp_nbr_add(uip_ipaddr_t* next_hop)
 {
@@ -355,14 +359,14 @@ lrp_nbr_add(uip_ipaddr_t* next_hop)
 
 /*---------------------------------------------------------------------------*/
 /* Return true if `addr` is empty */
-#if LRP_IS_COORDINATOR() && !LRP_IS_SINK
+#if !LRP_IS_SINK
 static uint8_t
-lrp_uip_ipaddr_is_empty(uip_ipaddr_t* addr) {
+lrp_ipaddr_is_empty(uip_ipaddr_t* addr) {
   uip_ipaddr_t empty;
   uip_create_linklocal_empty_addr(&empty);
   return uip_ipaddr_cmp(&empty, addr);
 }
-#endif /* LRP_IS_COORDINATOR() && !LRP_IS_SINK */
+#endif /* !LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
 #if LRP_IS_COORDINATOR()
@@ -391,8 +395,7 @@ change_default_route(uip_ipaddr_t* def_route,
   uip_ipaddr_copy(&my_sink_addr, sink_addr);
   my_sink_seqno = seqno;
   my_rank = rank + 1;
-  my_parent_rssi = (int8_t)LAST_RSSI;
-  my_weaklink = get_weaklink(metric);
+  my_weaklink = get_weaklink(metric) + parent_weaklink((int8_t)LAST_RSSI);
 
   /* First check if we are actually changing of next hop! */
   defrt = uip_ds6_defrt_lookup(uip_ds6_defrt_choose());
@@ -479,37 +482,41 @@ offer_route(uip_ipaddr_t* orig_addr, const uint8_t length,
 #if !LRP_IS_SINK
 static uip_ds6_defrt_t*
 offer_default_route(const uip_ipaddr_t* sink_addr,
-    uip_ipaddr_t* next_hop, const uint8_t route_cost,
+    uip_ipaddr_t* next_hop, const uint8_t metric, const uint8_t route_cost,
     const uint16_t seqno)
 {
   uint8_t parent_changed = (0==1);
+  uint8_t new_weaklink;
 
-  if(uip_ipaddr_cmp(sink_addr, &my_sink_addr) &&
+  PRINTF("DD: LAST_RSSI: %d\n", (int8_t) LAST_RSSI);
+  if(lrp_ipaddr_is_empty(&my_sink_addr)) {
+    // No previously associated with any tree
+    PRINTF("New tree\n");
+    parent_changed = (1==1);
+  } else if(uip_ipaddr_cmp(sink_addr, &my_sink_addr) &&
       SEQNO_GREATER_THAN(seqno, my_sink_seqno)) {
-    // New seqno, better than before
+    // New seqno (with the same sink address), better than before
     PRINTF("New tree sequence number\n");
     parent_changed = (1==1);
   } else if(!uip_ipaddr_cmp(sink_addr, &my_sink_addr) ||
       seqno == my_sink_seqno) {
-//    new_weaklink = get_weaklink(rm->metric) +
-//      parent_weaklink((int8_t) LAST_RSSI);
-//    if(new_weaklink < my_weaklink + parent_weaklink(my_parent_rssi)) {
+    new_weaklink =
+      get_weaklink(metric) + parent_weaklink((int8_t) LAST_RSSI);
+    if(new_weaklink < my_weaklink) {
       // Fewer weak links, better than before
-//      PRINTF("Fewer weak links\n");
-//      parent_changed = (1==1);
-//    } else if(new_weaklink ==
-//        my_weaklink + parent_weaklink(my_parent_rssi)) {
-      if(route_cost < (my_rank - 1)) {
+      PRINTF("Fewer weak links\n");
+      parent_changed = (1==1);
+    } else if(new_weaklink == my_weaklink) {
+      if (route_cost < (my_rank - 1)) {
         // Better rank than before
         PRINTF("Better rank\n");
         parent_changed = (1==1);
       }
-//    }
+    }
   }
 
   if(parent_changed) {
-    return change_default_route(next_hop, sink_addr, seqno, 0, route_cost);
-    // TODO: 4th field (metric)
+    return change_default_route(next_hop, sink_addr, seqno, metric, route_cost);
   } else {
     PRINTF("Offered route is worse than before. Keeping current one\n");
     return NULL;
@@ -631,8 +638,7 @@ send_dio()
   rm->seqno = my_sink_seqno;
   rm->rank = my_rank;
   rm->metric = LRP_METRIC_HC;
-  rm->metric = (rm->metric << 4) |
-    (my_weaklink + parent_weaklink(my_parent_rssi));
+  rm->metric = (rm->metric << 4) | my_weaklink;
   uip_ipaddr_copy(&rm->sink_addr, &my_sink_addr);
   udpconn->ttl = 1;
 
@@ -841,8 +847,7 @@ send_upd(const uip_ipaddr_t *broken_link_node, const uip_ipaddr_t *sink_addr,
   rm->seqno = *seqno;
   rm->rank = hop_count;
   rm->metric = LRP_METRIC_HC;
-  rm->metric = (rm->metric << 4) |
-               (my_weaklink + parent_weaklink(my_parent_rssi));
+  rm->metric = (rm->metric << 4) | my_weaklink;
   uip_ipaddr_copy(&rm->sink_addr, sink_addr);
   uip_ipaddr_copy(&rm->broken_link_node, broken_link_node);
   udpconn->ttl = 1;
@@ -1095,7 +1100,7 @@ handle_incoming_dio(void)
   PRINTF(" rssi=%i\n", (int8_t)LAST_RSSI);
 
   offer_default_route(&rm->sink_addr, &UIP_IP_BUF->srcipaddr,
-      rm->rank, rm->seqno);
+      rm->metric, rm->rank, rm->seqno);
 }
 #endif /* !LRP_IS_SINK */
 
@@ -1185,13 +1190,13 @@ handle_incoming_upd()
   PRINTF(" -> ");
   PRINT6ADDR(&UIP_IP_BUF->destipaddr);
   PRINTF(" seqno=%d", rm->seqno);
-  PRINTF(" route_cost=%d", rm->rank);
+  PRINTF(" rank=%d", rm->rank);
   PRINTF(" broken_link_node=");
   PRINT6ADDR(&rm->broken_link_node);
   PRINTF("\n");
 
   rt = offer_default_route(&rm->sink_addr, &UIP_IP_BUF->srcipaddr,
-      rm->rank, rm->seqno);
+      rm->metric, rm->rank, rm->seqno);
   if(rt == NULL) {
     PRINTF("Skipping: not a better route\n");
     return;
@@ -1369,7 +1374,7 @@ lrp_no_default_route(void)
 #if LRP_IS_COORDINATOR()
   uip_ipaddr_t nexthop;
 
-  if(lrp_uip_ipaddr_is_empty(&my_sink_addr)) {
+  if(lrp_ipaddr_is_empty(&my_sink_addr)) {
     PRINTF("Not associated with a tree\n");
     return;
   }
@@ -1393,11 +1398,10 @@ lrp_no_default_route(void)
 
   // Is a leaf: resetting tree-related informations and broadcasting QRY
   PRINTF("No more default route: deassociating with tree\n");
-  uip_create_linklocal_empty_addr(&my_sink_addr);
   my_sink_seqno = 0;
   my_rank = LRP_MAX_RANK;
-  my_weaklink = 255;
-  my_parent_rssi = -126;
+  my_weaklink = 127;
+  uip_create_linklocal_empty_addr(&my_sink_addr);
 #if SND_QRY && !LRP_IS_SINK
   qry_exp_residuum = -1;
   retransmit_qry();
@@ -1493,13 +1497,12 @@ PROCESS_THREAD(lrp_process, ev, data)
   my_sink_seqno = 1;
   my_rank = 0;
   my_weaklink = 0;
-  my_parent_rssi = 126;
   dio_seq_skip_counter = 0;
 #else
   my_sink_seqno = 0;
   my_rank = LRP_MAX_RANK;
-  my_weaklink = 255;
-  my_parent_rssi = -126;
+  my_weaklink = 127;
+  uip_create_linklocal_empty_addr(&my_sink_addr);
 #endif
   PRINTF("LRP is sink: %s\n", LRP_IS_SINK ? "yes" : "no");
 
