@@ -351,7 +351,7 @@ lrp_nbr_add(uip_ipaddr_t* next_hop)
   } else {
     PRINTF("Neighbor ");
     PRINT6ADDR(next_hop);
-    PRINTF(" is already known (as");
+    PRINTF(" is already known (as ");
     PRINTLLADDR(uip_ds6_nbr_get_ll(nbr));
     PRINTF(")\n");
   }
@@ -488,7 +488,6 @@ offer_default_route(const uip_ipaddr_t* sink_addr,
   uint8_t parent_changed = (0==1);
   uint8_t new_weaklink;
 
-  PRINTF("DD: LAST_RSSI: %d\n", (int8_t) LAST_RSSI);
   if(lrp_ipaddr_is_empty(&my_sink_addr)) {
     // No previously associated with any tree
     PRINTF("New tree\n");
@@ -703,7 +702,7 @@ send_rreq(const uip_ipaddr_t *dest, const uip_ipaddr_t *orig,
 #if !LRP_IS_SINK
 static void
 send_rrep(const uip_ipaddr_t *dest, const uip_ipaddr_t *nexthop,
-    const uip_ipaddr_t *orig, const uint16_t *seqno, const unsigned hop_count)
+    const uip_ipaddr_t *orig, const uint16_t *seqno, const unsigned rank)
 {
   char buf[MAX_PAYLOAD_LEN];
   struct lrp_msg_rrep *rm = (struct lrp_msg_rrep *)buf;
@@ -714,7 +713,8 @@ send_rrep(const uip_ipaddr_t *dest, const uip_ipaddr_t *nexthop,
   PRINT6ADDR(orig);
   PRINTF(" dest=");
   PRINT6ADDR(dest);
-  PRINTF(" hopcnt=%u\n", hop_count);
+  PRINTF(" seqno=%u", *seqno);
+  PRINTF(" rank=%u\n", rank);
 
   rm->type = LRP_RREP_TYPE;
   rm->type = (rm->type << 4) | LRP_RSVD1;
@@ -723,7 +723,7 @@ send_rrep(const uip_ipaddr_t *dest, const uip_ipaddr_t *nexthop,
   rm->seqno = *seqno;
   rm->metric = LRP_METRIC_HC;
   rm->metric = (rm->metric << 4) | LRP_WEAK_LINK;
-  rm->route_cost = hop_count;
+  rm->route_cost = rank;
   uip_ipaddr_copy(&rm->orig_addr, orig);
   uip_ipaddr_copy(&rm->dest_addr, dest);
   udpconn->ttl = 1;
@@ -766,7 +766,7 @@ send_rerr(const uip_ipaddr_t *src, const uip_ipaddr_t *dest,
 
 /*---------------------------------------------------------------------------*/
 /* Format and send a RACK to `nexthop`. */
-#if LRP_RREP_ACK
+#if LRP_RREP_ACK && LRP_IS_COORDINATOR()
 static void
 send_rack(const uip_ipaddr_t *src, const uip_ipaddr_t *nexthop,
     const uint16_t seqno)
@@ -776,6 +776,7 @@ send_rack(const uip_ipaddr_t *src, const uip_ipaddr_t *nexthop,
 
   PRINTF("Send RACK -> ");
   PRINT6ADDR(nexthop);
+  PRINTF(" seqno=%u", seqno);
   PRINTF(" src=");
   PRINT6ADDR(src);
   PRINTF("\n");
@@ -792,7 +793,7 @@ send_rack(const uip_ipaddr_t *src, const uip_ipaddr_t *nexthop,
   uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_rack));
   memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
 }
-#endif /* LRP_RREP_ACK */
+#endif /* LRP_RREP_ACK && LRP_IS_COORDINATOR() */
 
 /*---------------------------------------------------------------------------*/
 #if LRP_IS_COORDINATOR() && !LRP_IS_SINK
@@ -938,6 +939,8 @@ handle_incoming_rrep(void)
   struct uip_ds6_route *rt;
 #if !LRP_IS_SINK
   uip_ipaddr_t *nexthop;
+  uip_ipaddr_t orig_addr, src_ipaddr;
+  uint16_t seqno;
 #endif
 
   PRINTF("Received RREP ");
@@ -948,7 +951,8 @@ handle_incoming_rrep(void)
   PRINT6ADDR(&rm->orig_addr);
   PRINTF(" dest=");
   PRINT6ADDR(&rm->dest_addr);
-  PRINTF(" hopcnt=%u\n", rm->route_cost);
+  PRINTF(" seqno=%u", rm->seqno);
+  PRINTF(" rank=%u\n", rm->route_cost);
 
   // No multicast RREP: drop
   if(uip_ipaddr_cmp(&UIP_IP_BUF->destipaddr, &mcastipaddr)) {
@@ -1004,11 +1008,14 @@ handle_incoming_rrep(void)
   }
 #endif /* USE_DIO */
 
-#if LRP_RREP_ACK
-  send_rack(&rm->orig_addr, &UIP_IP_BUF->srcipaddr, rm->seqno);
-#endif
+  seqno = rm->seqno;
+  uip_ipaddr_copy(&orig_addr, &rm->orig_addr);
+  uip_ipaddr_copy(&src_ipaddr, &UIP_IP_BUF->srcipaddr);
   send_rrep(&rm->dest_addr, nexthop, &rm->orig_addr, &rm->seqno,
       rm->route_cost + 1);
+#if LRP_RREP_ACK
+  send_rack(&orig_addr, &src_ipaddr, seqno);
+#endif
 #endif /* !LRP_IS_SINK */
 }
 #endif /* LRP_IS_COORDINATOR() */
@@ -1033,11 +1040,22 @@ handle_incoming_rack(void)
   rt = uip_ds6_route_lookup(&rm->src_addr);
 
   /* No route? */
-  if(rt == NULL) {
-    PRINTF("Receved RACK for non-existing route\n");
-  } else {
-    rt->state.ack_received = 1; /* Make pending route valid */
+  if(lrp_is_my_global_address(&rm->src_addr)) {
+    PRINTF("Skipping: it is my addr\n");
+    return;
   }
+
+  if(rt == NULL) {
+    PRINTF("Skipping: non-existing route\n");
+    return;
+  }
+  if(rm->seqno != rt->state.seqno) {
+    PRINTF("Skipping: wrong seqno\n");
+    return;
+  }
+
+  PRINTF("Mark route as acked\n");
+  rt->state.ack_received = 1; /* Make pending route valid */
 }
 #endif /* LRP_RREP_ACK */
 
@@ -1428,6 +1446,7 @@ lrp_select_nexthop_for(uip_ipaddr_t* source, uip_ipaddr_t* destination,
 
   route_to_dest = uip_ds6_route_lookup(destination);
 #if USE_DIO && LRP_IS_COORDINATOR() && !LRP_IS_SINK
+  // Do not forward through default route a packet that comes from higher
   if(!lrp_is_predecessor(uip_ds6_nbr_ipaddr_from_lladdr(previoushop)) &&
       !lrp_is_my_global_address(source)) {
     // The previous hop is higher
@@ -1472,7 +1491,14 @@ lrp_select_nexthop_for(uip_ipaddr_t* source, uip_ipaddr_t* destination,
     nexthop = uip_ds6_route_nexthop(route_to_dest);
   }
 
-  if(nexthop == NULL) {
+#if LRP_IS_COORDINATOR()
+  if(route_to_dest != NULL && !route_to_dest->state.ack_received) {
+    PRINTF("Discarding packet: used route is not acked\n");
+    return NULL;
+  }
+#endif /* LRP_IS_COORDINATOR() */
+
+   if(nexthop == NULL) {
     // The nexthop is not in neighbour table
     PRINTF("Discarding packet: nexthop in routing table is not in "
         "neighbour table\n");

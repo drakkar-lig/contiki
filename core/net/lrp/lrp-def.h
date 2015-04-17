@@ -91,7 +91,7 @@
 #endif
 
 
-#define LRP_RREP_ACK           0
+#define LRP_RREP_ACK           1
 #define LRP_ADDR_LEN_IPV6      15
 #define LRP_METRIC_HC          0
 #define LRP_WEAK_LINK          0
@@ -184,7 +184,8 @@ struct lrp_msg_qry {
 };
 #endif /* USE_DIO */
 
-/* LRP QRY message */
+
+/* LRP BRK message */
 #define LRP_BRK_TYPE      6
 
 struct lrp_msg_brk {
@@ -195,7 +196,7 @@ struct lrp_msg_brk {
   uip_ipaddr_t broken_link_node;
 };
 
-/* LRP QRY message */
+/* LRP UPD message */
 #define LRP_UPD_TYPE      7
 
 struct lrp_msg_upd {
