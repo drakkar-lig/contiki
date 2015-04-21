@@ -43,29 +43,50 @@
 
 #include "net/ip/uip.h"
 
-#include "net/uip.h"
-#define uip_create_linklocal_lln_routers_mcast(a) \
-  uip_ip6addr(a, 0xff02, 0, 0, 0, 0, 0, 0, 0x001b)
-#define uip_create_linklocal_empty_addr(a) \
-  uip_ip6addr(a, 0, 0, 0, 0, 0, 0, 0, 0)
-#define LRP_UDPPORT            6666 /* UDP port used for routing control
-                                       messages */
+/* UDP port used for routing control messages */
+#define LRP_UDPPORT            6666
+
+/* Typical time for a packet to cross the whole network in one way (ticks) */
 #define LRP_NET_TRAVERSAL_TIME 10 * CLOCK_SECOND
-                                    /* Typical time for a message to cross the
-                                       whole network in one way (in ticks) */
-#define LRP_RREQ_RETRIES       0    /* Re-send RREQ if no RREP recieved. 0
-                                       implies don't retry at all */
-#define LRP_RREQ_MININTERVAL   0    /* Minimum interval between two RREQ
-                                       transmissions (in ticks). 0 to
-                                       deactivate retransmissions. */
+
+/* Frequency of DIO broadcasting (ticks) */
+#define SEND_DIO_INTERVAL      500 * CLOCK_SECOND
+
+/* Minimum interval between two BRK transmissions (ticks). */
 #define LRP_BRK_MININTERVAL    (2 * LRP_NET_TRAVERSAL_TIME)
-                                    /* Minimum interval between two BRK
-                                     * transmissions (in ticks). */
+
+/* Re-send RREQ n times if no RREP recieved. 0 implies don't retry at all */
+#define LRP_RREQ_RETRIES       0
+
+/* Minimum interval between two RREQ transmissions (ticks). 0 to deactivate */
+#define LRP_RREQ_MININTERVAL   0
+
+/* RREQ retransmission interval (ticks) */
+#define RETRY_RREQ_INTERVAL    5 * CLOCK_SECOND / 1000
+
+/* Ack routes replies */
+#define LRP_RREP_ACK           0
+
+/* Default route lifetime (ticks) */
+#define LRP_DEFRT_LIFETIME     65534
+
+/* Route retention interval (ticks). 0 for infinite interval */
 #define LRP_R_HOLD_TIME        0
-#define LRP_MAX_DIST           20
-#define LRP_RREP_ACK_TIMEOUT   10
-#define LRP_BLACKLIST_TIME     10
+
+/* Route validity check interval (ticks) */
+#define RV_CHECK_INTERVAL      10 * CLOCK_SECOND
+
+/* Threshold below which a link is considered as weak */
 #define LRP_RSSI_THRESHOLD    -65 // Ana measured value
+
+/* Maximum node's rank */
+#define LRP_MAX_RANK           127
+
+/* Maximum distance for a non hop-to-hop routing packet. */
+#define LRP_MAX_DIST           20
+
+/* Wait randomly when flooding the network */
+#define LRP_RANDOM_WAIT        1
 
 #ifdef LRP_CONF_SND_QRY
 #define SND_QRY LRP_CONF_SND_QRY
@@ -80,36 +101,26 @@
 #endif
 
 #ifdef LRP_CONF_IS_COORDINATOR
-#define LRP_IS_COORDINATOR() LRP_CONF_IS_COORDINATOR()
+#define LRP_IS_COORDINATOR LRP_CONF_IS_COORDINATOR
 #else
-#define LRP_IS_COORDINATOR() 1
+#define LRP_IS_COORDINATOR 1
 #endif
 
-#if LRP_IS_SINK && !LRP_IS_COORDINATOR()
+#ifdef LRP_CONF_USE_DIO
+#define USE_DIO LRP_CONF_USE_DIO
+#else
+#define USE_DIO 1
+#endif
+
+#if LRP_IS_SINK && !LRP_IS_COORDINATOR
 #error The node is sink but not coordinator, which is particularly \
   problematic (and stupid). Please check again your settings.
-#endif
-
-
-#define LRP_RREP_ACK           1
-#define LRP_ADDR_LEN_IPV6      15
-#define LRP_METRIC_HC          0
-#define LRP_WEAK_LINK          0
-#define LRP_RSVD1              0
-#define LRP_RSVD2              0
-#define LRP_DEFAULT_ROUTE_LIFETIME  65534
-
-#ifdef LRP_CONF_RANDOM_WAIT
-#define LRP_RANDOM_WAIT LRP_CONF_RANDOM_WAIT
-#else
-#define LRP_RANDOM_WAIT 1
 #endif
 
 /* Generic LRP message */
 struct lrp_msg {
   uint8_t type;
 };
-
 
 /* LRP RREQ message */
 #define LRP_RREQ_TYPE     0
@@ -159,7 +170,6 @@ struct lrp_msg_rerr {
   uip_ipaddr_t addr_in_error;
 };
 
-
 /* LRP DIO message */
 #define LRP_DIO_TYPE      4
 
@@ -183,7 +193,6 @@ struct lrp_msg_qry {
   uint8_t addr_len;
 };
 #endif /* USE_DIO */
-
 
 /* LRP BRK message */
 #define LRP_BRK_TYPE      6

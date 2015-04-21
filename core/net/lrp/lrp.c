@@ -42,69 +42,69 @@
  *         Martin Heusse Martin.Heusse@imag.fr
  */
 
+#if WITH_IPV6_LRP
+
 #include "contiki.h"
 #include "contiki-lib.h"
 #include "net/lrp/lrp-def.h"
 #include "net/lrp/lrp.h"
 #include "contiki-net.h"
 
-
 #include <string.h>
 
-#if WITH_IPV6_LRP
-
-#define DEBUG 1
+#define DEBUG DEBUG_PRINT
 #include "net/ip/uip-debug.h"
 
-/* Exponential parameter for QRY sending. @see retransmit_qry */
-#define QRY_EXP_PARAM           0.80
+#define uip_create_linklocal_lln_routers_mcast(a) \
+  uip_ip6addr(a, 0xff02, 0, 0, 0, 0, 0, 0, 0x001b)
+#define uip_create_linklocal_empty_addr(a) \
+  uip_ip6addr(a, 0, 0, 0, 0, 0, 0, 0, 0)
 
-#define LRP_MAX_RANK            127
-
-/* Frequency of DIO broadcasting (in ticks) */
-#define SEND_DIO_INTERVAL       500 * CLOCK_SECOND
-
-/* RREQ retransmission interval (in ticks) */
-#define RETRY_RREQ_INTERVAL     5 * CLOCK_SECOND / 1000
-
-#define RV_CHECK_INTERVAL       10 * CLOCK_SECOND
+#define LRP_METRIC_HC           0
+#define LRP_WEAK_LINK           0
+#define LRP_RSVD1               0
+#define LRP_RSVD2               0
 #define MAX_PAYLOAD_LEN         50
+#define LRP_ADDR_LEN_IPV6       15
 #define DEFAULT_PREFIX_LEN      128
 #define DEFAULT_LOCAL_PREFIX    64
 #define DEFAULT_DIO_SEQ_SKIP    4
 extern uip_ds6_route_t uip_ds6_routing_table[UIP_DS6_ROUTE_NB];
 #define UIP_IP_BUF ((struct uip_udpip_hdr *)&uip_buf[UIP_LLH_LEN])
+
+/* Exponential parameter for QRY sending. @see retransmit_qry */
+#define LRP_QRY_EXP_PARAM       0.80
+
 #define MAX_SEQNO               65534
 #define SEQNO_GREATER_THAN(s1, s2)                   \
           (((s1 > s2) && (s1 - s2 <= (MAX_SEQNO/2))) \
         || ((s2 > s1) && (s2 - s1 > (MAX_SEQNO/2))))
 #define SEQNO_INCREASE(seqno) (seqno >= MAX_SEQNO ? seqno = 1 : ++seqno)
+
+
 #if LRP_RREQ_MININTERVAL
 static struct timer rreq_ratelimit_timer;
 #endif
-#if LRP_IS_COORDINATOR() && !LRP_IS_SINK && LRP_BRK_MININTERVAL
+#if LRP_IS_COORDINATOR && !LRP_IS_SINK && LRP_BRK_MININTERVAL
 static struct timer brk_ratelimit_timer;
 #endif
-
 #if SND_QRY && !LRP_IS_SINK
 static struct etimer qry_timer;
-#endif /* SND_QRY && !LRP_IS_SINK */
-
-#if LRP_IS_COORDINATOR()
+#endif
+#if LRP_IS_COORDINATOR
 static struct etimer send_dio_et;
-#endif /* LRP_IS_COORDINATOR() */
+#endif
 
 #define LAST_RSSI cc2420_last_rssi
 // extern int8_t last_rssi; // for stm32w
 extern signed char cc2420_last_rssi;
 static uint16_t my_hseqno, my_sink_seqno, local_prefix_len;
 static int8_t my_rank, my_weaklink;
+static uip_ipaddr_t local_prefix, my_sink_addr, myipaddr, mcastipaddr;
+static struct uip_udp_conn *udpconn;
 #if LRP_IS_SINK
 static uint8_t dio_seq_skip_counter;
 #endif /* LRP_IS_SINK */
-static uip_ipaddr_t local_prefix, my_sink_addr,
-                    myipaddr, mcastipaddr;
-static struct uip_udp_conn *udpconn;
 #if SND_QRY && ! LRP_IS_SINK
 static uint16_t qry_exp_residuum;
 #endif /* SND_QRY && ! LRP_IS_SINK */
@@ -160,6 +160,7 @@ fwc_add(const uip_ipaddr_t *orig, const uint16_t *seqno)
 }
 #endif /* !LRP_IS_SINK */
 
+
 /*---------------------------------------------------------------------------*/
 /* Implementation of Route Request Cache for LRP_RREQ_RETRIES and
  * LRP_NET_TRAVERSAL_TIME */
@@ -209,11 +210,11 @@ rrc_check_expired_rreq(const uint16_t interval)
     rrcache[i].expire_time -= interval;
     if(rrcache[i].expire_time <= 0) {
       lrp_request_route_to(&rrcache[i].dest);
-      rrcache[i].request_time++;
       if(rrcache[i].request_time == LRP_RREQ_RETRIES) {
          rrc_remove(&rrcache[i].dest);
       } else {
-         rrcache[i].expire_time = 2 * LRP_NET_TRAVERSAL_TIME;
+        rrcache[i].request_time++;
+        rrcache[i].expire_time = 2 * LRP_NET_TRAVERSAL_TIME;
       }
     }
   }
@@ -224,7 +225,7 @@ rrc_check_expired_rreq(const uint16_t interval)
 /*---------------------------------------------------------------------------*/
 /* Implementation of Broken Routes cache to avoid multiple forwarding of BRK
  * messages and to be able to retransmit UPD on the reverted path */
-#if LRP_IS_COORDINATOR() && !LRP_IS_SINK
+#if LRP_IS_COORDINATOR && !LRP_IS_SINK
 #define BRCACHE 2
 
 static struct {
@@ -264,7 +265,7 @@ brc_add(const uip_ipaddr_t *lost_node, const uint16_t seqno,
     return (0==1);
   }
 }
-#endif /* LRP_IS_COORDINATOR() && !LRP_IS_SINK */
+#endif /* LRP_IS_COORDINATOR && !LRP_IS_SINK */
 
 
 /*---------------------------------------------------------------------------*/
@@ -369,7 +370,7 @@ lrp_ipaddr_is_empty(uip_ipaddr_t* addr) {
 #endif /* !LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
-#if LRP_IS_COORDINATOR()
+#if LRP_IS_COORDINATOR
 static void
 lrp_rand_wait()
 {
@@ -379,7 +380,7 @@ lrp_rand_wait()
       PRINTF("Done waiting rand time\n");
 #endif
 }
-#endif /* LRP_IS_COORDINATOR() */
+#endif /* LRP_IS_COORDINATOR */
 
 /*---------------------------------------------------------------------------*/
 /* Change default route for the one specified with informations in parameter.
@@ -406,14 +407,14 @@ change_default_route(uip_ipaddr_t* def_route,
     // Flush routes through new default route
     uip_ds6_route_rm_by_nexthop(def_route);
     lrp_nbr_add(def_route);
-    defrt = uip_ds6_defrt_add(def_route, LRP_DEFAULT_ROUTE_LIFETIME);
+    defrt = uip_ds6_defrt_add(def_route, LRP_DEFRT_LIFETIME);
   } else {
     // We just need to refresh the route
     PRINTF("Refreshing default route\n");
-    stimer_set(&defrt->lifetime, LRP_DEFAULT_ROUTE_LIFETIME);
+    stimer_set(&defrt->lifetime, LRP_DEFRT_LIFETIME);
   }
 
-#if LRP_IS_COORDINATOR()
+#if LRP_IS_COORDINATOR
   //etimer_set(&send_dio_et, random_rand() % 50 * CLOCK_SECOND / 100);
   // FIXME: when should we activate DIOs?
 #endif
@@ -431,7 +432,7 @@ change_default_route(uip_ipaddr_t* def_route,
 /*---------------------------------------------------------------------------*/
 /* Add route into routing table, with LRP's specific informations. Return the
  * inserted route or NULL */
-#if LRP_IS_COORDINATOR()
+#if LRP_IS_COORDINATOR
 static uip_ds6_route_t*
 lrp_route_add(uip_ipaddr_t* orig_addr, const uint8_t length,
     uip_ipaddr_t* next_hop, const uint8_t route_cost, const uint16_t seqno)
@@ -450,12 +451,12 @@ lrp_route_add(uip_ipaddr_t* orig_addr, const uint8_t length,
   }
   return rt;
 }
-#endif /* LRP_IS_COORDINATOR() */
+#endif /* LRP_IS_COORDINATOR */
 
 /*---------------------------------------------------------------------------*/
 /* Add the described route into the routing table, if it is better than
  * the previous one. Return NULL if the route has not been added. */
-#if LRP_IS_COORDINATOR()
+#if LRP_IS_COORDINATOR
 static uip_ds6_route_t*
 offer_route(uip_ipaddr_t* orig_addr, const uint8_t length,
     uip_ipaddr_t* next_hop, const uint8_t route_cost,
@@ -474,7 +475,7 @@ offer_route(uip_ipaddr_t* orig_addr, const uint8_t length,
     return NULL;
   }
 }
-#endif /* LRP_IS_COORDINATOR() */
+#endif /* LRP_IS_COORDINATOR */
 
 /*---------------------------------------------------------------------------*/
 /* Change default route if offered one is better than the previous one. Return
@@ -594,7 +595,7 @@ send_qry()
  * exponentially increasing time interval between them. Asymptotically, QRY
  * will be sent at the same rate as the DIO frequency. Time wait between two
  * QRY sending follow this sequence :
- * `Un = SEND_DIO_INTERVAL * (1 - QRY_EXP_PARAM ^ n)` */
+ * `Un = SEND_DIO_INTERVAL * (1 - LRP_QRY_EXP_PARAM ^ n)` */
 #if SND_QRY && !LRP_IS_SINK
 static void
 retransmit_qry()
@@ -612,7 +613,7 @@ retransmit_qry()
     // Initialisation
     qry_exp_residuum = SEND_DIO_INTERVAL;
   }
-  qry_exp_residuum *= QRY_EXP_PARAM;
+  qry_exp_residuum *= LRP_QRY_EXP_PARAM;
   etimer_set(&qry_timer, SEND_DIO_INTERVAL - qry_exp_residuum);
   PRINTF("QRY timer reset (%lums)\n",
       SEND_DIO_INTERVAL - qry_exp_residuum);
@@ -621,7 +622,7 @@ retransmit_qry()
 
 /*---------------------------------------------------------------------------*/
 /* Format and broadcast a DIO packet. */
-#if LRP_IS_COORDINATOR()
+#if LRP_IS_COORDINATOR
 static void
 send_dio()
 {
@@ -662,11 +663,11 @@ send_dio()
   }
 #endif /* LRP_IS_SINK */
 }
-#endif /* LRP_IS_COORDINATOR() */
+#endif /* LRP_IS_COORDINATOR */
 
 /*---------------------------------------------------------------------------*/
 /* Format and broadcast a RREQ packet. */
-#if LRP_IS_COORDINATOR()
+#if LRP_IS_COORDINATOR
 static void
 send_rreq(const uip_ipaddr_t *dest, const uip_ipaddr_t *orig,
     const uint16_t *seqno, const uint8_t route_cost, const uint8_t ttl)
@@ -695,7 +696,7 @@ send_rreq(const uip_ipaddr_t *dest, const uip_ipaddr_t *orig,
   uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_rreq));
   memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
 }
-#endif /* LRP_IS_COORDINATOR() */
+#endif /* LRP_IS_COORDINATOR */
 
 /*---------------------------------------------------------------------------*/
 /* Format and send a RREP packet to `nexthop`. */
@@ -766,7 +767,7 @@ send_rerr(const uip_ipaddr_t *src, const uip_ipaddr_t *dest,
 
 /*---------------------------------------------------------------------------*/
 /* Format and send a RACK to `nexthop`. */
-#if LRP_RREP_ACK && LRP_IS_COORDINATOR()
+#if LRP_RREP_ACK && LRP_IS_COORDINATOR
 static void
 send_rack(const uip_ipaddr_t *src, const uip_ipaddr_t *nexthop,
     const uint16_t seqno)
@@ -793,13 +794,13 @@ send_rack(const uip_ipaddr_t *src, const uip_ipaddr_t *nexthop,
   uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_rack));
   memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
 }
-#endif /* LRP_RREP_ACK && LRP_IS_COORDINATOR() */
+#endif /* LRP_RREP_ACK && LRP_IS_COORDINATOR */
 
 /*---------------------------------------------------------------------------*/
-#if LRP_IS_COORDINATOR() && !LRP_IS_SINK
+#if LRP_IS_COORDINATOR && !LRP_IS_SINK
 static void
 send_brk(const uip_ipaddr_t *broken_link_node, const uip_ipaddr_t *nexthop,
-    const uint16_t *seqno, const uint8_t hop_count)
+    const uint16_t *seqno, const uint8_t hop_count, const uint8_t ttl)
 {
   char buf[MAX_PAYLOAD_LEN];
   struct lrp_msg_brk *rm = (struct lrp_msg_brk *) buf;
@@ -817,16 +818,16 @@ send_brk(const uip_ipaddr_t *broken_link_node, const uip_ipaddr_t *nexthop,
   rm->seqno = *seqno; // FIXME: what about endianess
   rm->rank = hop_count;
   uip_ipaddr_copy(&rm->broken_link_node, broken_link_node);
-  udpconn->ttl = LRP_MAX_DIST;
+  udpconn->ttl = ttl;
 
   uip_ipaddr_copy(&udpconn->ripaddr, nexthop);
   uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_brk));
   memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
 }
-#endif /* LRP_IS_COORDINATOR() && !LRP_IS_SINK */
+#endif /* LRP_IS_COORDINATOR && !LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
-#if LRP_IS_COORDINATOR()
+#if LRP_IS_COORDINATOR
 static void
 send_upd(const uip_ipaddr_t *broken_link_node, const uip_ipaddr_t *sink_addr,
          const uip_ipaddr_t *nexthop, const uint16_t *seqno,
@@ -857,7 +858,7 @@ send_upd(const uip_ipaddr_t *broken_link_node, const uip_ipaddr_t *sink_addr,
   uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_upd));
   memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
 }
-#endif // LRP_IS_COORDINATOR()
+#endif // LRP_IS_COORDINATOR
 
 
 /*---------------------------------------------------------------------------*/
@@ -913,7 +914,7 @@ handle_incoming_rreq(void)
     SEQNO_INCREASE(my_hseqno);
     send_rrep(&dest_addr, &UIP_IP_BUF->srcipaddr, &orig_addr, &my_hseqno, 0);
 
-#if LRP_IS_COORDINATOR()
+#if LRP_IS_COORDINATOR
     // Only coordinator forward RREQ
   } else {
     if(UIP_IP_BUF->ttl == 1) {
@@ -925,13 +926,13 @@ handle_incoming_rreq(void)
     lrp_rand_wait();
     send_rreq(&rm->dest_addr, &rm->orig_addr, &rm->seqno,
         rm->route_cost + 1, UIP_IP_BUF->ttl - 1);
-#endif /* LRP_IS_COORDINATOR() */
+#endif /* LRP_IS_COORDINATOR */
   }
 }
 #endif /* !LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
-#if LRP_IS_COORDINATOR()
+#if LRP_IS_COORDINATOR
 static void
 handle_incoming_rrep(void)
 {
@@ -1018,7 +1019,7 @@ handle_incoming_rrep(void)
 #endif
 #endif /* !LRP_IS_SINK */
 }
-#endif /* LRP_IS_COORDINATOR() */
+#endif /* LRP_IS_COORDINATOR */
 
 /*---------------------------------------------------------------------------*/
 #if LRP_RREP_ACK
@@ -1123,7 +1124,7 @@ handle_incoming_dio(void)
 #endif /* !LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
-#if LRP_IS_COORDINATOR()
+#if LRP_IS_COORDINATOR
 static void
 handle_incoming_qry(void)
 {
@@ -1138,10 +1139,10 @@ handle_incoming_qry(void)
   lrp_rand_wait();
   send_dio();
 }
-#endif /* LRP_IS_COORDINATOR() */
+#endif /* LRP_IS_COORDINATOR */
 
 /*---------------------------------------------------------------------------*/
-#if LRP_IS_COORDINATOR()
+#if LRP_IS_COORDINATOR
 static void
 handle_incoming_brk()
 {
@@ -1179,23 +1180,28 @@ handle_incoming_brk()
     return;
   }
 
+  if(UIP_IP_BUF->ttl == 1) {
+    PRINTF("Skipping: TTL expired\n");
+    return;
+  }
   defrt = uip_ds6_defrt_lookup(&UIP_IP_BUF->srcipaddr);
   if(defrt != NULL) {
     // BRK comes from our default next hop. Broadcasting
     uip_create_linklocal_lln_routers_mcast(&nexthop);
     lrp_rand_wait();
-    send_brk(&rm->broken_link_node, &nexthop, &rm->seqno, rm->rank + 1);
+    send_brk(&rm->broken_link_node, &nexthop, &rm->seqno, rm->rank + 1,
+        UIP_IP_BUF->ttl - 1);
   } else {
     // BRK comes from a neighbor broken branch. Forwarding BRK to sink
     send_brk(&rm->broken_link_node, uip_ds6_defrt_choose(),
-        &rm->seqno, rm->rank + 1);
+        &rm->seqno, rm->rank + 1, UIP_IP_BUF->ttl - 1);
   }
 #endif /* LRP_IS_SINK */
 }
-#endif /* LRP_IS_COORDINATOR() */
+#endif /* LRP_IS_COORDINATOR */
 
 /*---------------------------------------------------------------------------*/
-#if LRP_IS_COORDINATOR() && !LRP_IS_SINK
+#if LRP_IS_COORDINATOR && !LRP_IS_SINK
 static void
 handle_incoming_upd()
 {
@@ -1235,7 +1241,7 @@ handle_incoming_upd()
   send_upd(&rm->broken_link_node, &rm->sink_addr, nexthop,
       &rm->seqno, rm->rank+1);
 }
-#endif /* LRP_IS_COORDINATOR() && !LRP_IS_SINK */
+#endif /* LRP_IS_COORDINATOR && !LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
 static void
@@ -1274,7 +1280,7 @@ tcpip_handler(void)
 #endif
         break;
       case LRP_RREP_TYPE:
-#if !LRP_IS_COORDINATOR()
+#if !LRP_IS_COORDINATOR
         PRINTF("Skipping RREP: is a leaf\n");
 #else
         handle_incoming_rrep();
@@ -1298,14 +1304,14 @@ tcpip_handler(void)
 #endif
         break;
       case LRP_QRY_TYPE:
-#if !LRP_IS_COORDINATOR()
+#if !LRP_IS_COORDINATOR
         PRINTF("Skipping QRY: is a leaf\n");
 #else
         handle_incoming_qry();
 #endif
         break;
       case LRP_BRK_TYPE:
-#if !LRP_IS_COORDINATOR()
+#if !LRP_IS_COORDINATOR
         PRINTF("Skipping BRK: is a leaf\n");
 #else
         handle_incoming_brk();
@@ -1315,7 +1321,7 @@ tcpip_handler(void)
 #if LRP_IS_SINK
         PRINTF("Skipping UPD: is a sink\n");
 #else
-#if !LRP_IS_COORDINATOR()
+#if !LRP_IS_COORDINATOR
         PRINTF("Skipping BRK: is a leaf\n");
 #else
         handle_incoming_upd();
@@ -1375,21 +1381,21 @@ lrp_request_route_to(uip_ipaddr_t *host)
 #endif /* LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
-#if LRP_IS_COORDINATOR() && !LRP_IS_SINK
+#if LRP_IS_COORDINATOR && !LRP_IS_SINK
 static void
 lrp_routing_error(uip_ipaddr_t* source, uip_ipaddr_t* destination,
     uip_lladdr_t* previoushop)
 {
   send_rerr(source, destination, uip_ds6_nbr_ipaddr_from_lladdr(previoushop));
 }
-#endif /* LRP_IS_COORDINATOR() && !LRP_IS_SINK */
+#endif /* LRP_IS_COORDINATOR && !LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
 #if !LRP_IS_SINK
 static void
 lrp_no_default_route(void)
 {
-#if LRP_IS_COORDINATOR()
+#if LRP_IS_COORDINATOR
   uip_ipaddr_t nexthop;
 
   if(lrp_ipaddr_is_empty(&my_sink_addr)) {
@@ -1406,13 +1412,13 @@ lrp_no_default_route(void)
 
   uip_create_linklocal_lln_routers_mcast(&nexthop);
   SEQNO_INCREASE(my_hseqno);
-  send_brk(&myipaddr, &nexthop, &my_hseqno, 0);
+  send_brk(&myipaddr, &nexthop, &my_hseqno, 0, LRP_MAX_DIST);
 
 #if LRP_BRK_MININTERVAL
   timer_set(&brk_ratelimit_timer, LRP_BRK_MININTERVAL);
 #endif /* LRP_BRK_MININTERVAL */
 
-#else /* if not LRP_IS_COORDINATOR() */
+#else /* if not LRP_IS_COORDINATOR */
 
   // Is a leaf: resetting tree-related informations and broadcasting QRY
   PRINTF("No more default route: deassociating with tree\n");
@@ -1424,7 +1430,7 @@ lrp_no_default_route(void)
   qry_exp_residuum = -1;
   retransmit_qry();
 #endif
-#endif /* LRP_IS_COORDINATOR() */
+#endif /* LRP_IS_COORDINATOR */
 }
 #endif /* !LRP_IS_SINK */
 
@@ -1445,7 +1451,7 @@ lrp_select_nexthop_for(uip_ipaddr_t* source, uip_ipaddr_t* destination,
   uip_ipaddr_t *nexthop;
 
   route_to_dest = uip_ds6_route_lookup(destination);
-#if USE_DIO && LRP_IS_COORDINATOR() && !LRP_IS_SINK
+#if USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK
   // Do not forward through default route a packet that comes from higher
   if(!lrp_is_predecessor(uip_ds6_nbr_ipaddr_from_lladdr(previoushop)) &&
       !lrp_is_my_global_address(source)) {
@@ -1460,7 +1466,7 @@ lrp_select_nexthop_for(uip_ipaddr_t* source, uip_ipaddr_t* destination,
       return NULL;
     }
   }
-#endif /* USE_DIO && LRP_IS_COORDINATOR() && !LRP_IS_SINK */
+#endif /* USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK */
 
   if(route_to_dest == NULL) {
     // No host route
@@ -1491,12 +1497,12 @@ lrp_select_nexthop_for(uip_ipaddr_t* source, uip_ipaddr_t* destination,
     nexthop = uip_ds6_route_nexthop(route_to_dest);
   }
 
-#if LRP_IS_COORDINATOR()
+#if LRP_IS_COORDINATOR
   if(route_to_dest != NULL && !route_to_dest->state.ack_received) {
     PRINTF("Discarding packet: used route is not acked\n");
     return NULL;
   }
-#endif /* LRP_IS_COORDINATOR() */
+#endif /* LRP_IS_COORDINATOR */
 
    if(nexthop == NULL) {
     // The nexthop is not in neighbour table
@@ -1559,7 +1565,9 @@ PROCESS_THREAD(lrp_process, ev, data)
 #endif
 
 #if LRP_R_HOLD_TIME
-  PRINTF("Set timer for route validity time check %u\n", RV_CHECK_INTERVAL);
+  // Routes validity
+  PRINTF("Routes will be deleted after %ums\n",
+      RV_CHECK_INTERVAL * 1000 / CLOCK_SECOND);
   etimer_set(&rv, RV_CHECK_INTERVAL);
 #endif
 
@@ -1576,7 +1584,7 @@ PROCESS_THREAD(lrp_process, ev, data)
       tcpip_handler();
     }
 
-#if LRP_IS_COORDINATOR()
+#if LRP_IS_COORDINATOR
     // DIO timer
     if(etimer_expired(&send_dio_et)) {
 #if LRP_IS_SINK
@@ -1589,7 +1597,7 @@ PROCESS_THREAD(lrp_process, ev, data)
       }
 #endif /* LRP_IS_SINK */
     }
-#endif /* LRP_IS_COORDINATOR() */
+#endif /* LRP_IS_COORDINATOR */
 
 #if SND_QRY && !LRP_IS_SINK
     // QRY timer
@@ -1599,6 +1607,7 @@ PROCESS_THREAD(lrp_process, ev, data)
 #endif /* SND_QRY && !LRP_IS_SINK */
 
 #if LRP_RREQ_RETRIES
+    // Retry pending RREQs
     if(etimer_expired(&dfet)) {
       rrc_check_expired_rreq(RETRY_RREQ_INTERVAL);
       etimer_restart(&dfet);
@@ -1606,6 +1615,7 @@ PROCESS_THREAD(lrp_process, ev, data)
 #endif
 
 #if LRP_R_HOLD_TIME
+    // Mark old routes as expired
     if(etimer_expired(&rv)) {
       lrp_check_expired_route(RV_CHECK_INTERVAL);
       etimer_restart(&rv);
