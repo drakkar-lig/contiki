@@ -46,6 +46,7 @@
 
 #include "contiki.h"
 #include "contiki-lib.h"
+#include "cfs/cfs.h"
 #include "net/lrp/lrp-def.h"
 #include "net/lrp/lrp.h"
 #include "contiki-net.h"
@@ -75,6 +76,9 @@ extern uip_ds6_route_t uip_ds6_routing_table[UIP_DS6_ROUTE_NB];
 /* Exponential parameter for QRY sending. @see retransmit_qry */
 #define LRP_QRY_EXP_PARAM       0.80
 
+/* Seqno managment */
+#define SINK_SEQNO_SVFILE       "lrp/sink_seqno"
+#define MY_SEQNO_SVFILE         "lrp/my_seqno"
 #define MAX_SEQNO               65534
 #define SEQNO_GREATER_THAN(s1, s2)                   \
           (((s1 > s2) && (s1 - s2 <= (MAX_SEQNO/2))) \
@@ -111,6 +115,55 @@ static uint16_t qry_exp_residuum;
 
 /*---------------------------------------------------------------------------*/
 PROCESS(lrp_process, "LRP process");
+
+/*---------------------------------------------------------------------------*/
+/* Seqno saving managment: seqno is stored into flash memory to save its
+ * value beyond reboots. */
+#if SAVE_SEQNO
+static void
+seqno_save(char* save_file, uint16_t seqno) {
+  int fd, code;
+  uint8_t buf[2];
+  ((uint16_t*) buf)[0] = seqno;
+  fd = cfs_open(save_file, CFS_WRITE);
+  if(fd != -1) {
+    code = cfs_write(fd, buf, 2);
+    if(code == 1) {
+      // Write second byte
+      code = cfs_write(fd, buf + 1, 1);
+    }
+    cfs_close(fd);
+  }
+  if(fd == -1 || code == -1 || code == 0) {
+    PRINTF("Unable to save seqno into \"%s\"\n", save_file);
+  } else {
+    PRINTF("Seqno saved: %#x\n", seqno);
+  }
+}
+
+static uint16_t
+seqno_restore(char* save_file) {
+  int fd, code;
+  uint8_t buf[2];
+  fd = cfs_open(save_file, CFS_READ);
+  if(fd != -1) {
+    code = cfs_read(fd, buf, 2);
+    if(code == 1) {
+      // Not enough data, read again.
+      code = cfs_read(fd, buf + 1, 1);
+    }
+    cfs_close(fd);
+  }
+  if(fd == -1 || code == -1 || code == 0) {
+    printf("Creating new seqno: unable to get value from \"%s\"\n", save_file);
+    return 1;
+  } else {
+    printf("Seqno restored: %#x\n", *((uint16_t*) buf));
+    return *((uint16_t*) buf);
+  }
+}
+#endif /* SAVE_SEQNO */
+
 
 /*---------------------------------------------------------------------------*/
 /* Implementation of route validity time check and purge */
@@ -658,6 +711,9 @@ send_dio()
     // Increase sequence id => rebuild tree from scratch
     dio_seq_skip_counter = 0;
     SEQNO_INCREASE(my_sink_seqno);
+#if SAVE_SEQNO
+    seqno_save(SINK_SEQNO_SVFILE, my_sink_seqno);
+#endif
   } else {
     dio_seq_skip_counter++;
   }
@@ -912,6 +968,9 @@ handle_incoming_rreq(void)
     uip_ipaddr_copy(&dest_addr, &rm->orig_addr);
     uip_ipaddr_copy(&orig_addr, &rm->dest_addr);
     SEQNO_INCREASE(my_hseqno);
+#if SAVE_SEQNO
+    seqno_save(MY_SEQNO_SVFILE, my_hseqno);
+#endif
     send_rrep(&dest_addr, &UIP_IP_BUF->srcipaddr, &orig_addr, &my_hseqno, 0);
 
 #if LRP_IS_COORDINATOR
@@ -1097,6 +1156,9 @@ handle_incoming_rerr(void)
   } else {
     PRINTF("Successor doesn't know us. Spontaneously send RREP\n");
     SEQNO_INCREASE(my_hseqno);
+#if SAVE_SEQNO
+    seqno_save(MY_SEQNO_SVFILE, my_hseqno);
+#endif
     send_rrep(&my_sink_addr, uip_ds6_defrt_choose(), &myipaddr, &my_hseqno, 0);
   }
 #endif /* !LRP_IS_SINK */
@@ -1170,6 +1232,9 @@ handle_incoming_brk()
 #if LRP_IS_SINK
   // Send UPD on the reversed route
   SEQNO_INCREASE(my_sink_seqno);
+#if SAVE_SEQNO
+  seqno_save(SINK_SEQNO_SVFILE, my_sink_seqno);
+#endif
   send_upd(&rm->broken_link_node, &my_sink_addr, &UIP_IP_BUF->srcipaddr,
            &my_sink_seqno, 0);
 #else /* LRP_IS_SINK */
@@ -1367,6 +1432,9 @@ lrp_request_route_to(uip_ipaddr_t *host)
 
   lrp_rand_wait();
   SEQNO_INCREASE(my_hseqno);
+#if SAVE_SEQNO
+  seqno_save(MY_SEQNO_SVFILE, my_hseqno);
+#endif
   send_rreq(host, &myipaddr, &my_hseqno, 0, LRP_MAX_DIST);
 #if LRP_RREQ_RETRIES
   if(!rrc_lookup(&rreq_addr)) {
@@ -1412,6 +1480,9 @@ lrp_no_default_route(void)
 
   uip_create_linklocal_lln_routers_mcast(&nexthop);
   SEQNO_INCREASE(my_hseqno);
+#if SAVE_SEQNO
+  seqno_save(MY_SEQNO_SVFILE, my_hseqno);
+#endif
   send_brk(&myipaddr, &nexthop, &my_hseqno, 0, LRP_MAX_DIST);
 
 #if LRP_BRK_MININTERVAL
@@ -1525,8 +1596,13 @@ PROCESS_THREAD(lrp_process, ev, data)
 {
   PROCESS_BEGIN();
   PRINTF("LRP process started\n");
+
 #if LRP_IS_SINK
+#if SAVE_SEQNO
+  my_sink_seqno = seqno_restore(SINK_SEQNO_SVFILE);
+#else
   my_sink_seqno = 1;
+#endif
   my_rank = 0;
   my_weaklink = 0;
   dio_seq_skip_counter = 0;
@@ -1538,7 +1614,11 @@ PROCESS_THREAD(lrp_process, ev, data)
 #endif
   PRINTF("LRP is sink: %s\n", LRP_IS_SINK ? "yes" : "no");
 
+#if SAVE_SEQNO
+  my_hseqno = seqno_restore(MY_SEQNO_SVFILE);
+#else
   my_hseqno = 1;
+#endif
   print_local_addresses();
   get_global_addr(&myipaddr);
   get_prefix_from_addr(&myipaddr, &local_prefix, DEFAULT_LOCAL_PREFIX);

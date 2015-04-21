@@ -88,6 +88,9 @@
 /* Wait randomly when flooding the network */
 #define LRP_RANDOM_WAIT        1
 
+/* Save seqno into flash, to be able to restore it if node reboots. */
+#define SAVE_SEQNO             0
+
 #ifdef LRP_CONF_SND_QRY
 #define SND_QRY LRP_CONF_SND_QRY
 #else
