@@ -84,17 +84,6 @@ extern uip_ds6_route_t uip_ds6_routing_table[UIP_DS6_ROUTE_NB];
         || ((s2 > s1) && (s2 - s1 > (MAX_SEQNO/2))))
 #define SEQNO_INCREASE(seqno) (seqno >= MAX_SEQNO ? seqno = 1 : ++seqno)
 
-
-#if LRP_RREQ_MININTERVAL
-static struct timer rreq_ratelimit_timer;
-#endif
-#if LRP_IS_COORDINATOR && !LRP_IS_SINK && LRP_BRK_MININTERVAL
-static struct timer brk_ratelimit_timer;
-#endif
-#if LRP_IS_COORDINATOR
-static struct etimer send_dio_et;
-#endif
-
 /* Node state */
 static struct {
   uip_ipaddr_t sink_addr;
@@ -104,7 +93,7 @@ static struct {
   uint16_t     seqno;
 } state;
 
-#define LAST_RSSI cc2420_last_rssi
+#define LAST_RSSI ((int8_t) cc2420_last_rssi)
 // extern int8_t last_rssi; // for stm32w
 extern signed char cc2420_last_rssi;
 static uint16_t local_prefix_len;
@@ -452,151 +441,6 @@ lrp_rand_wait()
 #endif /* LRP_IS_COORDINATOR */
 
 /*---------------------------------------------------------------------------*/
-/* Change default route for the one specified with informations in parameter.
- * */
-#if !LRP_IS_SINK
-static uip_ds6_defrt_t*
-change_default_route(uip_ipaddr_t* def_route,
-    const uip_ipaddr_t* sink_addr, const uint16_t seqno,
-    const uint8_t metric, const uint8_t rank)
-{
-  uip_ds6_defrt_t *defrt;
-
-  uip_ipaddr_copy(&state.sink_addr, sink_addr);
-  state.tree_seqno = seqno;
-  state.rank = rank + 1;
-  state.weaklink = get_weaklink(metric) + parent_weaklink((int8_t)LAST_RSSI);
-#if SAVE_STATE
-  state_save();
-#endif
-
-  /* First check if we are actually changing of next hop! */
-  defrt = uip_ds6_defrt_lookup(uip_ds6_defrt_choose());
-  if(defrt == NULL || !uip_ip6addr_cmp(&defrt->ipaddr, def_route)) {
-    // New default route, remove previous one
-    PRINTF("New default route\n");
-    uip_ds6_defrt_rm(defrt);
-    // Flush routes through new default route
-    uip_ds6_route_rm_by_nexthop(def_route);
-    lrp_nbr_add(def_route);
-    defrt = uip_ds6_defrt_add(def_route, LRP_DEFRT_LIFETIME);
-  } else {
-    // We just need to refresh the route
-    PRINTF("Refreshing default route\n");
-    stimer_set(&defrt->lifetime, LRP_DEFRT_LIFETIME);
-  }
-
-#if LRP_IS_COORDINATOR
-  //etimer_set(&send_dio_et, random_rand() % 50 * CLOCK_SECOND / 100);
-  // FIXME: when should we activate DIOs?
-#endif
-
-  // FIXME: code specific to beacon-enabled
-//   uip_lladdr_t coord_addr;
-//   memcpy(&coord_addr, &UIP_IP_BUF->srcipaddr.u8[8], UIP_LLADDR_LEN);
-//   coord_addr.addr[0] ^= 2;
-//   NETSTACK_RDC_CONFIGURATOR.coordinator_choice((void *) &coord_addr,
-//       rm->rank);
-  return defrt;
-}
-#endif /* !LRP_IS_SINK */
-
-/*---------------------------------------------------------------------------*/
-/* Add route into routing table, with LRP's specific informations. Return the
- * inserted route or NULL */
-#if LRP_IS_COORDINATOR
-static uip_ds6_route_t*
-lrp_route_add(uip_ipaddr_t* orig_addr, const uint8_t length,
-    uip_ipaddr_t* next_hop, const uint8_t route_cost, const uint16_t seqno)
-{
-  uip_ds6_route_t* rt;
-
-  rt = uip_ds6_route_lookup(orig_addr);
-  if(rt != NULL) uip_ds6_route_rm(rt);
-
-  lrp_nbr_add(next_hop);
-  rt = uip_ds6_route_add(orig_addr, length, next_hop);
-  if(rt != NULL) {
-    rt->state.route_cost = route_cost;
-    rt->state.seqno = seqno;
-    rt->state.valid_time = LRP_R_HOLD_TIME;
-  }
-  return rt;
-}
-#endif /* LRP_IS_COORDINATOR */
-
-/*---------------------------------------------------------------------------*/
-/* Add the described route into the routing table, if it is better than
- * the previous one. Return NULL if the route has not been added. */
-#if LRP_IS_COORDINATOR
-static uip_ds6_route_t*
-offer_route(uip_ipaddr_t* orig_addr, const uint8_t length,
-    uip_ipaddr_t* next_hop, const uint8_t route_cost,
-    const uint16_t seqno)
-{
-  uip_ds6_route_t* rt;
-
-  rt = uip_ds6_route_lookup(orig_addr);
-  if(rt == NULL ||
-      SEQNO_GREATER_THAN(seqno, rt->state.seqno) ||
-      (seqno == rt->state.seqno && route_cost < rt->state.route_cost)) {
-    // Offered route is better than previous one
-    return lrp_route_add(orig_addr, length, next_hop, route_cost, seqno);
-  } else {
-    // Offered route is worse, refusing route
-    return NULL;
-  }
-}
-#endif /* LRP_IS_COORDINATOR */
-
-/*---------------------------------------------------------------------------*/
-/* Change default route if offered one is better than the previous one. Return
- * NULL if the route has not been added. */
-#if !LRP_IS_SINK
-static uip_ds6_defrt_t*
-offer_default_route(const uip_ipaddr_t* sink_addr,
-    uip_ipaddr_t* next_hop, const uint8_t metric, const uint8_t route_cost,
-    const uint16_t seqno)
-{
-  uint8_t parent_changed = (0==1);
-  uint8_t new_weaklink;
-
-  if(lrp_ipaddr_is_empty(&state.sink_addr)) {
-    // No previously associated with any tree
-    PRINTF("New tree\n");
-    parent_changed = (1==1);
-  } else if(uip_ipaddr_cmp(sink_addr, &state.sink_addr) &&
-      SEQNO_GREATER_THAN(seqno, state.tree_seqno)) {
-    // New seqno (with the same sink address), better than before
-    PRINTF("New tree sequence number\n");
-    parent_changed = (1==1);
-  } else if(!uip_ipaddr_cmp(sink_addr, &state.sink_addr) ||
-      seqno == state.tree_seqno) {
-    new_weaklink =
-      get_weaklink(metric) + parent_weaklink((int8_t) LAST_RSSI);
-    if(new_weaklink < state.weaklink) {
-      // Fewer weak links, better than before
-      PRINTF("Fewer weak links\n");
-      parent_changed = (1==1);
-    } else if(new_weaklink == state.weaklink) {
-      if (route_cost < (state.rank - 1)) {
-        // Better rank than before
-        PRINTF("Better rank\n");
-        parent_changed = (1==1);
-      }
-    }
-  }
-
-  if(parent_changed) {
-    return change_default_route(next_hop, sink_addr, seqno, metric, route_cost);
-  } else {
-    PRINTF("Offered route is worse than before. Keeping current one\n");
-    return NULL;
-  }
-}
-#endif /* !LRP_IS_SINK */
-
-/*---------------------------------------------------------------------------*/
 static uint8_t
 lrp_is_my_global_address(uip_ipaddr_t *addr)
 {
@@ -639,6 +483,7 @@ lrp_is_predecessor(uip_ipaddr_t *addr)
 }
 #endif /* !LRP_IS_SINK */
 
+
 /*---------------------------------------------------------------------------*/
 /* Format and broadcast a QRY packet. */
 #if SND_QRY && !LRP_IS_SINK
@@ -663,10 +508,9 @@ send_qry()
 #endif /* SND_QRY && !LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
-/* Retransmit a QRY if there is no default route. Restart the QRY timer with
- * exponentially increasing time interval between them. Asymptotically, QRY
- * will be sent at the same rate as the DIO frequency. Time wait between two
- * QRY sending follow this sequence :
+/* Retransmit periodically a QRY, or activate periodical retransmission.
+ * Asymptotically, QRY will be sent at the same rate as the DIO frequency.
+ * Time between QRY sending follow this exponential sequence:
  * `Un = SEND_DIO_INTERVAL * (1 - LRP_QRY_EXP_PARAM ^ n)` */
 #if SND_QRY && !LRP_IS_SINK
 static void
@@ -677,12 +521,14 @@ retransmit_qry()
 
   if(uip_ds6_defrt_choose() != NULL) {
     PRINTF("Deactivating QRY timer: have a default route\n");
+    ctimer_stop(&qry_timer);
     qry_exp_residuum = -1;
     return;
   }
 
   if(!ctimer_expired(&qry_timer)) {
     PRINTF("Skipping retransmit_qry: Timer has not yet expired\n");
+    return;
   }
 
   send_qry();
@@ -695,8 +541,7 @@ retransmit_qry()
   qry_exp_residuum *= LRP_QRY_EXP_PARAM;
   ctimer_set(&qry_timer, SEND_DIO_INTERVAL - qry_exp_residuum,
       (void (*)(void*))&retransmit_qry, NULL);
-  PRINTF("QRY timer reset (%lums)\n",
-      SEND_DIO_INTERVAL - qry_exp_residuum);
+  PRINTF("QRY timer reset (%lums)\n", SEND_DIO_INTERVAL - qry_exp_residuum);
 }
 #endif /* SND_QRY && !LRP_IS_SINK */
 
@@ -745,6 +590,35 @@ send_dio()
     dio_seq_skip_counter++;
   }
 #endif /* LRP_IS_SINK */
+}
+#endif /* LRP_IS_COORDINATOR */
+
+/*---------------------------------------------------------------------------*/
+/* Retransmit or activate retransmission of DIOs. */
+#if LRP_IS_COORDINATOR
+static void
+retransmit_dio()
+{
+  static struct ctimer dio_timer;
+
+#if !LRP_IS_SINK
+  if(uip_ds6_defrt_choose() == NULL) {
+    PRINTF("Deactivating DIO timer: have no default route\n");
+    ctimer_stop(&dio_timer);
+    return;
+  }
+#endif
+
+  if(!ctimer_expired(&dio_timer)) {
+    PRINTF("Skipping retransmit_dio: Timer has not yet expired\n");
+    return;
+  }
+
+  send_dio();
+
+  ctimer_set(&dio_timer, SEND_DIO_INTERVAL,
+      (void (*)(void*))&retransmit_dio, NULL);
+  PRINTF("DIO timer reset (%lums)\n", SEND_DIO_INTERVAL);
 }
 #endif /* LRP_IS_COORDINATOR */
 
@@ -945,6 +819,153 @@ send_upd(const uip_ipaddr_t *broken_link_node, const uip_ipaddr_t *sink_addr,
 
 
 /*---------------------------------------------------------------------------*/
+/* Add route into routing table, with LRP's specific informations. Return the
+ * inserted route or NULL */
+#if LRP_IS_COORDINATOR
+static uip_ds6_route_t*
+lrp_route_add(uip_ipaddr_t* orig_addr, const uint8_t length,
+    uip_ipaddr_t* next_hop, const uint8_t route_cost, const uint16_t seqno)
+{
+  uip_ds6_route_t* rt;
+
+  rt = uip_ds6_route_lookup(orig_addr);
+  if(rt != NULL) uip_ds6_route_rm(rt);
+
+  lrp_nbr_add(next_hop);
+  rt = uip_ds6_route_add(orig_addr, length, next_hop);
+  if(rt != NULL) {
+    rt->state.route_cost = route_cost;
+    rt->state.seqno = seqno;
+    rt->state.valid_time = LRP_R_HOLD_TIME;
+  }
+  return rt;
+}
+#endif /* LRP_IS_COORDINATOR */
+
+/*---------------------------------------------------------------------------*/
+/* Add the described route into the routing table, if it is better than
+ * the previous one. Return NULL if the route has not been added. */
+#if LRP_IS_COORDINATOR
+static uip_ds6_route_t*
+offer_route(uip_ipaddr_t* orig_addr, const uint8_t length,
+    uip_ipaddr_t* next_hop, const uint8_t route_cost,
+    const uint16_t seqno)
+{
+  uip_ds6_route_t* rt;
+
+  rt = uip_ds6_route_lookup(orig_addr);
+  if(rt == NULL ||
+      SEQNO_GREATER_THAN(seqno, rt->state.seqno) ||
+      (seqno == rt->state.seqno && route_cost < rt->state.route_cost)) {
+    // Offered route is better than previous one
+    return lrp_route_add(orig_addr, length, next_hop, route_cost, seqno);
+  } else {
+    // Offered route is worse, refusing route
+    return NULL;
+  }
+}
+#endif /* LRP_IS_COORDINATOR */
+
+/*---------------------------------------------------------------------------*/
+/* Change default route for the one specified with informations in parameter.
+ * */
+#if !LRP_IS_SINK
+static uip_ds6_defrt_t*
+change_default_route(uip_ipaddr_t* def_route,
+    const uip_ipaddr_t* sink_addr, const uint16_t seqno,
+    const uint8_t metric, const uint8_t rank)
+{
+  uip_ds6_defrt_t *defrt;
+
+  uip_ipaddr_copy(&state.sink_addr, sink_addr);
+  state.tree_seqno = seqno;
+  state.rank = rank + 1;
+  state.weaklink = get_weaklink(metric) + parent_weaklink(LAST_RSSI);
+#if SAVE_STATE
+  state_save();
+#endif
+
+  /* First check if we are actually changing of next hop! */
+  defrt = uip_ds6_defrt_lookup(uip_ds6_defrt_choose());
+  if(defrt == NULL || !uip_ip6addr_cmp(&defrt->ipaddr, def_route)) {
+    // New default route, remove previous one
+    PRINTF("New default route\n");
+    uip_ds6_defrt_rm(defrt);
+    // Flush routes through new default route
+    uip_ds6_route_rm_by_nexthop(def_route);
+    lrp_nbr_add(def_route);
+    defrt = uip_ds6_defrt_add(def_route, LRP_DEFRT_LIFETIME);
+  } else {
+    // We just need to refresh the route
+    PRINTF("Refreshing default route\n");
+    stimer_set(&defrt->lifetime, LRP_DEFRT_LIFETIME);
+  }
+
+#if LRP_IS_COORDINATOR
+  lrp_rand_wait();
+  retransmit_dio();
+  // FIXME: when should we activate DIOs?
+#endif
+
+  // FIXME: code specific to beacon-enabled
+//   uip_lladdr_t coord_addr;
+//   memcpy(&coord_addr, &UIP_IP_BUF->srcipaddr.u8[8], UIP_LLADDR_LEN);
+//   coord_addr.addr[0] ^= 2;
+//   NETSTACK_RDC_CONFIGURATOR.coordinator_choice((void *) &coord_addr,
+//       rm->rank);
+  return defrt;
+}
+#endif /* !LRP_IS_SINK */
+
+/*---------------------------------------------------------------------------*/
+/* Change default route if offered one is better than the previous one. Return
+ * NULL if the route has not been added. */
+#if !LRP_IS_SINK
+static uip_ds6_defrt_t*
+offer_default_route(const uip_ipaddr_t* sink_addr,
+    uip_ipaddr_t* next_hop, const uint8_t metric, const uint8_t route_cost,
+    const uint16_t seqno)
+{
+  uint8_t parent_changed = (0==1);
+  uint8_t new_weaklink;
+
+  if(lrp_ipaddr_is_empty(&state.sink_addr)) {
+    // No previously associated with any tree
+    PRINTF("New tree\n");
+    parent_changed = (1==1);
+  } else if(uip_ipaddr_cmp(sink_addr, &state.sink_addr) &&
+      SEQNO_GREATER_THAN(seqno, state.tree_seqno)) {
+    // New seqno (with the same sink address), better than before
+    PRINTF("New tree sequence number\n");
+    parent_changed = (1==1);
+  } else if(!uip_ipaddr_cmp(sink_addr, &state.sink_addr) ||
+      seqno == state.tree_seqno) {
+    new_weaklink =
+      get_weaklink(metric) + parent_weaklink(LAST_RSSI);
+    if(new_weaklink < state.weaklink) {
+      // Fewer weak links, better than before
+      PRINTF("Fewer weak links\n");
+      parent_changed = (1==1);
+    } else if(new_weaklink == state.weaklink) {
+      if (route_cost < (state.rank - 1)) {
+        // Better rank than before
+        PRINTF("Better rank\n");
+        parent_changed = (1==1);
+      }
+    }
+  }
+
+  if(parent_changed) {
+    return change_default_route(next_hop, sink_addr, seqno, metric, route_cost);
+  } else {
+    PRINTF("Offered route is worse than before. Keeping current one\n");
+    return NULL;
+  }
+}
+#endif /* !LRP_IS_SINK */
+
+
+/*---------------------------------------------------------------------------*/
 #if !LRP_IS_SINK
 static void
 handle_incoming_rreq(void)
@@ -990,7 +1011,7 @@ handle_incoming_rreq(void)
     return;
   }
   fwc_add(&rm->orig_addr, &rm->seqno);
-#endif /* !USE_OPT */
+#endif /* !USE_DIO */
 
   if(lrp_is_my_global_address(&rm->dest_addr)) {
     // RREQ for our address
@@ -1070,7 +1091,7 @@ handle_incoming_rrep(void)
     PRINTF("Former route is better\n");
   }
 
-#if LRP_IS_SINK || !USE_OPT
+#if LRP_IS_SINK || !USE_DIO
   if(uip_ipaddr_cmp(&rm->dest_addr, &myipaddr)) {
     // RREP is for our address
 #if LRP_RREQ_RETRIES
@@ -1082,7 +1103,7 @@ handle_incoming_rrep(void)
 #endif /* LRP_RREP_ACK */
     return;
   }
-#endif /* LRP_IS_SINK || !USE_OPT */
+#endif /* LRP_IS_SINK || !USE_DIO */
 
 #if !LRP_IS_SINK
 #if USE_DIO
@@ -1213,7 +1234,7 @@ handle_incoming_dio(void)
   PRINT6ADDR(&rm->sink_addr);
   PRINTF(" seq=%d", uip_ntohs(rm->seqno));
   PRINTF(" rank=%d", rm->rank);
-  PRINTF(" rssi=%i\n", (int8_t)LAST_RSSI);
+  PRINTF(" rssi=%i\n", LAST_RSSI);
 
   offer_default_route(&rm->sink_addr, &UIP_IP_BUF->srcipaddr,
       rm->metric, rm->rank, uip_ntohs(rm->seqno));
@@ -1246,7 +1267,6 @@ handle_incoming_brk()
   struct lrp_msg_brk *rm = (struct lrp_msg_brk *)uip_appdata;
 #if !LRP_IS_SINK
   uip_ds6_defrt_t* defrt;
-  uip_ipaddr_t nexthop;
 #endif
 
   if(lrp_is_my_global_address(&rm->broken_link_node)) {
@@ -1289,9 +1309,8 @@ handle_incoming_brk()
   defrt = uip_ds6_defrt_lookup(&UIP_IP_BUF->srcipaddr);
   if(defrt != NULL) {
     // BRK comes from our default next hop. Broadcasting
-    uip_create_linklocal_lln_routers_mcast(&nexthop);
     lrp_rand_wait();
-    send_brk(&rm->broken_link_node, &nexthop, rm->seqno, rm->rank + 1,
+    send_brk(&rm->broken_link_node, &mcastipaddr, rm->seqno, rm->rank + 1,
         UIP_IP_BUF->ttl - 1);
   } else {
     // BRK comes from a neighbor broken branch. Forwarding BRK to sink
@@ -1344,7 +1363,7 @@ handle_incoming_upd()
     return;
   }
   send_upd(&rm->broken_link_node, &rm->sink_addr, nexthop, rm->seqno,
-      get_weaklink(rm->metric) + parent_weaklink((int8_t)LAST_RSSI),
+      get_weaklink(rm->metric) + parent_weaklink(LAST_RSSI),
       rm->rank+1);
 }
 #endif /* LRP_IS_COORDINATOR && !LRP_IS_SINK */
@@ -1456,6 +1475,10 @@ lrp_addr_matches_local_prefix(uip_ipaddr_t *host)
 static void
 lrp_request_route_to(uip_ipaddr_t *host)
 {
+#if LRP_RREQ_MININTERVAL
+  static struct timer rreq_ratelimit_timer = {0};
+#endif
+
   PRINTF("Request a route towards ");
   PRINT6ADDR(host);
   PRINTF("\n");
@@ -1506,8 +1529,8 @@ lrp_routing_error(uip_ipaddr_t* source, uip_ipaddr_t* destination,
 static void
 lrp_no_default_route(void)
 {
-#if LRP_IS_COORDINATOR
-  uip_ipaddr_t nexthop;
+#if LRP_IS_COORDINATOR && LRP_BRK_MININTERVAL
+  static struct timer brk_ratelimit_timer = {0};
 #endif
 
   if(lrp_ipaddr_is_empty(&state.sink_addr)) {
@@ -1523,12 +1546,11 @@ lrp_no_default_route(void)
   }
 #endif /* LRP_BRK_MININTERVAL */
 
-  uip_create_linklocal_lln_routers_mcast(&nexthop);
   SEQNO_INCREASE(state.seqno);
 #if SAVE_STATE
   state_save();
 #endif
-  send_brk(&myipaddr, &nexthop, state.seqno, 0, LRP_MAX_DIST);
+  send_brk(&myipaddr, &mcastipaddr, state.seqno, 0, LRP_MAX_DIST);
 
 #if LRP_BRK_MININTERVAL
   timer_set(&brk_ratelimit_timer, LRP_BRK_MININTERVAL);
@@ -1637,8 +1659,8 @@ PROCESS_THREAD(lrp_process, ev, data)
 {
   PROCESS_BEGIN();
   PRINTF("LRP process started\n");
-
   PRINTF("LRP is sink: %s\n", LRP_IS_SINK ? "yes" : "no");
+
   get_global_addr(&myipaddr);
   get_prefix_from_addr(&myipaddr, &local_prefix, DEFAULT_LOCAL_PREFIX);
   uip_create_linklocal_lln_routers_mcast(&mcastipaddr);
@@ -1665,10 +1687,6 @@ PROCESS_THREAD(lrp_process, ev, data)
   etimer_set(&dfet, RETRY_RREQ_INTERVAL);
 #endif
 
-#if LRP_RREQ_MININTERVAL
-  timer_set(&rreq_ratelimit_timer, LRP_RREQ_MININTERVAL);
-#endif
-
 #if LRP_R_HOLD_TIME
   // Routes validity
   PRINTF("Set route validity timer (%ums)\n",
@@ -1680,6 +1698,10 @@ PROCESS_THREAD(lrp_process, ev, data)
   // Start sending QRY to find nodes just around
   retransmit_qry();
 #endif
+#if LRP_IS_SINK
+  // Start sending DIO to build tree
+  retransmit_dio();
+#endif
 
   while(1) {
     PROCESS_YIELD();
@@ -1687,21 +1709,6 @@ PROCESS_THREAD(lrp_process, ev, data)
     if(ev == tcpip_event) {
       tcpip_handler();
     }
-
-#if LRP_IS_COORDINATOR
-    // DIO timer
-    if(etimer_expired(&send_dio_et)) {
-#if LRP_IS_SINK
-      send_dio();
-      etimer_set(&send_dio_et, SEND_DIO_INTERVAL);
-#else /* LRP_IS_SINK */
-      if(uip_ds6_defrt_choose() != NULL) {
-        send_dio();
-        etimer_set(&send_dio_et, SEND_DIO_INTERVAL);
-      }
-#endif /* LRP_IS_SINK */
-    }
-#endif /* LRP_IS_COORDINATOR */
 
 #if LRP_RREQ_RETRIES
     // Retry pending RREQs
