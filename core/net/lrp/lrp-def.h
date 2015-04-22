@@ -88,37 +88,47 @@
 /* Wait randomly when flooding the network */
 #define LRP_RANDOM_WAIT        1
 
-/* Save seqno into flash, to be able to restore it if node reboots. */
-#define SAVE_SEQNO             0
-
+/* Send QRY */
 #ifdef LRP_CONF_SND_QRY
-#define SND_QRY LRP_CONF_SND_QRY
+#define SND_QRY                LRP_CONF_SND_QRY
 #else
-#define SND_QRY 0
+#define SND_QRY                0
 #endif
 
+/* Is a sink node */
 #ifdef LRP_CONF_IS_SINK
-#define LRP_IS_SINK LRP_CONF_IS_SINK
+#define LRP_IS_SINK            LRP_CONF_IS_SINK
 #else
-#define LRP_IS_SINK 1
+#define LRP_IS_SINK            1
 #endif
 
+/* Is a coordinator node */
 #ifdef LRP_CONF_IS_COORDINATOR
-#define LRP_IS_COORDINATOR LRP_CONF_IS_COORDINATOR
+#define LRP_IS_COORDINATOR     LRP_CONF_IS_COORDINATOR
 #else
-#define LRP_IS_COORDINATOR 1
+#define LRP_IS_COORDINATOR     1
 #endif
 
+/* Use DIO, or keep a LOADng's standard comportment */
 #ifdef LRP_CONF_USE_DIO
-#define USE_DIO LRP_CONF_USE_DIO
+#define USE_DIO                LRP_CONF_USE_DIO
 #else
-#define USE_DIO 1
+#define USE_DIO                1
+#endif
+
+/* Save seqno into flash, to be able to restore it if node reboots. */
+#if !LRP_IS_COORDINATOR
+// Non-coordinator nodes does not need SAVE_STATE at all
+#define SAVE_STATE             0
+#else
+#define SAVE_STATE             0
 #endif
 
 #if LRP_IS_SINK && !LRP_IS_COORDINATOR
 #error The node is sink but not coordinator, which is particularly \
   problematic (and stupid). Please check again your settings.
 #endif
+
 
 /* Generic LRP message */
 struct lrp_msg {
