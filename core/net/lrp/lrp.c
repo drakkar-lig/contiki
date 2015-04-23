@@ -69,12 +69,14 @@
 #define LRP_ADDR_LEN_IPV6       15
 #define DEFAULT_PREFIX_LEN      128
 #define DEFAULT_LOCAL_PREFIX    64
-#define DEFAULT_DIO_SEQ_SKIP    4
-extern uip_ds6_route_t uip_ds6_routing_table[UIP_DS6_ROUTE_NB];
 #define UIP_IP_BUF ((struct uip_udpip_hdr *)&uip_buf[UIP_LLH_LEN])
 
 /* Exponential parameter for QRY sending. @see retransmit_qry */
 #define LRP_QRY_EXP_PARAM       0.90
+
+/* Nb of time the tree seqno is reused when broadcasting DIOs. Note: UPD can
+ * force increase the seqno */
+#define DEFAULT_DIO_SEQ_SKIP    2
 
 /* Seqno managment */
 #define STATE_SVFILE            "lrp/state"
@@ -99,9 +101,9 @@ extern signed char cc2420_last_rssi;
 static uint16_t local_prefix_len;
 static uip_ipaddr_t local_prefix, myipaddr, mcastipaddr;
 static struct uip_udp_conn *udpconn;
-#if LRP_IS_SINK
+#if LRP_IS_SINK && DEFAULT_DIO_SEQ_SKIP
 static uint8_t dio_seq_skip_counter;
-#endif /* LRP_IS_SINK */
+#endif /* LRP_IS_SINK && DEFAULT_DIO_SEQ_SKIP */
 
 /*---------------------------------------------------------------------------*/
 PROCESS(lrp_process, "LRP process");
@@ -110,7 +112,8 @@ PROCESS(lrp_process, "LRP process");
 /* State saving managment: `state` is stored into flash memory to save its
  * value beyond reboots. */
 static void
-state_new(void) {
+state_new(void)
+{
 #if LRP_IS_SINK
   uip_ipaddr_copy(&state.sink_addr, &myipaddr);
   state.tree_seqno = 1;
@@ -127,7 +130,8 @@ state_new(void) {
 
 #if SAVE_STATE
 static void
-state_save(void) {
+state_save(void)
+{
   int fd, written = 0, rcode;
   fd = cfs_open(STATE_SVFILE, CFS_WRITE);
   if(fd != -1) {
@@ -140,19 +144,20 @@ state_save(void) {
   }
 
   if(fd == -1 || rcode == -1) {
-    PRINTF("Unable to save state into \"" STATE_SVFILE "\"\n");
+    PRINTF("Error: Unable to save state into \"" STATE_SVFILE "\"\n");
   } else {
     PRINTF("State saved\n");
   }
 }
 
 static void
-state_restore(void) {
+state_restore(void)
+{
   int fd, read = 0, rcode;
   fd = cfs_open(STATE_SVFILE, CFS_READ);
   if(fd != -1) {
     do {
-      rcode = cfs_write(fd, ((uint8_t*) &state) + read,
+      rcode = cfs_read(fd, ((uint8_t*) &state) + read,
           sizeof(state) - read);
       read += rcode;
     } while(rcode != -1 && read != sizeof(state));
@@ -420,7 +425,8 @@ lrp_nbr_add(uip_ipaddr_t* next_hop)
 /* Return true if `addr` is empty */
 #if !LRP_IS_SINK
 static uint8_t
-lrp_ipaddr_is_empty(uip_ipaddr_t* addr) {
+lrp_ipaddr_is_empty(uip_ipaddr_t* addr)
+{
   uip_ipaddr_t empty;
   uip_create_linklocal_empty_addr(&empty);
   return uip_ipaddr_cmp(&empty, addr);
@@ -432,7 +438,7 @@ lrp_ipaddr_is_empty(uip_ipaddr_t* addr) {
 static void
 lrp_rand_wait()
 {
-#if LRP_RANDOM_WAIT == 1
+#if LRP_RANDOM_WAIT
       PRINTF("Waiting rand time\n");
       clock_wait(random_rand() % 50 * CLOCK_SECOND / 100);
       PRINTF("Done waiting rand time\n");
@@ -576,20 +582,6 @@ send_dio()
   uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_dio));
 // #endif /* RDC_LAYER_ID == ID_mac_802154_rdc_driver */
   memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
-
-#if LRP_IS_SINK
-  // Count sent DIO messages
-  if(dio_seq_skip_counter >= DEFAULT_DIO_SEQ_SKIP) {
-    // Increase sequence id => rebuild tree from scratch
-    dio_seq_skip_counter = 0;
-    SEQNO_INCREASE(state.tree_seqno);
-#if SAVE_STATE
-    state_save();
-#endif
-  } else {
-    dio_seq_skip_counter++;
-  }
-#endif /* LRP_IS_SINK */
 }
 #endif /* LRP_IS_COORDINATOR */
 
@@ -613,6 +605,30 @@ retransmit_dio()
     PRINTF("Skipping retransmit_dio: Timer has not yet expired\n");
     return;
   }
+
+#if LRP_IS_SINK
+  // Try to increment tree seqno
+#if DEFAULT_DIO_SEQ_SKIP
+  if(dio_seq_skip_counter < DEFAULT_DIO_SEQ_SKIP) {
+    // Do not increase tree seqno, just count skipped increase
+    dio_seq_skip_counter++;
+  } else {
+    // Increase sequence id => rebuild tree from scratch
+    dio_seq_skip_counter = 0;
+    SEQNO_INCREASE(state.tree_seqno);
+#if SAVE_STATE
+    state_save();
+#endif /* SAVE_STATE */
+  }
+
+#else /* if not DEFAULT_DIO_SEQ_SKIP */
+  // Increase tree seqno
+  SEQNO_INCREASE(state.tree_seqno);
+#if SAVE_STATE
+  state_save();
+#endif /* SAVE_STATE */
+#endif /* DEFAULT_DIO_SEQ_SKIP */
+#endif /* LRP_IS_SINK */
 
   send_dio();
 
@@ -1288,10 +1304,13 @@ handle_incoming_brk()
 
 #if LRP_IS_SINK
   // Send UPD on the reversed route
+#if DEFAULT_DIO_SEQ_SKIP
+  dio_seq_skip_counter = 0;
+#endif /* DEFAULT_DIO_SEQ_SKIP */
   SEQNO_INCREASE(state.tree_seqno);
 #if SAVE_STATE
   state_save();
-#endif
+#endif /* SAVE_STATE */
   send_upd(&rm->broken_link_node, &state.sink_addr, &UIP_IP_BUF->srcipaddr,
            state.tree_seqno, 0, 0);
 #else /* LRP_IS_SINK */
@@ -1634,6 +1653,7 @@ lrp_select_nexthop_for(uip_ipaddr_t* source, uip_ipaddr_t* destination,
 #if LRP_IS_COORDINATOR
   if(route_to_dest != NULL && !route_to_dest->state.ack_received) {
     PRINTF("Discarding packet: used route is not acked\n");
+    // FIXME: remove the route? Send RERR?
     return NULL;
   }
 #endif /* LRP_IS_COORDINATOR */
@@ -1677,7 +1697,7 @@ PROCESS_THREAD(lrp_process, ev, data)
 #else
   state_new();
 #endif
-#if LRP_IS_SINK
+#if LRP_IS_SINK && DEFAULT_DIO_SEQ_SKIP
   dio_seq_skip_counter = 0;
 #endif
 

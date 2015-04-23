@@ -50,7 +50,7 @@
 #define LRP_NET_TRAVERSAL_TIME 10 * CLOCK_SECOND
 
 /* Frequency of DIO broadcasting (ticks) */
-#define SEND_DIO_INTERVAL      500 * CLOCK_SECOND
+#define SEND_DIO_INTERVAL      510 * CLOCK_SECOND
 
 /* Minimum interval between two BRK transmissions (ticks). */
 #define LRP_BRK_MININTERVAL    (2 * LRP_NET_TRAVERSAL_TIME)
