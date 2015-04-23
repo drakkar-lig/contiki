@@ -148,7 +148,7 @@ struct lrp_msg {
 struct lrp_msg_rreq {
   uint8_t type;
   uint8_t addr_len;
-  uint16_t seqno;
+  uint16_t node_seqno;
   uint8_t metric;
   uint8_t route_cost;
   uip_ipaddr_t dest_addr;
@@ -161,7 +161,7 @@ struct lrp_msg_rreq {
 struct lrp_msg_rrep {
   uint8_t type;
   uint8_t addr_len;
-  uint16_t seqno;
+  uint16_t node_seqno;
   uint8_t metric;
   uint8_t route_cost;
   uip_ipaddr_t dest_addr;
@@ -176,7 +176,7 @@ struct lrp_msg_rack {
   uint8_t type;
   uint8_t addr_len;
   uip_ipaddr_t src_addr;
-  uint16_t seqno;
+  uint16_t node_seqno;
 };
 #endif /* LRP_RREP_ACK */
 
@@ -197,7 +197,7 @@ struct lrp_msg_rerr {
 struct lrp_msg_dio {
   uint8_t type;
   uint8_t addr_len;
-  uint16_t seqno;
+  uint16_t tree_seqno;
   uint8_t rank;
   uint8_t metric;
   uip_ipaddr_t sink_addr;
@@ -220,9 +220,9 @@ struct lrp_msg_qry {
 struct lrp_msg_brk {
   uint8_t type;
   uint8_t addr_len;
-  uint16_t seqno;
+  uint16_t node_seqno;
   uint8_t rank;
-  uip_ipaddr_t broken_link_node;
+  uip_ipaddr_t lost_node;
 };
 
 /* LRP UPD message */
@@ -231,11 +231,12 @@ struct lrp_msg_brk {
 struct lrp_msg_upd {
   uint8_t type;
   uint8_t addr_len;
-  uint16_t seqno;
+  uint16_t tree_seqno;
+  uint16_t repair_seqno;
   uint8_t rank;
   uint8_t metric;
   uip_ipaddr_t sink_addr;
-  uip_ipaddr_t broken_link_node;
+  uip_ipaddr_t lost_node;
 };
 
 #endif /* __LRP_DEF_H__ */
