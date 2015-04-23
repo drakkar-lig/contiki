@@ -50,7 +50,14 @@
 #define LRP_NET_TRAVERSAL_TIME 10 * CLOCK_SECOND
 
 /* Frequency of DIO broadcasting (ticks) */
-#define SEND_DIO_INTERVAL      510 * CLOCK_SECOND
+#define SEND_DIO_INTERVAL      480 * CLOCK_SECOND
+
+/* Nb of time the tree seqno is reused when broadcasting DIOs. Note: UPD can
+ * force increase the seqno */
+#define DEFAULT_DIO_SEQ_SKIP   0
+
+/* Exponential parameter for QRY sending. @see retransmit_qry */
+#define LRP_QRY_EXP_PARAM      0.90
 
 /* Minimum interval between two BRK transmissions (ticks). */
 #define LRP_BRK_MININTERVAL    (2 * LRP_NET_TRAVERSAL_TIME)
@@ -68,7 +75,7 @@
 #define LRP_RREP_ACK           0
 
 /* Default route lifetime (ticks) */
-#define LRP_DEFRT_LIFETIME     65534
+#define LRP_DEFRT_LIFETIME     0
 
 /* Route retention interval (ticks). 0 for infinite interval */
 #define LRP_R_HOLD_TIME        0

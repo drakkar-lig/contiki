@@ -71,13 +71,6 @@
 #define DEFAULT_LOCAL_PREFIX    64
 #define UIP_IP_BUF ((struct uip_udpip_hdr *)&uip_buf[UIP_LLH_LEN])
 
-/* Exponential parameter for QRY sending. @see retransmit_qry */
-#define LRP_QRY_EXP_PARAM       0.90
-
-/* Nb of time the tree seqno is reused when broadcasting DIOs. Note: UPD can
- * force increase the seqno */
-#define DEFAULT_DIO_SEQ_SKIP    2
-
 /* Seqno managment */
 #define STATE_SVFILE            "lrp/state"
 #define MAX_SEQNO               65534
@@ -586,7 +579,8 @@ send_dio()
 #endif /* LRP_IS_COORDINATOR */
 
 /*---------------------------------------------------------------------------*/
-/* Retransmit or activate retransmission of DIOs. */
+/* Retransmit or activate retransmission of DIOs. If retransmission was
+ * already active, a DIO is immediately sent. */
 #if LRP_IS_COORDINATOR
 static void
 retransmit_dio()
@@ -600,11 +594,6 @@ retransmit_dio()
     return;
   }
 #endif
-
-  if(!ctimer_expired(&dio_timer)) {
-    PRINTF("Skipping retransmit_dio: Timer has not yet expired\n");
-    return;
-  }
 
 #if LRP_IS_SINK
   // Try to increment tree seqno
@@ -917,12 +906,6 @@ change_default_route(uip_ipaddr_t* def_route,
     stimer_set(&defrt->lifetime, LRP_DEFRT_LIFETIME);
   }
 
-#if LRP_IS_COORDINATOR
-  lrp_rand_wait();
-  retransmit_dio();
-  // FIXME: when should we activate DIOs?
-#endif
-
   // FIXME: code specific to beacon-enabled
 //   uip_lladdr_t coord_addr;
 //   memcpy(&coord_addr, &UIP_IP_BUF->srcipaddr.u8[8], UIP_LLADDR_LEN);
@@ -956,8 +939,7 @@ offer_default_route(const uip_ipaddr_t* sink_addr,
     parent_changed = (1==1);
   } else if(!uip_ipaddr_cmp(sink_addr, &state.sink_addr) ||
       seqno == state.tree_seqno) {
-    new_weaklink =
-      get_weaklink(metric) + parent_weaklink(LAST_RSSI);
+    new_weaklink = get_weaklink(metric) + parent_weaklink(LAST_RSSI);
     if(new_weaklink < state.weaklink) {
       // Fewer weak links, better than before
       PRINTF("Fewer weak links\n");
@@ -972,7 +954,8 @@ offer_default_route(const uip_ipaddr_t* sink_addr,
   }
 
   if(parent_changed) {
-    return change_default_route(next_hop, sink_addr, seqno, metric, route_cost);
+    return change_default_route(next_hop, sink_addr,
+        seqno, metric, route_cost);
   } else {
     PRINTF("Offered route is worse than before. Keeping current one\n");
     return NULL;
@@ -1229,7 +1212,8 @@ handle_incoming_rerr(void)
 #if SAVE_STATE
     state_save();
 #endif
-    send_rrep(&state.sink_addr, uip_ds6_defrt_choose(), &myipaddr, state.seqno, 0);
+    send_rrep(&state.sink_addr, uip_ds6_defrt_choose(),
+        &myipaddr, state.seqno, 0);
   }
 #endif /* !LRP_IS_SINK */
 #endif /* !USE_DIO */
@@ -1252,8 +1236,13 @@ handle_incoming_dio(void)
   PRINTF(" rank=%d", rm->rank);
   PRINTF(" rssi=%i\n", LAST_RSSI);
 
-  offer_default_route(&rm->sink_addr, &UIP_IP_BUF->srcipaddr,
-      rm->metric, rm->rank, uip_ntohs(rm->seqno));
+  if (offer_default_route(&rm->sink_addr, &UIP_IP_BUF->srcipaddr,
+      rm->metric, rm->rank, uip_ntohs(rm->seqno)) != NULL) {
+    // Offered route is better than before. Sending DIO.
+#if LRP_IS_COORDINATOR
+    retransmit_dio();
+#endif
+  }
 }
 #endif /* !LRP_IS_SINK */
 
@@ -1635,7 +1624,7 @@ lrp_select_nexthop_for(uip_ipaddr_t* source, uip_ipaddr_t* destination,
 #else
     // Use default route instead
     nexthop = uip_ds6_defrt_choose();
-    if(nexthop == NULL) {
+    if(uip_ds6_nbr_lladdr_from_ipaddr(nexthop) == NULL) {
       PRINTF("Discarding packet: no default route\n");
       // Change the context to ensure that timers set in this code wake up the
       // LRP process, and not the routing process
@@ -1658,7 +1647,7 @@ lrp_select_nexthop_for(uip_ipaddr_t* source, uip_ipaddr_t* destination,
   }
 #endif /* LRP_IS_COORDINATOR */
 
-   if(nexthop == NULL) {
+  if(nexthop == NULL) {
     // The nexthop is not in neighbour table
     PRINTF("Discarding packet: nexthop in routing table is not in "
         "neighbour table\n");
