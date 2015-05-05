@@ -71,7 +71,7 @@
 #define DEFAULT_LOCAL_PREFIX    64
 #define UIP_IP_BUF ((struct uip_udpip_hdr *)&uip_buf[UIP_LLH_LEN])
 
-/* Seqno managment */
+/* Seqno management */
 #define STATE_SVFILE            "lrp/state"
 #define MAX_SEQNO               65534
 #define SEQNO_GREATER_THAN(s1, s2)                   \
@@ -305,6 +305,18 @@ brc_lookup(const uip_ipaddr_t *lost_node)
   return NULL;
 }
 
+/* Force insertion of the BRK offer, without considering cached values. */
+static void
+brc_force_add(const uip_ipaddr_t *lost_node, const uint16_t seqno,
+    const uip_ipaddr_t *forwarder)
+{
+  unsigned n = (((uint8_t *)lost_node)[0] +
+      ((uint8_t *)lost_node)[15]) % BRCACHE;
+  brcache[n].seqno = seqno;
+  uip_ipaddr_copy(&brcache[n].forwarder, forwarder);
+  uip_ipaddr_copy(&brcache[n].lost_node, lost_node);
+}
+
 /* Return true if the offer was better than previous one (for the same
  * lost_node), and has thus been inserted */
 static uint8_t
@@ -315,9 +327,7 @@ brc_add(const uip_ipaddr_t *lost_node, const uint16_t seqno,
       ((uint8_t *)lost_node)[15]) % BRCACHE;
   if(SEQNO_GREATER_THAN(seqno, brcache[n].seqno) ||
       !uip_ipaddr_cmp(&brcache[n].lost_node, lost_node)) {
-    brcache[n].seqno = seqno;
-    uip_ipaddr_copy(&brcache[n].forwarder, forwarder);
-    uip_ipaddr_copy(&brcache[n].lost_node, lost_node);
+    brc_force_add(lost_node, seqno, forwarder);
     return (1==1);
   } else {
     return (0==1);
@@ -487,7 +497,7 @@ lrp_is_predecessor(uip_ipaddr_t *addr)
 
 /*---------------------------------------------------------------------------*/
 /* Format and broadcast a QRY packet. */
-#if SND_QRY && !LRP_IS_SINK
+#if SEND_QRY && !LRP_IS_SINK
 static void
 send_qry()
 {
@@ -506,45 +516,90 @@ send_qry()
   uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_qry));
   memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
 }
-#endif /* SND_QRY && !LRP_IS_SINK */
+#endif /* SEND_QRY && !LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
-/* Retransmit periodically a QRY, or activate periodical retransmission.
- * Asymptotically, QRY will be sent at the same rate as the DIO frequency.
- * Time between QRY sending follow this exponential sequence:
- * `Un = SEND_DIO_INTERVAL * (1 - LRP_QRY_EXP_PARAM ^ n)` */
-#if SND_QRY && !LRP_IS_SINK
+#if LRP_IS_COORDINATOR && !LRP_IS_SINK
 static void
-retransmit_qry()
+send_brk(const uip_ipaddr_t *lost_node, const uip_ipaddr_t *nexthop,
+    const uint16_t node_seqno, const uint8_t hop_count, const uint8_t ttl)
 {
-  static struct ctimer qry_timer = {0};
-  static uint16_t qry_exp_residuum = -1;
+  char buf[MAX_PAYLOAD_LEN];
+  struct lrp_msg_brk *rm = (struct lrp_msg_brk *) buf;
+
+  PRINTF("Send BRK -> ");
+  PRINT6ADDR(nexthop);
+  PRINTF(" lost_node=");
+  PRINT6ADDR(lost_node);
+  PRINTF("\n");
+
+  rm->type = LRP_BRK_TYPE;
+  rm->type = (rm->type << 4) | LRP_RSVD1;
+  rm->addr_len = LRP_RSVD2;
+  rm->addr_len = (rm->addr_len << 4) | LRP_ADDR_LEN_IPV6;
+  rm->node_seqno = uip_htons(node_seqno);
+  rm->rank = hop_count;
+  uip_ipaddr_copy(&rm->lost_node, lost_node);
+  udpconn->ttl = ttl;
+
+  uip_ipaddr_copy(&udpconn->ripaddr, nexthop);
+  uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_brk));
+  memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
+}
+#endif /* LRP_IS_COORDINATOR && !LRP_IS_SINK */
+
+/*---------------------------------------------------------------------------*/
+/* Retransmit periodically a QRY or BRK message. QRYies are transmitted
+ * SEND_QRY times and BRK are transmitted after them. Asymptotically, messages
+ * will be sent at the same rate as the DIO frequency. Time between two
+ * message sending follow this exponential sequence:
+ * `Un = SEND_DIO_INTERVAL * (1 - QRY_EXP_PARAM ^ n)` */
+#if !LRP_IS_SINK
+static void
+retransmit_qry_brk()
+{
+  static struct ctimer retransmit_timer = {0};
+  static uint16_t exp_residuum = SEND_DIO_INTERVAL;
+  static uint16_t nb_sent = 0;
 
   if(uip_ds6_defrt_choose() != NULL) {
-    PRINTF("Deactivating QRY timer: have a default route\n");
-    ctimer_stop(&qry_timer);
-    qry_exp_residuum = -1;
+    PRINTF("Deactivating QRY-BRK timer: have a default route\n");
+    ctimer_stop(&retransmit_timer);
+    nb_sent = 0;
+    exp_residuum = SEND_DIO_INTERVAL;
     return;
   }
 
-  if(!ctimer_expired(&qry_timer)) {
-    PRINTF("Skipping retransmit_qry: Timer has not yet expired\n");
+  if(!ctimer_expired(&retransmit_timer)) {
+    PRINTF("Skipping retransmitting QRY-BRK: Timer has not yet expired\n");
     return;
   }
 
-  send_qry();
+#if SEND_QRY
+  if(nb_sent < SEND_QRY || lrp_ipaddr_is_empty(&state.sink_addr)) {
+    send_qry();
+  } else {
+#endif /* SEND_QRY */
+#if LRP_IS_COORDINATOR
+    SEQNO_INCREASE(state.node_seqno);
+#if SAVE_STATE
+    state_save();
+#endif /* SAVE_STATE */
+    send_brk(&myipaddr, &mcastipaddr, state.node_seqno, 0, LRP_MAX_DIST);
+#endif /* LRP_IS_COORDINATOR */
+#if SEND_QRY
+  }
+#endif /* SEND_QRY */
+  nb_sent++;
+  exp_residuum *= QRY_EXP_PARAM;
 
   // Configure timer for next time
-  if(qry_exp_residuum == -1) {
-    // Initialisation
-    qry_exp_residuum = SEND_DIO_INTERVAL;
-  }
-  qry_exp_residuum *= LRP_QRY_EXP_PARAM;
-  ctimer_set(&qry_timer, SEND_DIO_INTERVAL - qry_exp_residuum,
-      (void (*)(void*))&retransmit_qry, NULL);
-  PRINTF("QRY timer reset (%lums)\n", SEND_DIO_INTERVAL - qry_exp_residuum);
+  ctimer_set(&retransmit_timer, SEND_DIO_INTERVAL - exp_residuum,
+      (void (*)(void*))&retransmit_qry_brk, NULL);
+  PRINTF("QRY-BRK timer reset (%lums)\n",
+      (SEND_DIO_INTERVAL - exp_residuum) * 1000 / CLOCK_SECOND);
 }
-#endif /* SND_QRY && !LRP_IS_SINK */
+#endif /* !LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
 /* Format and broadcast a DIO packet. */
@@ -761,36 +816,6 @@ send_rack(const uip_ipaddr_t *src, const uip_ipaddr_t *nexthop,
 #endif /* LRP_RREP_ACK && LRP_IS_COORDINATOR */
 
 /*---------------------------------------------------------------------------*/
-#if LRP_IS_COORDINATOR && !LRP_IS_SINK
-static void
-send_brk(const uip_ipaddr_t *lost_node, const uip_ipaddr_t *nexthop,
-    const uint16_t node_seqno, const uint8_t hop_count, const uint8_t ttl)
-{
-  char buf[MAX_PAYLOAD_LEN];
-  struct lrp_msg_brk *rm = (struct lrp_msg_brk *) buf;
-
-  PRINTF("Send BRK -> ");
-  PRINT6ADDR(nexthop);
-  PRINTF(" lost_node=");
-  PRINT6ADDR(lost_node);
-  PRINTF("\n");
-
-  rm->type = LRP_BRK_TYPE;
-  rm->type = (rm->type << 4) | LRP_RSVD1;
-  rm->addr_len = LRP_RSVD2;
-  rm->addr_len = (rm->addr_len << 4) | LRP_ADDR_LEN_IPV6;
-  rm->node_seqno = uip_htons(node_seqno);
-  rm->rank = hop_count;
-  uip_ipaddr_copy(&rm->lost_node, lost_node);
-  udpconn->ttl = ttl;
-
-  uip_ipaddr_copy(&udpconn->ripaddr, nexthop);
-  uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_brk));
-  memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
-}
-#endif /* LRP_IS_COORDINATOR && !LRP_IS_SINK */
-
-/*---------------------------------------------------------------------------*/
 #if LRP_IS_COORDINATOR
 static void
 send_upd(const uip_ipaddr_t *lost_node, const uip_ipaddr_t *sink_addr,
@@ -888,42 +913,49 @@ offer_default_route(const uip_ipaddr_t* sink_addr,
     uip_ipaddr_t* next_hop, const uint8_t metric, const uint8_t rank,
     const uint16_t tree_seqno, const uint16_t repair_seqno)
 {
-  uint8_t is_better = (0==1);
   uint8_t new_weaklink;
   uip_ds6_defrt_t *defrt;
 
-  // Check if the route is interesting
-  if(lrp_ipaddr_is_empty(&state.sink_addr)) {
-    // No previously associated with any tree
-    PRINTF("New tree\n");
-    is_better = (1==1);
-  } else if(uip_ipaddr_cmp(sink_addr, &state.sink_addr) &&
-      SEQNO_GREATER_THAN(repair_seqno, state.repair_seqno)) {
-    // New seqno (with the same sink address), better than before
-    PRINTF("New tree sequence number\n");
-    is_better = (1==1);
-  } else if(!uip_ipaddr_cmp(sink_addr, &state.sink_addr) ||
-      repair_seqno == state.repair_seqno) {
-    new_weaklink = get_weaklink(metric) + parent_weaklink(LAST_RSSI);
-    if(new_weaklink < state.weaklink) {
-      // Fewer weak links, better than before
-      PRINTF("Fewer weak links\n");
-      is_better = (1==1);
-    } else if(new_weaklink == state.weaklink) {
-      if (rank + 1 < state.rank) {
-        // Better rank than before
-        PRINTF("Better rank\n");
-        is_better = (1==1);
-      }
+  if(uip_ipaddr_cmp(sink_addr, &state.sink_addr)) {
+    // Same tree, checking seqno
+    if(SEQNO_GREATER_THAN(repair_seqno, state.repair_seqno)) {
+      // New seqno (with the same sink address), better than before
+      PRINTF("New tree sequence number\n");
+      goto accept;
+    } else if(repair_seqno != state.repair_seqno) {
+      // Seqno is worst, skipping.
+      goto refuse;
+    }
+  } else {
+    // Tree is different, checking if we are associated with a tree
+    if(uip_ds6_defrt_choose() == NULL) {
+      // No default route, accepting new one
+      PRINTF("New tree\n");
+      goto accept;
     }
   }
 
-  if(!is_better) {
-    // Not a better route, skipping.
-    PRINTF("Offered route is worse than before. Keeping current one\n");
-    return NULL;
+  new_weaklink = get_weaklink(metric) + parent_weaklink(LAST_RSSI);
+  if(new_weaklink < state.weaklink) {
+    // Fewer weak links, better than before
+    PRINTF("Fewer weak links\n");
+    goto accept;
+  } else if(new_weaklink != state.weaklink) {
+    goto refuse;
   }
 
+  if(rank + 1 < state.rank) {
+    // Better rank than before
+    PRINTF("Better rank\n");
+    goto accept;
+  }
+
+refuse:
+  // Not a better route, skipping.
+  PRINTF("Skipping: route worse than previous\n");
+  return NULL;
+
+accept:
   // Offered route is accepted, changing the state
   uip_ipaddr_copy(&state.sink_addr, sink_addr);
   state.tree_seqno = tree_seqno;
@@ -944,7 +976,7 @@ offer_default_route(const uip_ipaddr_t* sink_addr,
     uip_ds6_route_rm_by_nexthop(next_hop);
     lrp_nbr_add(next_hop);
     defrt = uip_ds6_defrt_add(next_hop, LRP_DEFRT_LIFETIME);
-  } else {
+  } else if(defrt != NULL) {
     // We just need to refresh the route
     PRINTF("Refreshing default route\n");
     stimer_set(&defrt->lifetime, LRP_DEFRT_LIFETIME);
@@ -1292,7 +1324,7 @@ handle_incoming_brk()
   rm->node_seqno = uip_ntohs(rm->node_seqno);
 
 #if LRP_IS_SINK
-  // Send UPD on the reversed route
+  // Send UPD on the reversed route and exits
 #if DEFAULT_DIO_SEQ_SKIP
   dio_seq_skip_counter = 0;
 #endif /* DEFAULT_DIO_SEQ_SKIP */
@@ -1302,30 +1334,31 @@ handle_incoming_brk()
 #endif /* SAVE_STATE */
   send_upd(&rm->lost_node, &state.sink_addr, &UIP_IP_BUF->srcipaddr,
            state.tree_seqno, state.repair_seqno, 0, 0);
-#else /* LRP_IS_SINK */
 
-  // Keep track of BRK to be able to route subsequent UPD
-  if(!brc_add(&rm->lost_node, rm->node_seqno, &UIP_IP_BUF->srcipaddr)) {
-    PRINTF("Skipping: BRK is worst than previous one\n");
-    return;
-  }
+#else /* if not LRP_IS_SINK */
 
   if(UIP_IP_BUF->ttl == 1) {
     PRINTF("Skipping: TTL expired\n");
     return;
   }
+
   defrt = uip_ds6_defrt_lookup(&UIP_IP_BUF->srcipaddr);
   if(defrt != NULL) {
     // BRK comes from our default next hop. Broadcasting
+    brc_force_add(&rm->lost_node, rm->node_seqno, &UIP_IP_BUF->srcipaddr);
     lrp_rand_wait();
     send_brk(&rm->lost_node, &mcastipaddr, rm->node_seqno, rm->rank + 1,
         UIP_IP_BUF->ttl - 1);
   } else {
     // BRK comes from a neighbor broken branch. Forwarding BRK to sink
+    if(!brc_add(&rm->lost_node, rm->node_seqno, &UIP_IP_BUF->srcipaddr)) {
+      PRINTF("Skipping: BRK is older than previous one\n");
+      return;
+    }
     send_brk(&rm->lost_node, uip_ds6_defrt_choose(),
         rm->node_seqno, rm->rank + 1, UIP_IP_BUF->ttl - 1);
   }
-#endif /* LRP_IS_SINK */
+#endif /* LRP_IS_COORDINATOR */
 }
 #endif /* LRP_IS_COORDINATOR */
 
@@ -1539,42 +1572,15 @@ lrp_routing_error(uip_ipaddr_t* source, uip_ipaddr_t* destination,
 static void
 lrp_no_default_route(void)
 {
-#if LRP_IS_COORDINATOR && LRP_BRK_MININTERVAL
-  static struct timer brk_ratelimit_timer = {0};
-#endif
-
-  if(lrp_ipaddr_is_empty(&state.sink_addr)) {
-    PRINTF("Not associated with a tree\n");
-    return;
-  }
-
-#if LRP_IS_COORDINATOR
-#if LRP_BRK_MININTERVAL
-  if(!timer_expired(&brk_ratelimit_timer)) {
-     PRINTF("Skipping BRK: exceed rate limit\n");
-     return;
-  }
-#endif /* LRP_BRK_MININTERVAL */
-
-  SEQNO_INCREASE(state.node_seqno);
-#if SAVE_STATE
-  state_save();
-#endif
-  send_brk(&myipaddr, &mcastipaddr, state.node_seqno, 0, LRP_MAX_DIST);
-
-#if LRP_BRK_MININTERVAL
-  timer_set(&brk_ratelimit_timer, LRP_BRK_MININTERVAL);
-#endif /* LRP_BRK_MININTERVAL */
-
-#else /* if not LRP_IS_COORDINATOR */
-
+#if !LRP_IS_COORDINATOR
   // Is a leaf: resetting tree-related informations and broadcasting QRY
   PRINTF("No more default route: deassociating with tree\n");
   state_new();
-#if SND_QRY
-  retransmit_qry();
+#endif /* !LRP_IS_COORDINATOR */
+
+#if SEND_QRY
+  retransmit_qry_brk();
 #endif
-#endif /* LRP_IS_COORDINATOR */
 }
 #endif /* !LRP_IS_SINK */
 
@@ -1628,6 +1634,8 @@ lrp_select_nexthop_for(uip_ipaddr_t* source, uip_ipaddr_t* destination,
     nexthop = uip_ds6_defrt_choose();
     if(uip_ds6_nbr_lladdr_from_ipaddr(nexthop) == NULL) {
       PRINTF("Discarding packet: no default route\n");
+      // No more successor, deleting default route.
+      uip_ds6_defrt_rm(uip_ds6_defrt_lookup(nexthop));
       // Change the context to ensure that timers set in this code wake up the
       // LRP process, and not the routing process
       PROCESS_CONTEXT_BEGIN(&lrp_process);
@@ -1705,9 +1713,9 @@ PROCESS_THREAD(lrp_process, ev, data)
   etimer_set(&rv, RV_CHECK_INTERVAL);
 #endif
 
-#if SND_QRY && !LRP_IS_SINK
+#if SEND_QRY && !LRP_IS_SINK
   // Start sending QRY to find nodes just around
-  retransmit_qry();
+  retransmit_qry_brk();
 #endif
 #if LRP_IS_SINK
   // Start sending DIO to build tree

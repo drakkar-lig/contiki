@@ -56,11 +56,12 @@
  * force increase the seqno */
 #define DEFAULT_DIO_SEQ_SKIP   0
 
-/* Exponential parameter for QRY sending. @see retransmit_qry */
-#define LRP_QRY_EXP_PARAM      0.90
+/* Number of times a QRY have to be sent. After these, if we were associated
+ * with a default. 0 to disable QRY sending */
+#define SEND_QRY               3
 
-/* Minimum interval between two BRK transmissions (ticks). */
-#define LRP_BRK_MININTERVAL    (2 * LRP_NET_TRAVERSAL_TIME)
+/* Exponential parameter for QRY sending. @see retransmit_qry_brk */
+#define QRY_EXP_PARAM          0.90
 
 /* Re-send RREQ n times if no RREP recieved. 0 implies don't retry at all */
 #define LRP_RREQ_RETRIES       0
@@ -94,13 +95,6 @@
 
 /* Wait randomly when flooding the network */
 #define LRP_RANDOM_WAIT        1
-
-/* Send QRY */
-#ifdef LRP_CONF_SND_QRY
-#define SND_QRY                LRP_CONF_SND_QRY
-#else
-#define SND_QRY                0
-#endif
 
 /* Is a sink node */
 #ifdef LRP_CONF_IS_SINK
