@@ -206,7 +206,7 @@ static int
 fwc_lookup(const uip_ipaddr_t *orig, const uint16_t *seqno)
 {
   unsigned n = (((uint8_t *)orig)[0] + ((uint8_t *)orig)[15]) % FWCACHE;
-  return fwcache[n].seqno == *seqno && uip_ipaddr_cmp(&fwcache[n].orig, orig);
+  return fwcache[n].seqno >= *seqno && uip_ipaddr_cmp(&fwcache[n].orig, orig);
 }
 
 static void
@@ -411,6 +411,7 @@ lrp_nbr_add(uip_ipaddr_t* next_hop)
     nbr_lladdr.addr[0] ^= 2;
     PRINTF(" with lladdress ");
     PRINTLLADDR(&nbr_lladdr);
+    PRINTF("\n");
     uip_ds6_nbr_add(next_hop, &nbr_lladdr, 0, NBR_REACHABLE);
 //    nbr->nscount = 1;
 #else /* if not !UIP_ND6_SEND_NA */
@@ -851,32 +852,6 @@ send_upd(const uip_ipaddr_t *lost_node, const uip_ipaddr_t *sink_addr,
 }
 #endif // LRP_IS_COORDINATOR
 
-
-/*---------------------------------------------------------------------------*/
-/* Add route into routing table, with LRP's specific informations. Return the
- * inserted route or NULL */
-#if LRP_IS_COORDINATOR
-static uip_ds6_route_t*
-lrp_route_add(uip_ipaddr_t* orig_addr, const uint8_t length,
-    uip_ipaddr_t* next_hop, const uint8_t route_cost,
-    const uint16_t node_seqno)
-{
-  uip_ds6_route_t* rt;
-
-  rt = uip_ds6_route_lookup(orig_addr);
-  if(rt != NULL) uip_ds6_route_rm(rt);
-
-  lrp_nbr_add(next_hop);
-  rt = uip_ds6_route_add(orig_addr, length, next_hop);
-  if(rt != NULL) {
-    rt->state.route_cost = route_cost;
-    rt->state.seqno = node_seqno;
-    rt->state.valid_time = LRP_R_HOLD_TIME;
-  }
-  return rt;
-}
-#endif /* LRP_IS_COORDINATOR */
-
 /*---------------------------------------------------------------------------*/
 /* Add the described route into the routing table, if it is better than
  * the previous one. Return NULL if the route has not been added. */
@@ -893,7 +868,15 @@ offer_route(uip_ipaddr_t* orig_addr, const uint8_t length,
       SEQNO_GREATER_THAN(node_seqno, rt->state.seqno) ||
       (node_seqno == rt->state.seqno && route_cost < rt->state.route_cost)) {
     // Offered route is better than previous one
-    return lrp_route_add(orig_addr, length, next_hop, route_cost, node_seqno);
+    if(rt != NULL) uip_ds6_route_rm(rt);
+    lrp_nbr_add(next_hop);
+    rt = uip_ds6_route_add(orig_addr, length, next_hop);
+    if(rt != NULL) {
+      rt->state.route_cost = route_cost;
+      rt->state.seqno = node_seqno;
+      rt->state.valid_time = LRP_R_HOLD_TIME;
+    }
+    return rt;
   } else {
     // Offered route is worse, refusing route
     return NULL;
@@ -1236,7 +1219,7 @@ handle_incoming_rerr(void)
   if(lrp_is_predecessor(&UIP_IP_BUF->srcipaddr)) {
     PRINTF("Cleaning broken host route\n");
     send_rerr(&rm->src_addr, &rm->addr_in_error, uip_ds6_defrt_choose());
-  } else {
+  } else if(uip_ds6_defrt_lookup(&UIP_IP_BUF->srcipaddr) != NULL) {
     PRINTF("Successor doesn't know us. Spontaneously send RREP\n");
     SEQNO_INCREASE(state.node_seqno);
 #if SAVE_STATE
@@ -1613,8 +1596,8 @@ lrp_select_nexthop_for(uip_ipaddr_t* source, uip_ipaddr_t* destination,
   route_to_dest = uip_ds6_route_lookup(destination);
 #if USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK
   // Do not forward through default route a packet that comes from higher
-  if(!lrp_is_predecessor(uip_ds6_nbr_ipaddr_from_lladdr(previoushop)) &&
-      !lrp_is_my_global_address(source)) {
+  if(!lrp_is_my_global_address(source) &&
+      !lrp_is_predecessor(uip_ds6_nbr_ipaddr_from_lladdr(previoushop))) {
     // The previous hop is higher
     if(route_to_dest == NULL) {
       PRINTF("Discarding packet: previous and next hop are higher\n");
