@@ -959,6 +959,14 @@ accept:
     uip_ds6_route_rm_by_nexthop(next_hop);
     lrp_nbr_add(next_hop);
     defrt = uip_ds6_defrt_add(next_hop, LRP_DEFRT_LIFETIME);
+#if LRP_SEND_SPONTANEOUS_RREP
+    PRINTF("Sending spontaneous RREP to new successor\n");
+    SEQNO_INCREASE(state.node_seqno);
+#if SAVE_STATE
+    state_save();
+#endif
+    send_rrep(sink_addr, next_hop, &myipaddr, state.node_seqno, 0);
+#endif /* LRP_SEND_SPONTANEOUS_RREP */
   } else if(defrt != NULL) {
     // We just need to refresh the route
     PRINTF("Refreshing default route\n");
