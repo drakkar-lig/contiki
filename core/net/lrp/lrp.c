@@ -1554,13 +1554,15 @@ static void
 lrp_routing_error(uip_ipaddr_t* source, uip_ipaddr_t* destination,
     uip_lladdr_t* previoushop)
 {
-  uip_ipaddr_t *prevhop = uip_ds6_nbr_ipaddr_from_lladdr(previoushop), ipaddr;
+  uip_ipaddr_t *prevhop, ipaddr;
+  prevhop = uip_ds6_nbr_ipaddr_from_lladdr(previoushop);
   if(prevhop == NULL) {
-    // Neighbor is unknown. Inserting into neighbor table.
+    // Neighbor is unknown. Calculating its fe80:: ipaddr (it must listen it
+    // even if it does not really use it).
     uip_create_linklocal_prefix(&ipaddr);
     uip_ds6_set_addr_iid(&ipaddr, previoushop);
-    lrp_nbr_add(&ipaddr);
-    prevhop = uip_ds6_nbr_ipaddr_from_lladdr(previoushop);
+    uip_ds6_nbr_add(ipaddr, previoushop, 0, NBR_REACHABLE);
+    prevhop = &ipaddr;
   }
   if(prevhop != NULL) {
     send_rerr(source, destination, prevhop);
