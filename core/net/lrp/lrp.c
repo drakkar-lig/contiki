@@ -965,7 +965,7 @@ accept:
 #if SAVE_STATE
     state_save();
 #endif
-    send_rrep(sink_addr, next_hop, &myipaddr, state.node_seqno, 0);
+    send_rrep(next_hop, next_hop, &myipaddr, state.node_seqno, 0);
 #endif /* LRP_SEND_SPONTANEOUS_RREP */
   } else if(defrt != NULL) {
     // We just need to refresh the route
@@ -1072,6 +1072,7 @@ handle_incoming_rrep(void)
   uip_ipaddr_t orig_addr, src_ipaddr;
   uint16_t node_seqno;
 #endif
+  uint8_t send_ack = (1==1);
 
   PRINTF("Received RREP ");
   PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
@@ -1092,12 +1093,13 @@ handle_incoming_rrep(void)
     return;
   }
 
-  // No RREP from our default route
+  // Do not accept RREP from our default route
   if(uip_ds6_defrt_lookup(&UIP_IP_BUF->srcipaddr)) {
     PRINTF("Do not allow RREP from default route\n");
     return;
   }
 
+  // Offer route
   rt = offer_route(&rm->orig_addr, DEFAULT_PREFIX_LEN,
       &UIP_IP_BUF->srcipaddr, rm->route_cost, rm->node_seqno);
   if(rt != NULL) {
@@ -1111,44 +1113,66 @@ handle_incoming_rrep(void)
     PRINTF("Former route is better\n");
   }
 
-#if LRP_IS_SINK || !USE_DIO
-  if(uip_ipaddr_cmp(&rm->dest_addr, &myipaddr)) {
-    // RREP is for our address
-#if LRP_RREQ_RETRIES
-    // Remove route request cache
-    rrc_remove(&rm->orig_addr);
-#endif /* LRP_RREQ_RETRIES */
-#if LRP_RREP_ACK
-    send_rack(&rm->orig_addr, &UIP_IP_BUF->srcipaddr, rm->node_seqno);
-#endif /* LRP_RREP_ACK */
-    return;
-  }
-#endif /* LRP_IS_SINK || !USE_DIO */
-
-#if !LRP_IS_SINK
 #if USE_DIO
-  nexthop = uip_ds6_defrt_choose();
-  if(nexthop == NULL) {
-    PRINTF("Unable to forward RREP: no default route\n");
-    return; // No ACK and RREP forwarding
+  // Do not forward on a host route with LRP
+#endif /* USE_DIO */
+
+  // Clean route request cache
+#if LRP_RREQ_RETRIES && (LRP_IS_SINK || !USE_DIO)
+  if(uip_ipaddr_cmp(&rm->dest_addr, &myipaddr)) {
+    rrc_remove(&rm->orig_addr);
   }
-#else
+#endif
+
+  // Forward RREP
+#if !USE_DIO
+  // LOADng: find a host route
   nexthop = uip_ds6_route_lookup(&rm->dest_addr);
   if(nexthop == NULL) {
     PRINTF("Unable to forward RREP: unknown destination\n");
-    return; // No ACK and RREP forwarding
+    send_ack = (0==1);
   }
-#endif /* USE_DIO */
+#else /* !USE_DIO */
+#if LRP_IS_SINK
+  // RREP must be for myself, and must not be forwarded
+  if(!lrp_is_my_global_address(&rm->dest_addr)) { // FIXME: et si l'adresse est link-local ?
+    PRINTF("Unable to forward RREP: is a sink\n");
+    send_ack = (0==1);
+  }
+#else /* LRP_IS_SINK */
+  // LRP: forward to default route(s) or drop
+  nexthop = NULL;
+  if(uip_ds6_route_lookup(&rm->dest_addr) != NULL) {
+    PRINTF("Unable to foward RREP: should use a host route\n");
+    send_ack = (0==1);
+  } else if(lrp_is_my_global_address(&rm->dest_addr)) {
+    PRINTF("RREP for our address\n");
+  } else if(uip_ds6_defrt_choose() == NULL) {
+    PRINTF("Unable to forward RREP: no defaut route\n");
+    send_ack = (0==1);
+  } else {
+    nexthop = uip_ds6_defrt_choose();
+  }
+#endif /* LRP_IS_SINK */
+#endif /* !USE_DIO */
 
+#if !LRP_IS_SINK || !USE_DIO
   node_seqno = rm->node_seqno;
   uip_ipaddr_copy(&orig_addr, &rm->orig_addr);
   uip_ipaddr_copy(&src_ipaddr, &UIP_IP_BUF->srcipaddr);
-  send_rrep(&rm->dest_addr, nexthop, &rm->orig_addr, rm->node_seqno,
-      rm->route_cost + 1);
-#if LRP_RREP_ACK
-  send_rack(&orig_addr, &src_ipaddr, node_seqno);
+  if(nexthop != NULL) {
+    send_rrep(&rm->dest_addr, nexthop, &rm->orig_addr, rm->node_seqno,
+        rm->route_cost + 1);
+  }
 #endif
-#endif /* !LRP_IS_SINK */
+
+  // Ack the route
+#if LRP_RREP_ACK
+  if(send_ack) {
+    send_rack(&orig_addr, &src_ipaddr, node_seqno);
+  }
+#endif
+  // TODO: warning: problème de stockage dans les buffers: rm n'est plus valide à partir de là à cause du RACK.
 }
 #endif /* LRP_IS_COORDINATOR */
 
@@ -1200,7 +1224,10 @@ handle_incoming_rerr(void)
   struct lrp_msg_rerr *rm = (struct lrp_msg_rerr *)uip_appdata;
 #if !USE_DIO
   struct uip_ds6_route *rt;
-#endif /* !USE_DIO */
+#endif
+#if !LRP_IS_SINK
+  uip_ipaddr_t* defrt;
+#endif
 
   PRINTF("Recieved RERR ");
   PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
@@ -1233,8 +1260,8 @@ handle_incoming_rerr(void)
 #if SAVE_STATE
     state_save();
 #endif
-    send_rrep(&state.sink_addr, uip_ds6_defrt_choose(),
-        &myipaddr, state.node_seqno, 0);
+    defrt = uip_ds6_defrt_choose();
+    send_rrep(defrt, defrt, &myipaddr, state.node_seqno, 0);
   }
 #endif /* !LRP_IS_SINK */
 #endif /* !USE_DIO */
@@ -1561,7 +1588,7 @@ lrp_routing_error(uip_ipaddr_t* source, uip_ipaddr_t* destination,
     // even if it does not really use it).
     uip_create_linklocal_prefix(&ipaddr);
     uip_ds6_set_addr_iid(&ipaddr, previoushop);
-    uip_ds6_nbr_add(ipaddr, previoushop, 0, NBR_REACHABLE);
+    uip_ds6_nbr_add(&ipaddr, previoushop, 0, NBR_REACHABLE);
     prevhop = &ipaddr;
   }
   if(prevhop != NULL) {
