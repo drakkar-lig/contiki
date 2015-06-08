@@ -201,11 +201,13 @@ typedef struct uip_ds6_maddr {
 #endif /* UIP_CONF_DS6_NEIGHBOR_STATE_CHANGED */
 #endif /* UIP_CONF_IPV6_RPL */
 
-#if UIP_CONF_IPV6_RPL
 #ifndef UIP_CONF_DS6_LINK_NEIGHBOR_CALLBACK
+#if UIP_CONF_IPV6_RPL
 #define UIP_CONF_DS6_LINK_NEIGHBOR_CALLBACK rpl_link_neighbor_callback
+#elif WITH_IPV6_LRP && !UIP_ND6_SEND_NA
+#define UIP_CONF_DS6_LINK_NEIGHBOR_CALLBACK lrp_link_next_hop_callback
+#endif
 #endif /* UIP_CONF_DS6_NEIGHBOR_STATE_CHANGED */
-#endif /* UIP_CONF_IPV6_RPL */
 
 
 /** \brief  Interface structure (contains all the interface variables) */

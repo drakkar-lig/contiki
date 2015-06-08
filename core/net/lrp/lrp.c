@@ -99,6 +99,13 @@ static struct uip_udp_conn *udpconn;
 static uint8_t dio_seq_skip_counter;
 #endif /* LRP_IS_SINK && DEFAULT_DIO_SEQ_SKIP */
 
+#if !UIP_ND6_SEND_NA
+typedef struct {
+  uint8_t nb_consecutive_noack_msg;
+} lrp_next_hop_t;
+NBR_TABLE(lrp_next_hop_t, lrp_next_hops);
+#endif /* !UIP_ND6_SEND_NA */
+
 /*---------------------------------------------------------------------------*/
 PROCESS(lrp_process, "LRP process");
 
@@ -495,6 +502,57 @@ lrp_is_predecessor(uip_ipaddr_t *addr)
 }
 #endif /* !LRP_IS_SINK */
 
+
+/*---------------------------------------------------------------------------*/
+/* Link-layer callback. Used to discover neighbors unreachability */
+#if !UIP_ND6_SEND_NA
+void
+lrp_link_next_hop_callback(const rimeaddr_t *addr, int status, int mutx)
+{
+  uip_ds6_defrt_t *locdefrt;
+  lrp_next_hop_t* nh = (lrp_next_hop_t*) nbr_table_get_from_lladdr(lrp_next_hops, addr);
+  uip_ds6_nbr_t* nb = uip_ds6_nbr_ll_lookup((uip_lladdr_t*) addr);
+
+  if(nb == NULL) return; // Unknown neighbor
+
+  if(nh == NULL) {
+    nh = nbr_table_add_lladdr(lrp_next_hops, addr);
+    nh->nb_consecutive_noack_msg = 0;
+  }
+
+  if(status == MAC_TX_NOACK) {
+    // Count unacked messages
+    nh->nb_consecutive_noack_msg += 1;
+    PRINTF("No ack received from next hop ");
+    PRINTLLADDR((uip_lladdr_t*)addr);
+    PRINTF(" (counter is %d/%d)\n",
+        nh->nb_consecutive_noack_msg, LRP_MAX_CONSECUTIVE_NOACKED_MESSAGES);
+
+    // Conditionally remove entry
+    if(nh->nb_consecutive_noack_msg >= LRP_MAX_CONSECUTIVE_NOACKED_MESSAGES) {
+      PRINTF("Deleting next hop ");
+      PRINT6ADDR(uip_ds6_nbr_get_ipaddr(nb));
+      printf(" unreachability detected.\n");
+      if((locdefrt = uip_ds6_defrt_lookup(uip_ds6_nbr_get_ipaddr(nb))) != NULL) {
+          uip_ds6_defrt_rm(locdefrt);
+      }
+      uip_ds6_nbr_rm(nb);
+      nbr_table_remove(lrp_next_hops, nh);
+    }
+
+  } else if(status == MAC_TX_OK) {
+    // Resetting counter
+    lrp_next_hop_t* nh =
+      (lrp_next_hop_t*) nbr_table_get_from_lladdr(lrp_next_hops, addr);
+    if(nh != NULL && nh->nb_consecutive_noack_msg != 0) {
+      PRINTF("Received ack; resetting noack counter for next hop ");
+      PRINTLLADDR((uip_lladdr_t*)addr);
+      PRINTF("\n");
+      nh->nb_consecutive_noack_msg = 0;
+    }
+  }
+}
+#endif /* !UIP_ND6_SEND_NA */
 
 /*---------------------------------------------------------------------------*/
 /* Format and broadcast a QRY packet. */
@@ -965,7 +1023,7 @@ accept:
 #if SAVE_STATE
     state_save();
 #endif
-    send_rrep(next_hop, next_hop, &myipaddr, state.node_seqno, 0);
+    send_rrep(sink_addr, next_hop, &myipaddr, state.node_seqno, 0);
 #endif /* LRP_SEND_SPONTANEOUS_RREP */
   } else if(defrt != NULL) {
     // We just need to refresh the route
@@ -1720,6 +1778,10 @@ PROCESS_THREAD(lrp_process, ev, data)
   PRINTF("Created an UDP socket");
   PRINTF(" (local/remote port %u/%u)\n",
         UIP_HTONS(udpconn->lport), UIP_HTONS(udpconn->rport));
+
+#if !UIP_ND6_SEND_NA
+  nbr_table_register(lrp_next_hops, NULL);
+#endif /* !UIP_ND6_SEND_NA */
 
 #if SAVE_STATE
   state_restore();

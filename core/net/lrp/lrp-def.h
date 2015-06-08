@@ -100,6 +100,10 @@
 /* Wait randomly when flooding the network */
 #define LRP_RANDOM_WAIT        1
 
+/* If NUD is deactivated, unacked messages are counted, and next hop is deleted
+ * when the number of consecutive noacked messages reach this constant. */
+#define LRP_MAX_CONSECUTIVE_NOACKED_MESSAGES  3
+
 /* Is a sink node */
 #ifdef LRP_CONF_IS_SINK
 #define LRP_IS_SINK            LRP_CONF_IS_SINK

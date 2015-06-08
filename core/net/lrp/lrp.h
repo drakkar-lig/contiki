@@ -42,6 +42,7 @@
 #define __LRP_H__
 
 #include "contiki.h"
+
 #ifdef UIP_DS6_ROUTE_STATE_TYPE
 #undef UIP_DS6_ROUTE_STATE_TYPE
 #endif
@@ -69,6 +70,11 @@ lrp_set_local_prefix(uip_ipaddr_t *prefix, uint8_t len);
 uip_ipaddr_t*
 lrp_select_nexthop_for(uip_ipaddr_t* source, uip_ipaddr_t* destination,
     uip_lladdr_t* previoushop);
+
+#if !UIP_ND6_SEND_NA
+void
+lrp_link_next_hop_callback(const rimeaddr_t *addr, int status, int mutx);
+#endif /* !UIP_ND6_SEND_NA */
 
 PROCESS_NAME(lrp_process);
 
