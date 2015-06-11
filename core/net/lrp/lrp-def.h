@@ -52,11 +52,10 @@
 /* Frequency of DIO broadcasting (ticks) */
 #define SEND_DIO_INTERVAL      480 * CLOCK_SECOND
 
-/* Nb of time the tree seqno is reused when broadcasting DIOs. Note: UPD can
- * force increase the seqno */
-#define DEFAULT_DIO_SEQ_SKIP   0
+/* Maximum time between two global repairs (ticks, on 32 bits) */
+#define MAX_DODAG_LIFETIME     1800 * CLOCK_SECOND
 
-/* Number of times a QRY have to be sent. After these, if we were associated
+/* Number of times a QRY has to be sent. After these, if we were associated
  * with a default. 0 to disable QRY sending */
 #define SEND_QRY               3
 

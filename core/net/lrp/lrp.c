@@ -95,9 +95,6 @@ extern signed char cc2420_last_rssi;
 static uint16_t local_prefix_len;
 static uip_ipaddr_t local_prefix, myipaddr, mcastipaddr;
 static struct uip_udp_conn *udpconn;
-#if LRP_IS_SINK && DEFAULT_DIO_SEQ_SKIP
-static uint8_t dio_seq_skip_counter;
-#endif /* LRP_IS_SINK && DEFAULT_DIO_SEQ_SKIP */
 
 #if !UIP_ND6_SEND_NA
 typedef struct {
@@ -695,53 +692,39 @@ send_dio()
 #endif /* LRP_IS_COORDINATOR */
 
 /*---------------------------------------------------------------------------*/
-/* Retransmit or activate retransmission of DIOs. If retransmission was
- * already active, a DIO is immediately sent. */
-#if LRP_IS_COORDINATOR
-static void
-retransmit_dio()
-{
-  static struct ctimer dio_timer;
-
-#if !LRP_IS_SINK
-  if(uip_ds6_defrt_choose() == NULL) {
-    PRINTF("Deactivating DIO timer: have no default route\n");
-    ctimer_stop(&dio_timer);
-    return;
-  }
-#endif
-
+/* Initiate a global repair. Launch it once at start; then, it will be
+ * automatically called again aftr MAX_DODAG_LIFETIME time. Or, it may be
+ * called to force the global repair. */
 #if LRP_IS_SINK
-  // Try to increment tree_seqno
-#if DEFAULT_DIO_SEQ_SKIP
-  if(dio_seq_skip_counter < DEFAULT_DIO_SEQ_SKIP) {
-    // Do not increase tree_seqno, just count skipped increase
-    dio_seq_skip_counter++;
-  } else {
-    // Increase sequence id => rebuild tree from scratch
-    dio_seq_skip_counter = 0;
+static void
+global_repair()
+{
+  static uint32_t gr_32bits_timer = 0;
+  static struct ctimer gr_timer = {0};
+
+  if(!ctimer_expired(&gr_timer) || gr_32bits_timer == 0) {
+    // GR has been forced or has expired
+    PRINTF("Initiating global repair\n");
     state.tree_seqno = SEQNO_INCREASE(state.repair_seqno);
 #if SAVE_STATE
     state_save();
 #endif /* SAVE_STATE */
+    send_dio();
+    gr_32bits_timer = MAX_DODAG_LIFETIME;
   }
 
-#else /* if not DEFAULT_DIO_SEQ_SKIP */
-  // Increase tree_seqno
-  state.tree_seqno = SEQNO_INCREASE(state.repair_seqno);
-#if SAVE_STATE
-  state_save();
-#endif /* SAVE_STATE */
-#endif /* DEFAULT_DIO_SEQ_SKIP */
-#endif /* LRP_IS_SINK */
-
-  send_dio();
-
-  ctimer_set(&dio_timer, SEND_DIO_INTERVAL,
-      (void (*)(void*))&retransmit_dio, NULL);
-  PRINTF("DIO timer reset (%lums)\n", SEND_DIO_INTERVAL);
+  // Reinitialize the 32bits timer
+  if(gr_32bits_timer > ~((uint16_t)0)) {
+    ctimer_set(&gr_timer, ~((uint16_t)0),
+        (void (*)(void*))&global_repair, NULL);
+    gr_32bits_timer -= ~((uint16_t)0);
+  } else {
+    ctimer_set(&gr_timer, (uint16_t)gr_32bits_timer,
+        (void (*)(void*))&global_repair, NULL);
+    gr_32bits_timer = 0;
+  }
 }
-#endif /* LRP_IS_COORDINATOR */
+#endif /* LRP_IS_sink */
 
 /*---------------------------------------------------------------------------*/
 /* Format and broadcast a RREQ packet. */
@@ -1331,6 +1314,9 @@ static void
 handle_incoming_dio(void)
 {
   struct lrp_msg_dio *rm = (struct lrp_msg_dio *)uip_appdata;
+  static struct {uint16_t seqno; uint8_t rank;} old_position;
+  old_position.seqno = state.tree_seqno;
+  old_position.rank = state.rank;
 
   PRINTF("Received DIO ");
   PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
@@ -1344,13 +1330,17 @@ handle_incoming_dio(void)
 
   rm->tree_seqno = uip_ntohs(rm->tree_seqno);
 
-  if (offer_default_route(&rm->sink_addr, &UIP_IP_BUF->srcipaddr,
-      rm->metric, rm->rank, rm->tree_seqno, rm->tree_seqno) != NULL) {
-    // Offered route is better than before. Sending DIO.
+  offer_default_route(&rm->sink_addr, &UIP_IP_BUF->srcipaddr,
+      rm->metric, rm->rank, rm->tree_seqno, rm->tree_seqno);
+
+  // Check if state has changed
 #if LRP_IS_COORDINATOR
-    retransmit_dio();
-#endif
+  if(old_position.seqno != state.tree_seqno ||
+      old_position.rank != state.rank) {
+    PRINTF("Position has changed. Broadcating DIO message\n");
+    send_dio();
   }
+#endif
 }
 #endif /* !LRP_IS_SINK */
 
@@ -1401,9 +1391,6 @@ handle_incoming_brk()
 
 #if LRP_IS_SINK
   // Send UPD on the reversed route and exits
-#if DEFAULT_DIO_SEQ_SKIP
-  dio_seq_skip_counter = 0;
-#endif /* DEFAULT_DIO_SEQ_SKIP */
   SEQNO_INCREASE(state.repair_seqno);
 #if SAVE_STATE
   state_save();
@@ -1788,9 +1775,6 @@ PROCESS_THREAD(lrp_process, ev, data)
 #else
   state_new();
 #endif
-#if LRP_IS_SINK && DEFAULT_DIO_SEQ_SKIP
-  dio_seq_skip_counter = 0;
-#endif
 
 #if LRP_RREQ_RETRIES
   PRINTF("Set RREQ timer (%lums)\n",
@@ -1811,7 +1795,7 @@ PROCESS_THREAD(lrp_process, ev, data)
 #endif
 #if LRP_IS_SINK
   // Start sending DIO to build tree
-  retransmit_dio();
+  global_repair();
 #endif
 
   while(1) {
