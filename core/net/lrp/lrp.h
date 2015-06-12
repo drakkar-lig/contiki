@@ -51,7 +51,8 @@
 #define UIP_DS6_ROUTE_STATE_TYPE lrp_route_entry_t
 typedef struct lrp_route_entry {
   uint16_t seqno;
-  uint8_t route_cost;
+  uint8_t metric_type;
+  uint16_t metric_value;
   uint32_t valid_time;
   uint8_t ack_received;
 } lrp_route_entry_t;

@@ -90,9 +90,6 @@
 /* Threshold below which a link is considered as weak */
 #define LRP_RSSI_THRESHOLD    -65 // Ana measured value
 
-/* Maximum node's rank */
-#define LRP_MAX_RANK           127
-
 /* Maximum distance for a non hop-to-hop routing packet. */
 #define LRP_MAX_DIST           20
 
@@ -138,6 +135,9 @@
 #endif
 
 
+/* Define metric types */
+#define LRP_METRIC_HOP_COUNT 1
+
 /* Generic LRP message */
 struct lrp_msg {
   uint8_t type;
@@ -150,8 +150,8 @@ struct lrp_msg_rreq {
   uint8_t type;
   uint8_t addr_len;
   uint16_t node_seqno;
-  uint8_t metric;
-  uint8_t route_cost;
+  uint8_t metric_type;
+  uint16_t metric_value;
   uip_ipaddr_t dest_addr;
   uip_ipaddr_t orig_addr;
 };
@@ -163,8 +163,8 @@ struct lrp_msg_rrep {
   uint8_t type;
   uint8_t addr_len;
   uint16_t node_seqno;
-  uint8_t metric;
-  uint8_t route_cost;
+  uint8_t metric_type;
+  uint16_t metric_value;
   uip_ipaddr_t dest_addr;
   uip_ipaddr_t orig_addr;
 };
@@ -199,8 +199,8 @@ struct lrp_msg_dio {
   uint8_t type;
   uint8_t addr_len;
   uint16_t tree_seqno;
-  uint8_t rank;
-  uint8_t metric;
+  uint8_t metric_type;
+  uint16_t metric_value;
   uip_ipaddr_t sink_addr;
 };
 #endif /* USE_DIO */
@@ -222,7 +222,8 @@ struct lrp_msg_brk {
   uint8_t type;
   uint8_t addr_len;
   uint16_t node_seqno;
-  uint8_t rank;
+  uint8_t metric_type;
+  uint16_t metric_value;
   uip_ipaddr_t lost_node;
 };
 
@@ -234,8 +235,8 @@ struct lrp_msg_upd {
   uint8_t addr_len;
   uint16_t tree_seqno;
   uint16_t repair_seqno;
-  uint8_t rank;
-  uint8_t metric;
+  uint8_t metric_type;
+  uint16_t metric_value;
   uip_ipaddr_t sink_addr;
   uip_ipaddr_t lost_node;
 };

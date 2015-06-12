@@ -61,8 +61,6 @@
 #define uip_create_linklocal_empty_addr(a) \
   uip_ip6addr(a, 0, 0, 0, 0, 0, 0, 0, 0)
 
-#define LRP_METRIC_HC           0
-#define LRP_WEAK_LINK           0
 #define LRP_RSVD1               0
 #define LRP_RSVD2               0
 #define MAX_PAYLOAD_LEN         50
@@ -84,8 +82,8 @@ static struct {
   uip_ipaddr_t sink_addr;
   uint16_t     tree_seqno;
   uint16_t     repair_seqno;
-  uint8_t      rank;
-  uint8_t      weaklink;
+  uint8_t      metric_type;
+  uint16_t     metric_value;
   uint16_t     node_seqno;
 } state;
 
@@ -115,13 +113,13 @@ state_new(void)
 #if LRP_IS_SINK
   uip_ipaddr_copy(&state.sink_addr, &myipaddr);
   state.tree_seqno = 1;
-  state.rank = 0;
-  state.weaklink = 0;
+  state.metric_type = LRP_METRIC_HOP_COUNT;
+  state.metric_value = 0;
 #else
   uip_ip6addr(&state.sink_addr, 0, 0, 0, 0, 0, 0, 0, 0);
   state.tree_seqno = 0;
-  state.rank = ~0;
-  state.weaklink = ~0;
+  state.metric_type = ~0;
+  state.metric_value = ~0;
 #endif
   state.repair_seqno = state.tree_seqno;
   state.node_seqno = 1;
@@ -384,17 +382,16 @@ brc_add(const uip_ipaddr_t *lost_node, const uint16_t seqno,
 
 
 /*---------------------------------------------------------------------------*/
-static inline uint8_t
-get_weaklink(uint8_t metric)
+/* Return the link cost between this node and the next_hop, depending on the
+ * metric type. */
+static inline uint16_t
+link_cost(uip_ipaddr_t* link, uint8_t metric_type)
 {
-  return (metric & 0x0f);
-}
-
-/*---------------------------------------------------------------------------*/
-static inline uint8_t
-parent_weaklink(int8_t rssi)
-{
-  return ((rssi > LRP_RSSI_THRESHOLD) ? 0 : 1);
+  if(metric_type != LRP_METRIC_HOP_COUNT) {
+    PRINTF("WARNING: unknown metric type (%x)!\n", metric_type);
+    // TODO: implement other metric types. For now, only hop count
+  }
+  return 1;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -581,7 +578,8 @@ send_qry()
 #if LRP_IS_COORDINATOR && !LRP_IS_SINK
 static void
 send_brk(const uip_ipaddr_t *lost_node, const uip_ipaddr_t *nexthop,
-    const uint16_t node_seqno, const uint8_t hop_count, const uint8_t ttl)
+    const uint16_t node_seqno, const uint8_t metric_type,
+    const uint16_t metric_value, const uint8_t ttl)
 {
   char buf[MAX_PAYLOAD_LEN];
   struct lrp_msg_brk *rm = (struct lrp_msg_brk *) buf;
@@ -597,7 +595,8 @@ send_brk(const uip_ipaddr_t *lost_node, const uip_ipaddr_t *nexthop,
   rm->addr_len = LRP_RSVD2;
   rm->addr_len = (rm->addr_len << 4) | LRP_ADDR_LEN_IPV6;
   rm->node_seqno = uip_htons(node_seqno);
-  rm->rank = hop_count;
+  rm->metric_type = metric_type;
+  rm->metric_value = metric_value;
   uip_ipaddr_copy(&rm->lost_node, lost_node);
   udpconn->ttl = ttl;
 
@@ -644,7 +643,8 @@ retransmit_qry_brk()
 #if SAVE_STATE
     state_save();
 #endif /* SAVE_STATE */
-    send_brk(&myipaddr, &mcastipaddr, state.node_seqno, 0, LRP_MAX_DIST);
+    send_brk(&myipaddr, &mcastipaddr, state.node_seqno,
+        LRP_MAX_DIST, 0, LRP_MAX_DIST);
 #endif /* LRP_IS_COORDINATOR */
 #if SEND_QRY
   }
@@ -676,9 +676,8 @@ send_dio()
   rm->addr_len = LRP_RSVD2;
   rm->addr_len = (rm->addr_len << 4) | LRP_ADDR_LEN_IPV6;
   rm->tree_seqno = uip_htons(state.tree_seqno);
-  rm->rank = state.rank;
-  rm->metric = LRP_METRIC_HC;
-  rm->metric = (rm->metric << 4) | state.weaklink;
+  rm->metric_type = state.metric_type;
+  rm->metric_value = state.metric_value;
   uip_ipaddr_copy(&rm->sink_addr, &state.sink_addr);
   udpconn->ttl = 1;
 
@@ -734,14 +733,15 @@ global_repair()
 #if LRP_IS_COORDINATOR
 static void
 send_rreq(const uip_ipaddr_t *dest, const uip_ipaddr_t *orig,
-    const uint16_t node_seqno, const uint8_t route_cost, const uint8_t ttl)
+    const uint16_t node_seqno, const uint8_t metric_type,
+    const uint16_t metric_value, const uint8_t ttl)
 {
   char buf[MAX_PAYLOAD_LEN];
   struct lrp_msg_rreq *rm = (struct lrp_msg_rreq *)buf;
 
   PRINTF("Broadcast RREQ for ");
   PRINT6ADDR(dest);
-  PRINTF(" rt_cost=%u", route_cost);
+  PRINTF(" metric type/value=%x/%u", metric_type, metric_value);
   PRINTF(" ttl=%u\n", ttl);
 
   rm->type = LRP_RREQ_TYPE;
@@ -749,9 +749,8 @@ send_rreq(const uip_ipaddr_t *dest, const uip_ipaddr_t *orig,
   rm->addr_len = LRP_RSVD2;
   rm->addr_len = (rm->addr_len << 4) | LRP_ADDR_LEN_IPV6;
   rm->node_seqno = uip_htons(node_seqno);
-  rm->metric = LRP_METRIC_HC;
-  rm->metric = (rm->metric << 4) | LRP_WEAK_LINK;
-  rm->route_cost = route_cost;
+  rm->metric_type = metric_type;
+  rm->metric_value = metric_value;
   uip_ipaddr_copy(&rm->dest_addr, dest);
   uip_ipaddr_copy(&rm->orig_addr, orig);
   udpconn->ttl = ttl;
@@ -767,7 +766,8 @@ send_rreq(const uip_ipaddr_t *dest, const uip_ipaddr_t *orig,
 #if !LRP_IS_SINK
 static void
 send_rrep(const uip_ipaddr_t *dest, const uip_ipaddr_t *nexthop,
-    const uip_ipaddr_t *orig, const uint16_t node_seqno, const unsigned rank)
+    const uip_ipaddr_t *orig, const uint16_t node_seqno,
+    const uint8_t metric_type, const uint16_t metric_value)
 {
   char buf[MAX_PAYLOAD_LEN];
   struct lrp_msg_rrep *rm = (struct lrp_msg_rrep *)buf;
@@ -779,16 +779,15 @@ send_rrep(const uip_ipaddr_t *dest, const uip_ipaddr_t *nexthop,
   PRINTF(" dest=");
   PRINT6ADDR(dest);
   PRINTF(" node_seqno=%u", node_seqno);
-  PRINTF(" rank=%u\n", rank);
+  PRINTF(" metric type/value=%x/%u\n", metric_type, metric_value);
 
   rm->type = LRP_RREP_TYPE;
   rm->type = (rm->type << 4) | LRP_RSVD1;
   rm->addr_len = LRP_RSVD2;
   rm->addr_len = (rm->addr_len << 4) | LRP_ADDR_LEN_IPV6;
   rm->node_seqno = uip_htons(node_seqno);
-  rm->metric = LRP_METRIC_HC;
-  rm->metric = (rm->metric << 4) | LRP_WEAK_LINK;
-  rm->route_cost = rank;
+  rm->metric_type = metric_type;
+  rm->metric_value = metric_value;
   uip_ipaddr_copy(&rm->orig_addr, orig);
   uip_ipaddr_copy(&rm->dest_addr, dest);
   udpconn->ttl = 1;
@@ -865,8 +864,8 @@ send_rack(const uip_ipaddr_t *src, const uip_ipaddr_t *nexthop,
 static void
 send_upd(const uip_ipaddr_t *lost_node, const uip_ipaddr_t *sink_addr,
          const uip_ipaddr_t *nexthop, const uint16_t tree_seqno,
-         const uint16_t repair_seqno, const uint8_t weaklink,
-         const uint8_t hop_count)
+         const uint16_t repair_seqno, const uint8_t metric_type,
+         const uint16_t metric_value)
 {
   char buf[MAX_PAYLOAD_LEN];
   struct lrp_msg_upd *rm = (struct lrp_msg_upd *)buf;
@@ -883,9 +882,8 @@ send_upd(const uip_ipaddr_t *lost_node, const uip_ipaddr_t *sink_addr,
   rm->addr_len = (rm->addr_len << 4) | LRP_ADDR_LEN_IPV6;
   rm->tree_seqno = uip_htons(tree_seqno);
   rm->repair_seqno = uip_htons(repair_seqno);
-  rm->rank = hop_count;
-  rm->metric = LRP_METRIC_HC;
-  rm->metric = (rm->metric << 4) | weaklink;
+  rm->metric_type = metric_type;
+  rm->metric_value = metric_value;
   uip_ipaddr_copy(&rm->sink_addr, sink_addr);
   uip_ipaddr_copy(&rm->lost_node, lost_node);
   udpconn->ttl = 1;
@@ -902,21 +900,34 @@ send_upd(const uip_ipaddr_t *lost_node, const uip_ipaddr_t *sink_addr,
 #if LRP_IS_COORDINATOR
 static uip_ds6_route_t*
 offer_route(uip_ipaddr_t* orig_addr, const uint8_t length,
-    uip_ipaddr_t* next_hop, const uint8_t route_cost,
-    const uint16_t node_seqno)
+    uip_ipaddr_t* next_hop, const uint8_t metric_type,
+    const uint16_t metric_value, const uint16_t node_seqno)
 {
   uip_ds6_route_t* rt;
+  uint16_t lc;
+
+  // Computing link cost
+  lc = link_cost(next_hop, metric_type);
+  if(lc == 0) {
+    PRINTF("Unable to determine the cost of the link to ");
+    PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
+    PRINTF("\n");
+    return NULL;
+  }
 
   rt = uip_ds6_route_lookup(orig_addr);
   if(rt == NULL ||
       SEQNO_GREATER_THAN(node_seqno, rt->state.seqno) ||
-      (node_seqno == rt->state.seqno && route_cost < rt->state.route_cost)) {
+      (node_seqno == rt->state.seqno &&
+       (metric_type == rt->state.metric_type &&
+        metric_value + lc < rt->state.metric_value))) {
     // Offered route is better than previous one
     if(rt != NULL) uip_ds6_route_rm(rt);
     lrp_nbr_add(next_hop);
     rt = uip_ds6_route_add(orig_addr, length, next_hop);
     if(rt != NULL) {
-      rt->state.route_cost = route_cost;
+      rt->state.metric_type = metric_type;
+      rt->state.metric_value = metric_value;
       rt->state.seqno = node_seqno;
       rt->state.valid_time = LRP_R_HOLD_TIME;
     }
@@ -936,93 +947,70 @@ offer_route(uip_ipaddr_t* orig_addr, const uint8_t length,
  * is broadcasted through DIOs. */
 #if !LRP_IS_SINK
 static uip_ds6_defrt_t*
-offer_default_route(const uip_ipaddr_t* sink_addr,
-    uip_ipaddr_t* next_hop, const uint8_t metric, const uint8_t rank,
-    const uint16_t tree_seqno, const uint16_t repair_seqno)
+offer_default_route(const uip_ipaddr_t* sink_addr, uip_ipaddr_t* next_hop,
+    const uint8_t metric_type, const uint16_t metric_value,
+    const uint16_t tree_seqno,const uint16_t repair_seqno)
 {
-  uint8_t new_weaklink;
-  uip_ds6_defrt_t *defrt;
+  uip_ds6_defrt_t *defrt = NULL;
+  uint16_t lc;
 
-  if(uip_ipaddr_cmp(sink_addr, &state.sink_addr)) {
-    // Same tree, checking seqno
-    if(SEQNO_GREATER_THAN(repair_seqno, state.repair_seqno)) {
-      // New seqno (with the same sink address), better than before
-      PRINTF("New tree sequence number\n");
-      goto accept;
-    } else if(repair_seqno != state.repair_seqno) {
-      // Seqno is worst, skipping.
-      goto refuse;
-    }
-  } else {
-    // Tree is different, checking if we are associated with a tree
-    if(uip_ds6_defrt_choose() == NULL) {
-      // No default route, accepting new one
-      PRINTF("New tree\n");
-      goto accept;
-    }
+  if(!lrp_ipaddr_is_empty(&state.sink_addr) &&
+      !uip_ipaddr_cmp(sink_addr, &state.sink_addr)) {
+    PRINTF("Not the same sink. Do not change it\n");
+    return NULL;
   }
 
-  new_weaklink = get_weaklink(metric) + parent_weaklink(LAST_RSSI);
-  if(new_weaklink < state.weaklink) {
-    // Fewer weak links, better than before
-    PRINTF("Fewer weak links\n");
-    goto accept;
-  } else if(new_weaklink != state.weaklink) {
-    goto refuse;
+  // Computing link cost
+  lc = link_cost(next_hop, metric_type);
+  if(lc == 0) {
+    PRINTF("Unable to determine the cost of the link to ");
+    PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
+    PRINTF("\n");
+    return NULL;
   }
 
-  if(rank + 1 < state.rank) {
-    // Better rank than before
-    PRINTF("Better rank\n");
-    goto accept;
-  }
+  if(SEQNO_GREATER_THAN(repair_seqno, state.repair_seqno) ||
+      (repair_seqno == state.repair_seqno &&
+       (metric_type == state.metric_type &&
+        metric_value + lc < state.metric_value))) {
 
-refuse:
-  // Not a better route, skipping.
-  PRINTF("Skipping: route worse than previous\n");
-  return NULL;
-
-accept:
-  // Offered route is accepted, changing the state
-  uip_ipaddr_copy(&state.sink_addr, sink_addr);
-  state.tree_seqno = tree_seqno;
-  state.repair_seqno = repair_seqno;
-  state.rank = rank + 1;
-  state.weaklink = get_weaklink(metric) + parent_weaklink(LAST_RSSI);
-#if SAVE_STATE
-  state_save();
-#endif
-
-  // Check if we are actually changing of next hop!
-  defrt = uip_ds6_defrt_lookup(uip_ds6_defrt_choose());
-  if(defrt == NULL || !uip_ip6addr_cmp(&defrt->ipaddr, next_hop)) {
-    // New default route, remove previous one
-    PRINTF("New default route\n");
-    uip_ds6_defrt_rm(defrt);
-    // Flush routes through new default route
-    uip_ds6_route_rm_by_nexthop(next_hop);
-    lrp_nbr_add(next_hop);
-    defrt = uip_ds6_defrt_add(next_hop, LRP_DEFRT_LIFETIME);
-#if LRP_SEND_SPONTANEOUS_RREP
-    PRINTF("Sending spontaneous RREP to new successor\n");
-    SEQNO_INCREASE(state.node_seqno);
+    // Offered route is accepted, changing the state
+    uip_ipaddr_copy(&state.sink_addr, sink_addr);
+    state.tree_seqno = tree_seqno;
+    state.repair_seqno = repair_seqno;
+    state.metric_type = metric_type;
+    state.metric_value = metric_value + lc;
 #if SAVE_STATE
     state_save();
 #endif
-    send_rrep(sink_addr, next_hop, &myipaddr, state.node_seqno, 0);
-#endif /* LRP_SEND_SPONTANEOUS_RREP */
-  } else if(defrt != NULL) {
-    // We just need to refresh the route
-    PRINTF("Refreshing default route\n");
-    stimer_set(&defrt->lifetime, LRP_DEFRT_LIFETIME);
-  }
 
-  // FIXME: code specific to beacon-enabled
-//   uip_lladdr_t coord_addr;
-//   memcpy(&coord_addr, &UIP_IP_BUF->srcipaddr.u8[8], UIP_LLADDR_LEN);
-//   coord_addr.addr[0] ^= 2;
-//   NETSTACK_RDC_CONFIGURATOR.coordinator_choice((void *) &coord_addr,
-//       rm->rank);
+    // Check if we are actually changing of next hop!
+    defrt = uip_ds6_defrt_lookup(uip_ds6_defrt_choose());
+    if(defrt == NULL || !uip_ip6addr_cmp(&defrt->ipaddr, next_hop)) {
+      // New default route, remove previous one
+      PRINTF("New default route\n");
+      uip_ds6_defrt_rm(defrt);
+      // Flush routes through new default route
+      uip_ds6_route_rm_by_nexthop(next_hop);
+      lrp_nbr_add(next_hop);
+      defrt = uip_ds6_defrt_add(next_hop, LRP_DEFRT_LIFETIME);
+#if LRP_SEND_SPONTANEOUS_RREP
+      PRINTF("Sending spontaneous RREP to new successor\n");
+      SEQNO_INCREASE(state.node_seqno);
+#if SAVE_STATE
+      state_save();
+#endif
+      send_rrep(sink_addr, next_hop, &myipaddr, state.node_seqno,
+          LRP_METRIC_HOP_COUNT, 0);
+#endif /* LRP_SEND_SPONTANEOUS_RREP */
+    } else if(defrt != NULL) {
+      // We just need to refresh the route
+      PRINTF("Refreshing default route\n");
+      stimer_set(&defrt->lifetime, LRP_DEFRT_LIFETIME);
+    }
+  } else {
+    PRINTF("Skipping: route worse than previous\n");
+  }
   return defrt;
 }
 #endif /* !LRP_IS_SINK */
@@ -1038,6 +1026,9 @@ handle_incoming_rreq(void)
 #if !USE_DIO
   uip_ds6_route_t* rt;
 #endif
+#if LRP_IS_COORDINATOR
+  uint16_t lc;
+#endif /* LRP_IS_COORDINATOR */
 
   PRINTF("Received RREQ ");
   PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
@@ -1048,7 +1039,7 @@ handle_incoming_rreq(void)
   PRINTF(" dest=");
   PRINT6ADDR(&rm->dest_addr);
   PRINTF(" seq=%u", uip_ntohs(rm->node_seqno));
-  PRINTF(" hop=%u\n", rm->route_cost);
+  PRINTF(" metric type/value=%x/%u\n", rm->metric_type, rm->metric_value);
 
   rm->node_seqno = uip_ntohs(rm->node_seqno);
 
@@ -1060,7 +1051,7 @@ handle_incoming_rreq(void)
 
   // Add reverse route while receiving RREQ
   rt = offer_route(&rm->orig_addr, DEFAULT_PREFIX_LEN,
-      &UIP_IP_BUF->srcipaddr, rm->route_cost, rm->node_seqno);
+      &UIP_IP_BUF->srcipaddr, rm->metric_type, metric_value, rm->node_seqno);
   if(rt != NULL) {
     PRINTF("Route inserted from RREQ\n");
   } else {
@@ -1085,7 +1076,7 @@ handle_incoming_rreq(void)
     state_save();
 #endif
     send_rrep(&dest_addr, &UIP_IP_BUF->srcipaddr, &orig_addr,
-        state.node_seqno, 0);
+        state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
 
 #if LRP_IS_COORDINATOR
     // Only coordinator forward RREQ
@@ -1095,10 +1086,20 @@ handle_incoming_rreq(void)
       return;
     }
     // TTL still valid for forwarding
+
+    // Computing link cost
+    lc = link_cost(&UIP_IP_BUF->srcipaddr, rm->metric_type);
+    if(lc == 0) {
+      PRINTF("Unable to determine the cost of the link to ");
+      PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
+      PRINTF("\n");
+      return;
+    }
+
     PRINTF("Forward RREQ\n");
     lrp_rand_wait();
     send_rreq(&rm->dest_addr, &rm->orig_addr, rm->node_seqno,
-        rm->route_cost + 1, UIP_IP_BUF->ttl - 1);
+        rm->metric_type, rm->metric_value + lc, UIP_IP_BUF->ttl - 1);
 #endif /* LRP_IS_COORDINATOR */
   }
 }
@@ -1115,6 +1116,7 @@ handle_incoming_rrep(void)
   uip_ipaddr_t *nexthop;
   uip_ipaddr_t orig_addr, src_ipaddr;
   uint16_t node_seqno;
+  uint16_t lc;
 #endif
   uint8_t send_ack = (1==1);
 
@@ -1127,7 +1129,7 @@ handle_incoming_rrep(void)
   PRINTF(" dest=");
   PRINT6ADDR(&rm->dest_addr);
   PRINTF(" node_seqno=%u", uip_ntohs(rm->node_seqno));
-  PRINTF(" rank=%u\n", rm->route_cost);
+  PRINTF(" metric type/value=%x/%u\n", rm->metric_type, rm->metric_value);
 
   rm->node_seqno = uip_ntohs(rm->node_seqno);
 
@@ -1145,7 +1147,7 @@ handle_incoming_rrep(void)
 
   // Offer route
   rt = offer_route(&rm->orig_addr, DEFAULT_PREFIX_LEN,
-      &UIP_IP_BUF->srcipaddr, rm->route_cost, rm->node_seqno);
+      &UIP_IP_BUF->srcipaddr, rm->metric_type, rm->metric_value, rm->node_seqno);
   if(rt != NULL) {
     PRINTF("Route inserted from RREP\n");
 #if LRP_RREP_ACK
@@ -1205,8 +1207,15 @@ handle_incoming_rrep(void)
   uip_ipaddr_copy(&orig_addr, &rm->orig_addr);
   uip_ipaddr_copy(&src_ipaddr, &UIP_IP_BUF->srcipaddr);
   if(nexthop != NULL) {
+    lc = link_cost(&UIP_IP_BUF->srcipaddr, rm->metric_type);
+    if(lc == 0) {
+      PRINTF("Unable to compute link cost to ");
+      PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
+      PRINTF("\n");
+      return;
+    }
     send_rrep(&rm->dest_addr, nexthop, &rm->orig_addr, rm->node_seqno,
-        rm->route_cost + 1);
+        rm->metric_type, rm->metric_value + lc);
   }
 #endif
 
@@ -1305,7 +1314,8 @@ handle_incoming_rerr(void)
     state_save();
 #endif
     defrt = uip_ds6_defrt_choose();
-    send_rrep(defrt, defrt, &myipaddr, state.node_seqno, 0);
+    send_rrep(defrt, defrt, &myipaddr, state.node_seqno,
+        LRP_METRIC_HOP_COUNT, 0);
   }
 #endif /* !LRP_IS_SINK */
 #endif /* !USE_DIO */
@@ -1317,9 +1327,12 @@ static void
 handle_incoming_dio(void)
 {
   struct lrp_msg_dio *rm = (struct lrp_msg_dio *)uip_appdata;
-  static struct {uint16_t seqno; uint8_t rank;} old_position;
-  old_position.seqno = state.tree_seqno;
-  old_position.rank = state.rank;
+#if LRP_IS_COORDINATOR
+  uint16_t old_seqno = state.tree_seqno;
+  uint8_t old_metric_type = state.metric_type;
+  uint16_t old_metric_value = state.metric_value;
+#endif /* LRP_IS_COORDINATOR */
+
 
   PRINTF("Received DIO ");
   PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
@@ -1328,18 +1341,18 @@ handle_incoming_dio(void)
   PRINTF(" sink_addr=");
   PRINT6ADDR(&rm->sink_addr);
   PRINTF(" tree_seqno=%d", uip_ntohs(rm->tree_seqno));
-  PRINTF(" rank=%d", rm->rank);
-  PRINTF(" rssi=%i\n", LAST_RSSI);
+  PRINTF(" metric type/value=%x/%u\n", rm->metric_type, rm->metric_value);
 
   rm->tree_seqno = uip_ntohs(rm->tree_seqno);
 
   offer_default_route(&rm->sink_addr, &UIP_IP_BUF->srcipaddr,
-      rm->metric, rm->rank, rm->tree_seqno, rm->tree_seqno);
+      rm->metric_type, rm->metric_value, rm->tree_seqno, rm->tree_seqno);
 
   // Check if state has changed
 #if LRP_IS_COORDINATOR
-  if(old_position.seqno != state.tree_seqno ||
-      old_position.rank != state.rank) {
+  if(old_seqno != state.tree_seqno ||
+      old_metric_type != state.metric_type ||
+      old_metric_value != state.metric_value) {
     PRINTF("Position has changed. Broadcating DIO message\n");
     send_dio();
   }
@@ -1373,6 +1386,7 @@ handle_incoming_brk()
   struct lrp_msg_brk *rm = (struct lrp_msg_brk *)uip_appdata;
 #if !LRP_IS_SINK
   uip_ds6_defrt_t* defrt;
+  uint16_t lc;
 #endif
 
   if(lrp_is_my_global_address(&rm->lost_node)) {
@@ -1385,7 +1399,7 @@ handle_incoming_brk()
   PRINTF(" -> ");
   PRINT6ADDR(&UIP_IP_BUF->destipaddr);
   PRINTF(" node_seqno=%d", uip_ntohs(rm->node_seqno));
-  PRINTF(" route_cost=%d", rm->rank);
+  PRINTF(" metric type/value=%x/%u", rm->metric_type, rm->metric_value);
   PRINTF(" lost_node=");
   PRINT6ADDR(&rm->lost_node);
   PRINTF("\n");
@@ -1408,21 +1422,30 @@ handle_incoming_brk()
     return;
   }
 
+  // Computing link cost
+  lc = link_cost(&UIP_IP_BUF->srcipaddr, rm->metric_type);
+  if(lc == 0) {
+    PRINTF("Unable to determine the cost of the link to ");
+    PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
+    PRINTF("\n");
+    return;
+  }
+
   defrt = uip_ds6_defrt_lookup(&UIP_IP_BUF->srcipaddr);
   if(defrt != NULL) {
     // BRK comes from our default next hop. Broadcasting
     brc_force_add(&rm->lost_node, rm->node_seqno, &UIP_IP_BUF->srcipaddr);
     lrp_rand_wait();
-    send_brk(&rm->lost_node, &mcastipaddr, rm->node_seqno, rm->rank + 1,
-        UIP_IP_BUF->ttl - 1);
+    send_brk(&rm->lost_node, &mcastipaddr, rm->node_seqno, rm->metric_type,
+        rm->metric_value + lc, UIP_IP_BUF->ttl - 1);
   } else {
     // BRK comes from a neighbor broken branch. Forwarding BRK to sink
     if(!brc_add(&rm->lost_node, rm->node_seqno, &UIP_IP_BUF->srcipaddr)) {
       PRINTF("Skipping: BRK is older than previous one\n");
       return;
     }
-    send_brk(&rm->lost_node, uip_ds6_defrt_choose(),
-        rm->node_seqno, rm->rank + 1, UIP_IP_BUF->ttl - 1);
+    send_brk(&rm->lost_node, uip_ds6_defrt_choose(), rm->node_seqno,
+        rm->metric_type, rm->metric_value + lc, UIP_IP_BUF->ttl - 1);
   }
 #endif /* LRP_IS_COORDINATOR */
 }
@@ -1435,6 +1458,7 @@ handle_incoming_upd()
 {
   struct lrp_msg_upd *rm = (struct lrp_msg_upd *)uip_appdata;
   uip_ipaddr_t *nexthop;
+  uint16_t lc;
 
   PRINTF("UPD message: ");
   PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
@@ -1442,8 +1466,7 @@ handle_incoming_upd()
   PRINT6ADDR(&UIP_IP_BUF->destipaddr);
   PRINTF(" tree_seqno=%d", uip_ntohs(rm->tree_seqno));
   PRINTF(" repair_seqno=%d", uip_ntohs(rm->repair_seqno));
-  PRINTF(" weaklink=%d", get_weaklink(rm->metric));
-  PRINTF(" rank=%d", rm->rank);
+  PRINTF(" metric type/value=%x/%u", rm->metric_type, rm->metric_value);
   PRINTF(" lost_node=");
   PRINT6ADDR(&rm->lost_node);
   PRINTF("\n");
@@ -1453,7 +1476,8 @@ handle_incoming_upd()
 
   // Try to use this UPD as default route
   if(offer_default_route(&rm->sink_addr, &UIP_IP_BUF->srcipaddr,
-      rm->metric, rm->rank, rm->tree_seqno, rm->repair_seqno) == NULL) {
+        rm->metric_type, rm->metric_value, rm->tree_seqno, rm->repair_seqno)
+      == NULL) {
     PRINTF("Skipping: not a better route\n");
     return;
   }
@@ -1471,9 +1495,17 @@ handle_incoming_upd()
     return;
   }
 
+  // Computing link cost
+  lc = link_cost(&UIP_IP_BUF->srcipaddr, rm->metric_type);
+  if(lc == 0) {
+    PRINTF("Unable to determine the cost of the link to ");
+    PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
+    PRINTF("\n");
+    return;
+  }
+
   send_upd(&rm->lost_node, &rm->sink_addr, nexthop, rm->tree_seqno,
-      rm->repair_seqno, get_weaklink(rm->metric) + parent_weaklink(LAST_RSSI),
-      rm->rank+1);
+      rm->repair_seqno, rm->metric_type, rm->metric_value + lc);
 }
 #endif /* LRP_IS_COORDINATOR && !LRP_IS_SINK */
 
@@ -1610,7 +1642,7 @@ lrp_request_route_to(uip_ipaddr_t *host)
 #if SAVE_STATE
   state_save();
 #endif
-  send_rreq(host, &myipaddr, state.node_seqno, 0, LRP_MAX_DIST);
+  send_rreq(host, &myipaddr, state.node_seqno, LRP_METRIC_HOP_COUNT, 0, LRP_MAX_DIST);
 #if LRP_RREQ_RETRIES
   if(!rrc_lookup(&rreq_addr)) {
     rrc_add(&rreq_addr);
