@@ -74,8 +74,7 @@
 /* RREQ retransmission interval (ticks) */
 #define RETRY_RREQ_INTERVAL    5 * CLOCK_SECOND / 1000
 
-/* Spontaneously send a RREP message, when selecting a new successor. RREP will
- * be sent to the new sucessor, not to the sink. */
+/* Spontaneously send a RREP message, when selecting a new successor */
 #define LRP_SEND_SPONTANEOUS_RREP 1
 
 /* Ack routes replies */
@@ -92,9 +91,6 @@
 
 /* Threshold below which a link is considered as weak */
 #define LRP_RSSI_THRESHOLD    -65 // Ana measured value
-
-/* Maximum distance for a non hop-to-hop routing packet. */
-#define LRP_MAX_DIST           20
 
 /* Wait randomly when flooding the network */
 #define LRP_RANDOM_WAIT        1

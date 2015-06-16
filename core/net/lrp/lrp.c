@@ -530,7 +530,7 @@ lrp_link_next_hop_callback(const rimeaddr_t *addr, int status, int mutx)
       PRINT6ADDR(uip_ds6_nbr_get_ipaddr(nb));
       printf(" unreachability detected.\n");
       if((locdefrt = uip_ds6_defrt_lookup(uip_ds6_nbr_get_ipaddr(nb))) != NULL) {
-          uip_ds6_defrt_rm(locdefrt);
+        uip_ds6_defrt_rm(locdefrt);
       }
       uip_ds6_route_rm_by_nexthop(uip_ds6_nbr_get_ipaddr(nb));
       uip_ds6_nbr_rm(nb);
@@ -566,7 +566,6 @@ send_qry()
   rm->type = (rm->type << 4) | LRP_RSVD1;
   rm->addr_len = LRP_RSVD2;
   rm->addr_len = (rm->addr_len << 4) | LRP_ADDR_LEN_IPV6;
-  udpconn->ttl = 1;
 
   uip_create_linklocal_lln_routers_mcast(&udpconn->ripaddr);
   uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_qry));
@@ -579,7 +578,7 @@ send_qry()
 static void
 send_brk(const uip_ipaddr_t *lost_node, const uip_ipaddr_t *nexthop,
     const uint16_t node_seqno, const uint8_t metric_type,
-    const uint16_t metric_value, const uint8_t ttl)
+    const uint16_t metric_value)
 {
   char buf[MAX_PAYLOAD_LEN];
   struct lrp_msg_brk *rm = (struct lrp_msg_brk *) buf;
@@ -598,7 +597,6 @@ send_brk(const uip_ipaddr_t *lost_node, const uip_ipaddr_t *nexthop,
   rm->metric_type = metric_type;
   rm->metric_value = metric_value;
   uip_ipaddr_copy(&rm->lost_node, lost_node);
-  udpconn->ttl = ttl;
 
   uip_ipaddr_copy(&udpconn->ripaddr, nexthop);
   uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_brk));
@@ -640,7 +638,7 @@ retransmit_qry_brk()
     state_save();
 #endif /* SAVE_STATE */
     send_brk(&myipaddr, &mcastipaddr, state.node_seqno,
-        LRP_MAX_DIST, 0, LRP_MAX_DIST);
+        LRP_METRIC_HOP_COUNT, 0);
 #endif /* LRP_IS_COORDINATOR */
 #if SEND_QRY
   } else {
@@ -677,7 +675,6 @@ send_dio()
   rm->metric_type = state.metric_type;
   rm->metric_value = state.metric_value;
   uip_ipaddr_copy(&rm->sink_addr, &state.sink_addr);
-  udpconn->ttl = 1;
 
   uip_create_linklocal_lln_routers_mcast(&udpconn->ripaddr);
 // #if RDC_LAYER_ID == ID_mac_802154_rdc_driver
@@ -732,15 +729,14 @@ global_repair()
 static void
 send_rreq(const uip_ipaddr_t *dest, const uip_ipaddr_t *orig,
     const uint16_t node_seqno, const uint8_t metric_type,
-    const uint16_t metric_value, const uint8_t ttl)
+    const uint16_t metric_value)
 {
   char buf[MAX_PAYLOAD_LEN];
   struct lrp_msg_rreq *rm = (struct lrp_msg_rreq *)buf;
 
   PRINTF("Broadcast RREQ for ");
   PRINT6ADDR(dest);
-  PRINTF(" metric type/value=%x/%u", metric_type, metric_value);
-  PRINTF(" ttl=%u\n", ttl);
+  PRINTF(" metric type/value=%x/%u\n", metric_type, metric_value);
 
   rm->type = LRP_RREQ_TYPE;
   rm->type = (rm->type << 4) | LRP_RSVD1;
@@ -751,7 +747,6 @@ send_rreq(const uip_ipaddr_t *dest, const uip_ipaddr_t *orig,
   rm->metric_value = metric_value;
   uip_ipaddr_copy(&rm->dest_addr, dest);
   uip_ipaddr_copy(&rm->orig_addr, orig);
-  udpconn->ttl = ttl;
 
   uip_create_linklocal_lln_routers_mcast(&udpconn->ripaddr);
   uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_rreq));
@@ -788,7 +783,6 @@ send_rrep(const uip_ipaddr_t *dest, const uip_ipaddr_t *nexthop,
   rm->metric_value = metric_value;
   uip_ipaddr_copy(&rm->orig_addr, orig);
   uip_ipaddr_copy(&rm->dest_addr, dest);
-  udpconn->ttl = 1;
 
   uip_ipaddr_copy(&udpconn->ripaddr, nexthop);
   uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_rrep));
@@ -818,7 +812,6 @@ send_rerr(const uip_ipaddr_t *src, const uip_ipaddr_t *dest,
   rm->addr_len = (rm->addr_len << 4) | LRP_ADDR_LEN_IPV6;
   uip_ipaddr_copy(&rm->addr_in_error, dest);
   uip_ipaddr_copy(&rm->src_addr, src);
-  udpconn->ttl = 1;
 
   uip_ipaddr_copy(&udpconn->ripaddr, nexthop);
   uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_rerr));
@@ -849,7 +842,6 @@ send_rack(const uip_ipaddr_t *src, const uip_ipaddr_t *nexthop,
   rm->addr_len = (rm->addr_len << 4) | LRP_ADDR_LEN_IPV6;
   uip_ipaddr_copy(&rm->src_addr, src);
   rm->node_seqno = uip_htons(node_seqno);
-  udpconn->ttl = 1;
 
   uip_ipaddr_copy(&udpconn->ripaddr, nexthop);
   uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_rack));
@@ -884,7 +876,6 @@ send_upd(const uip_ipaddr_t *lost_node, const uip_ipaddr_t *sink_addr,
   rm->metric_value = metric_value;
   uip_ipaddr_copy(&rm->sink_addr, sink_addr);
   uip_ipaddr_copy(&rm->lost_node, lost_node);
-  udpconn->ttl = 1;
 
   uip_ipaddr_copy(&udpconn->ripaddr, nexthop);
   uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_upd));
@@ -1079,12 +1070,6 @@ handle_incoming_rreq(void)
 #if LRP_IS_COORDINATOR
     // Only coordinator forward RREQ
   } else {
-    if(UIP_IP_BUF->ttl == 1) {
-      PRINTF("Skipping: TTL expired\n");
-      return;
-    }
-    // TTL still valid for forwarding
-
     // Computing link cost
     lc = link_cost(&UIP_IP_BUF->srcipaddr, rm->metric_type);
     if(lc == 0) {
@@ -1097,7 +1082,7 @@ handle_incoming_rreq(void)
     PRINTF("Forward RREQ\n");
     lrp_rand_wait();
     send_rreq(&rm->dest_addr, &rm->orig_addr, rm->node_seqno,
-        rm->metric_type, rm->metric_value + lc, UIP_IP_BUF->ttl - 1);
+        rm->metric_type, rm->metric_value + lc);
 #endif /* LRP_IS_COORDINATOR */
   }
 }
@@ -1331,7 +1316,6 @@ handle_incoming_dio(void)
   uint16_t old_metric_value = state.metric_value;
 #endif /* LRP_IS_COORDINATOR */
 
-
   PRINTF("Received DIO ");
   PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
   PRINTF(" -> ");
@@ -1415,11 +1399,6 @@ handle_incoming_brk()
 
 #else /* if not LRP_IS_SINK */
 
-  if(UIP_IP_BUF->ttl == 1) {
-    PRINTF("Skipping: TTL expired\n");
-    return;
-  }
-
   // Computing link cost
   lc = link_cost(&UIP_IP_BUF->srcipaddr, rm->metric_type);
   if(lc == 0) {
@@ -1435,7 +1414,7 @@ handle_incoming_brk()
     brc_force_add(&rm->lost_node, rm->node_seqno, &UIP_IP_BUF->srcipaddr);
     lrp_rand_wait();
     send_brk(&rm->lost_node, &mcastipaddr, rm->node_seqno, rm->metric_type,
-        rm->metric_value + lc, UIP_IP_BUF->ttl - 1);
+        rm->metric_value + lc);
   } else {
     // BRK comes from a neighbor broken branch. Forwarding BRK to sink
     if(!brc_add(&rm->lost_node, rm->node_seqno, &UIP_IP_BUF->srcipaddr)) {
@@ -1443,7 +1422,7 @@ handle_incoming_brk()
       return;
     }
     send_brk(&rm->lost_node, uip_ds6_defrt_choose(), rm->node_seqno,
-        rm->metric_type, rm->metric_value + lc, UIP_IP_BUF->ttl - 1);
+        rm->metric_type, rm->metric_value + lc);
   }
 #endif /* LRP_IS_COORDINATOR */
 }
@@ -1640,7 +1619,7 @@ lrp_request_route_to(uip_ipaddr_t *host)
 #if SAVE_STATE
   state_save();
 #endif
-  send_rreq(host, &myipaddr, state.node_seqno, LRP_METRIC_HOP_COUNT, 0, LRP_MAX_DIST);
+  send_rreq(host, &myipaddr, state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
 #if LRP_RREQ_RETRIES
   if(!rrc_lookup(&rreq_addr)) {
     rrc_add(&rreq_addr);
@@ -1794,6 +1773,7 @@ PROCESS_THREAD(lrp_process, ev, data)
 
   udpconn = udp_new(NULL, UIP_HTONS(LRP_UDPPORT), NULL);
   udp_bind(udpconn, UIP_HTONS(LRP_UDPPORT));
+  udpconn->ttl = 1;
   PRINTF("Created an UDP socket");
   PRINTF(" (local/remote port %u/%u)\n",
         UIP_HTONS(udpconn->lport), UIP_HTONS(udpconn->rport));
