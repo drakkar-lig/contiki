@@ -101,7 +101,7 @@
 
 /* If NUD is deactivated, unacked messages are counted, and next hop is deleted
  * when the number of consecutive noacked messages reach this constant. */
-#define LRP_MAX_CONSECUTIVE_NOACKED_MESSAGES  3
+#define LRP_MAX_CONSECUTIVE_NOACKED_MESSAGES  9
 
 /* Is a sink node */
 #ifdef LRP_CONF_IS_SINK

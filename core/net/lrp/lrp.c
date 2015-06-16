@@ -285,6 +285,47 @@ rrc_check_expired_rreq(const uint16_t interval)
 
 
 /*---------------------------------------------------------------------------*/
+/* Signal to neighbor table a new neighbor. If node cannot send NA
+ * (!UIP_ND6_SEND_NA), then remote lladdr is automatically computed. Else,
+ * neighbor is entred as "incomplete" entry, and NS/NA will be performed to
+ * confirm neighbor presence and get its lladdr. */
+static void
+lrp_nbr_add(uip_ipaddr_t* next_hop)
+{
+#if !UIP_ND6_SEND_NA
+  uip_lladdr_t nbr_lladdr;
+#endif
+  uip_ds6_nbr_t *nbr = uip_ds6_nbr_lookup(next_hop);
+
+  if(nbr == NULL) {
+    PRINTF("Adding ");
+    PRINT6ADDR(next_hop);
+    PRINTF(" to neighbor table");
+#if !UIP_ND6_SEND_NA
+    // it's my responsability to create+maintain neighbor
+    PRINTF(" (without NA),");
+    memcpy(&nbr_lladdr, &next_hop->u8[8],
+           UIP_LLADDR_LEN);
+    nbr_lladdr.addr[0] ^= 2;
+    PRINTF(" with lladdress ");
+    PRINTLLADDR(&nbr_lladdr);
+    PRINTF("\n");
+    uip_ds6_nbr_add(next_hop, &nbr_lladdr, 0, NBR_REACHABLE);
+//    nbr->nscount = 1;
+#else /* if not !UIP_ND6_SEND_NA */
+    PRINTF(" (waiting for a NA)\n");
+    uip_ds6_nbr_add(next_hop, NULL, 0, NBR_INCOMPLETE);
+#endif /* !UIP_ND6_SEND_NA */
+  } else {
+    PRINTF("Neighbor ");
+    PRINT6ADDR(next_hop);
+    PRINTF(" is already known (as ");
+    PRINTLLADDR(uip_ds6_nbr_get_ll(nbr));
+    PRINTF(")\n");
+  }
+}
+
+/*---------------------------------------------------------------------------*/
 /* Implementation of Broken Routes cache to avoid multiple forwarding of BRK
  * messages and to be able to retransmit UPD on the reverted path */
 #if LRP_IS_COORDINATOR && !LRP_IS_SINK
@@ -312,8 +353,9 @@ brc_lookup(const uip_ipaddr_t *lost_node)
 /* Force insertion of the BRK offer, without considering cached values. */
 static void
 brc_force_add(const uip_ipaddr_t *lost_node, const uint16_t seqno,
-    const uip_ipaddr_t *forwarder)
+    uip_ipaddr_t *forwarder)
 {
+  lrp_nbr_add(forwarder);
   unsigned n = (((uint8_t *)lost_node)[0] +
       ((uint8_t *)lost_node)[15]) % BRCACHE;
   brcache[n].seqno = seqno;
@@ -325,8 +367,9 @@ brc_force_add(const uip_ipaddr_t *lost_node, const uint16_t seqno,
  * lost_node), and has thus been inserted */
 static uint8_t
 brc_add(const uip_ipaddr_t *lost_node, const uint16_t seqno,
-    const uip_ipaddr_t *forwarder)
+    uip_ipaddr_t *forwarder)
 {
+  lrp_nbr_add(forwarder);
   unsigned n = (((uint8_t *)lost_node)[0] +
       ((uint8_t *)lost_node)[15]) % BRCACHE;
   if(SEQNO_GREATER_THAN(seqno, brcache[n].seqno) ||
@@ -388,47 +431,6 @@ get_global_addr(uip_ipaddr_t *addr)
     }
   }
   return 0;
-}
-
-/*---------------------------------------------------------------------------*/
-/* Signal to neighbor table a new neighbor. If node cannot send NA
- * (!UIP_ND6_SEND_NA), then remote lladdr is automatically computed. Else,
- * neighbor is entred as "incomplete" entry, and NS/NA will be performed to
- * confirm neighbor presence and get its lladdr. */
-static void
-lrp_nbr_add(uip_ipaddr_t* next_hop)
-{
-#if !UIP_ND6_SEND_NA
-  uip_lladdr_t nbr_lladdr;
-#endif
-  uip_ds6_nbr_t *nbr = uip_ds6_nbr_lookup(next_hop);
-
-  if(nbr == NULL) {
-    PRINTF("Adding ");
-    PRINT6ADDR(next_hop);
-    PRINTF(" to neighbor table");
-#if !UIP_ND6_SEND_NA
-    // it's my responsability to create+maintain neighbor
-    PRINTF(" (without NA),");
-    memcpy(&nbr_lladdr, &next_hop->u8[8],
-           UIP_LLADDR_LEN);
-    nbr_lladdr.addr[0] ^= 2;
-    PRINTF(" with lladdress ");
-    PRINTLLADDR(&nbr_lladdr);
-    PRINTF("\n");
-    uip_ds6_nbr_add(next_hop, &nbr_lladdr, 0, NBR_REACHABLE);
-//    nbr->nscount = 1;
-#else /* if not !UIP_ND6_SEND_NA */
-    PRINTF(" (waiting for a NA)\n");
-    uip_ds6_nbr_add(next_hop, NULL, 0, NBR_INCOMPLETE);
-#endif /* !UIP_ND6_SEND_NA */
-  } else {
-    PRINTF("Neighbor ");
-    PRINT6ADDR(next_hop);
-    PRINTF(" is already known (as ");
-    PRINTLLADDR(uip_ds6_nbr_get_ll(nbr));
-    PRINTF(")\n");
-  }
 }
 
 /*---------------------------------------------------------------------------*/
@@ -533,6 +535,7 @@ lrp_link_next_hop_callback(const rimeaddr_t *addr, int status, int mutx)
       if((locdefrt = uip_ds6_defrt_lookup(uip_ds6_nbr_get_ipaddr(nb))) != NULL) {
           uip_ds6_defrt_rm(locdefrt);
       }
+      uip_ds6_route_rm_by_nexthop(uip_ds6_nbr_get_ipaddr(nb));
       uip_ds6_nbr_rm(nb);
       nbr_table_remove(lrp_next_hops, nh);
     }
@@ -1736,6 +1739,7 @@ lrp_select_nexthop_for(uip_ipaddr_t* source, uip_ipaddr_t* destination,
     // The nexthop is not in neighbour table
     PRINTF("Discarding packet: nexthop in routing table is not in "
         "neighbour table\n");
+    uip_ds6_route_rm(route_to_dest);
   } else {
     PRINTF("Routing through ");
     PRINT6ADDR(nexthop);
