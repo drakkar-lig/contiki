@@ -55,6 +55,9 @@
 /* Maximum time between two global repairs (ticks, on 32 bits) */
 #define MAX_DODAG_LIFETIME     1800 * CLOCK_SECOND
 
+/* Send DIO unicast to a QRY emitter, instead of broadcast */
+#define SEND_DIO_UNICAST       1
+
 /* Do we use QRY, or not at all ? */
 #define SEND_QRY               1
 

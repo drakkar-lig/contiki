@@ -657,15 +657,23 @@ retransmit_qry_brk()
 #endif /* !LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
-/* Format and broadcast a DIO packet. */
+/* Format and send a DIO packet to `destination`, or broadcast if
+ * `destination` is NULL */
 #if LRP_IS_COORDINATOR
 static void
-send_dio()
+send_dio(uip_ipaddr_t* destination)
 {
   char buf[MAX_PAYLOAD_LEN];
   struct lrp_msg_dio *rm = (struct lrp_msg_dio *)buf;
 
-  PRINTF("Send DIO\n");
+  PRINTF("Send DIO");
+  if(destination == NULL) {
+    PRINTF(" (broadcast)\n");
+  } else {
+    PRINTF(" to ");
+    PRINT6ADDR(destination);
+    PRINTF("\n");
+  }
 
   rm->type = LRP_DIO_TYPE;
   rm->type = (rm->type << 4) | LRP_RSVD1;
@@ -676,14 +684,12 @@ send_dio()
   rm->metric_value = state.metric_value;
   uip_ipaddr_copy(&rm->sink_addr, &state.sink_addr);
 
-  uip_create_linklocal_lln_routers_mcast(&udpconn->ripaddr);
-// #if RDC_LAYER_ID == ID_mac_802154_rdc_driver
-//   tcpip_set_outputfunc(output_802154);
-//   uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_dio));
-//   tcpip_set_outputfunc(output);
-// #else // RDC_LAYER_ID == ID_mac_802154_rdc_driver
+  if(destination == NULL) {
+    uip_create_linklocal_lln_routers_mcast(&udpconn->ripaddr);
+  } else {
+    uip_ipaddr_copy(&udpconn->ripaddr, destination);
+  }
   uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_dio));
-// #endif /* RDC_LAYER_ID == ID_mac_802154_rdc_driver */
   memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
 }
 #endif /* LRP_IS_COORDINATOR */
@@ -706,7 +712,7 @@ global_repair()
 #if SAVE_STATE
     state_save();
 #endif /* SAVE_STATE */
-    send_dio();
+    send_dio(NULL);
     gr_32bits_timer = MAX_DODAG_LIFETIME;
   }
 
@@ -1336,7 +1342,7 @@ handle_incoming_dio(void)
       old_metric_type != state.metric_type ||
       old_metric_value != state.metric_value) {
     PRINTF("Position has changed. Broadcating DIO message\n");
-    send_dio();
+    send_dio(NULL);
   }
 #endif
 }
@@ -1349,6 +1355,11 @@ handle_incoming_qry(void)
 {
   PRINTF("Received QRY\n");
 
+  if(uip_ds6_defrt_lookup(&UIP_IP_BUF->srcipaddr) != NULL) {
+    PRINTF("Skipping: it comes from a successor\n");
+    return;
+  }
+
 #if !LRP_IS_SINK
   if(uip_ds6_defrt_choose() == NULL) {
     PRINTF("Skipping: no default route\n");
@@ -1356,7 +1367,12 @@ handle_incoming_qry(void)
   }
 #endif
   lrp_rand_wait();
-  send_dio();
+#if SEND_DIO_UNICAST
+  lrp_nbr_add(&UIP_IP_BUF->srcipaddr);
+  send_dio(&UIP_IP_BUF->srcipaddr);
+#else
+  send_dio(NULL);
+#endif
 }
 #endif /* LRP_IS_COORDINATOR */
 
