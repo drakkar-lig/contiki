@@ -55,9 +55,12 @@
 /* Maximum time between two global repairs (ticks, on 32 bits) */
 #define MAX_DODAG_LIFETIME     1800 * CLOCK_SECOND
 
-/* Number of times a QRY has to be sent. After these, if we were associated
- * with a default. 0 to disable QRY sending */
-#define SEND_QRY               3
+/* Do we use QRY, or not at all ? */
+#define SEND_QRY               1
+
+/* Number of times a QRY has to be sent, when starting a LR, before sending
+ * BRK. 0 to not send any QRY, and start with BRK */
+#define LR_SEND_QRY_NB         0
 
 /* Exponential parameter for QRY sending. @see retransmit_qry_brk */
 #define QRY_EXP_PARAM          0.90

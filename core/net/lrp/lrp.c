@@ -633,11 +633,7 @@ retransmit_qry_brk()
     return;
   }
 
-#if SEND_QRY
-  if(nb_sent < SEND_QRY || lrp_ipaddr_is_empty(&state.sink_addr)) {
-    send_qry();
-  } else {
-#endif /* SEND_QRY */
+  if(nb_sent >= LR_SEND_QRY_NB && !lrp_ipaddr_is_empty(&state.sink_addr)) {
 #if LRP_IS_COORDINATOR
     SEQNO_INCREASE(state.node_seqno);
 #if SAVE_STATE
@@ -647,8 +643,10 @@ retransmit_qry_brk()
         LRP_MAX_DIST, 0, LRP_MAX_DIST);
 #endif /* LRP_IS_COORDINATOR */
 #if SEND_QRY
-  }
+  } else {
+    send_qry();
 #endif /* SEND_QRY */
+  }
   nb_sent++;
   exp_residuum *= QRY_EXP_PARAM;
 
@@ -1688,9 +1686,7 @@ lrp_no_default_route(void)
   state_new();
 #endif /* !LRP_IS_COORDINATOR */
 
-#if SEND_QRY
   retransmit_qry_brk();
-#endif
 }
 #endif /* !LRP_IS_SINK */
 
@@ -1825,7 +1821,7 @@ PROCESS_THREAD(lrp_process, ev, data)
   etimer_set(&rv, RV_CHECK_INTERVAL);
 #endif
 
-#if SEND_QRY && !LRP_IS_SINK
+#if !LRP_IS_SINK
   // Start sending QRY to find nodes just around
   retransmit_qry_brk();
 #endif
