@@ -552,26 +552,26 @@ lrp_link_next_hop_callback(const rimeaddr_t *addr, int status, int mutx)
 #endif /* !UIP_ND6_SEND_NA */
 
 /*---------------------------------------------------------------------------*/
-/* Format and broadcast a QRY packet. */
-#if SEND_QRY && !LRP_IS_SINK
+/* Format and broadcast a DIS packet. */
+#if SEND_DIS && !LRP_IS_SINK
 static void
-send_qry()
+send_dis()
 {
   char buf[MAX_PAYLOAD_LEN];
-  struct lrp_msg_qry *rm = (struct lrp_msg_qry *)buf;
+  struct lrp_msg_dis *rm = (struct lrp_msg_dis *)buf;
 
-  PRINTF("Broadcast QRY\n");
+  PRINTF("Broadcast DIS\n");
 
-  rm->type = LRP_QRY_TYPE;
+  rm->type = LRP_DIS_TYPE;
   rm->type = (rm->type << 4) | LRP_RSVD1;
   rm->addr_len = LRP_RSVD2;
   rm->addr_len = (rm->addr_len << 4) | LRP_ADDR_LEN_IPV6;
 
   uip_create_linklocal_lln_routers_mcast(&udpconn->ripaddr);
-  uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_qry));
+  uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_dis));
   memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
 }
-#endif /* SEND_QRY && !LRP_IS_SINK */
+#endif /* SEND_DIS && !LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
 #if LRP_IS_COORDINATOR && !LRP_IS_SINK
@@ -605,21 +605,21 @@ send_brk(const uip_ipaddr_t *lost_node, const uip_ipaddr_t *nexthop,
 #endif /* LRP_IS_COORDINATOR && !LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
-/* Retransmit periodically a QRY or BRK message. QRYies are transmitted
- * SEND_QRY times and BRK are transmitted after them. Asymptotically, messages
+/* Retransmit periodically a DIS or BRK message. DISies are transmitted
+ * SEND_DIS times and BRK are transmitted after them. Asymptotically, messages
  * will be sent at the same rate as the DIO frequency. Time between two
  * message sending follow this exponential sequence:
- * `Un = SEND_DIO_INTERVAL * (1 - QRY_EXP_PARAM ^ n)` */
+ * `Un = SEND_DIO_INTERVAL * (1 - DIS_EXP_PARAM ^ n)` */
 #if !LRP_IS_SINK
 static void
-retransmit_qry_brk()
+retransmit_dis_brk()
 {
   static struct ctimer retransmit_timer = {0};
   static uint16_t exp_residuum = SEND_DIO_INTERVAL;
   static uint16_t nb_sent = 0;
 
   if(uip_ds6_defrt_choose() != NULL) {
-    PRINTF("Deactivating QRY-BRK timer: have a default route\n");
+    PRINTF("Deactivating DIS-BRK timer: have a default route\n");
     ctimer_stop(&retransmit_timer);
     nb_sent = 0;
     exp_residuum = SEND_DIO_INTERVAL;
@@ -627,11 +627,11 @@ retransmit_qry_brk()
   }
 
   if(!ctimer_expired(&retransmit_timer)) {
-    PRINTF("Skipping retransmitting QRY-BRK: Timer has not yet expired\n");
+    PRINTF("Skipping retransmitting DIS-BRK: Timer has not yet expired\n");
     return;
   }
 
-  if(nb_sent >= LR_SEND_QRY_NB && !lrp_ipaddr_is_empty(&state.sink_addr)) {
+  if(nb_sent >= LR_SEND_DIS_NB && !lrp_ipaddr_is_empty(&state.sink_addr)) {
 #if LRP_IS_COORDINATOR
     SEQNO_INCREASE(state.node_seqno);
 #if SAVE_STATE
@@ -640,18 +640,18 @@ retransmit_qry_brk()
     send_brk(&myipaddr, &mcastipaddr, state.node_seqno,
         LRP_METRIC_HOP_COUNT, 0);
 #endif /* LRP_IS_COORDINATOR */
-#if SEND_QRY
+#if SEND_DIS
   } else {
-    send_qry();
-#endif /* SEND_QRY */
+    send_dis();
+#endif /* SEND_DIS */
   }
   nb_sent++;
-  exp_residuum *= QRY_EXP_PARAM;
+  exp_residuum *= DIS_EXP_PARAM;
 
   // Configure timer for next time
   ctimer_set(&retransmit_timer, SEND_DIO_INTERVAL - exp_residuum,
-      (void (*)(void*))&retransmit_qry_brk, NULL);
-  PRINTF("QRY-BRK timer reset (%lums)\n",
+      (void (*)(void*))&retransmit_dis_brk, NULL);
+  PRINTF("DIS-BRK timer reset (%lums)\n",
       (SEND_DIO_INTERVAL - exp_residuum) * 1000 / CLOCK_SECOND);
 }
 #endif /* !LRP_IS_SINK */
@@ -1351,9 +1351,9 @@ handle_incoming_dio(void)
 /*---------------------------------------------------------------------------*/
 #if LRP_IS_COORDINATOR
 static void
-handle_incoming_qry(void)
+handle_incoming_dis(void)
 {
-  PRINTF("Received QRY\n");
+  PRINTF("Received DIS\n");
 
   if(uip_ds6_defrt_lookup(&UIP_IP_BUF->srcipaddr) != NULL) {
     PRINTF("Skipping: it comes from a successor\n");
@@ -1564,11 +1564,11 @@ tcpip_handler(void)
         handle_incoming_dio();
 #endif
         break;
-      case LRP_QRY_TYPE:
+      case LRP_DIS_TYPE:
 #if !LRP_IS_COORDINATOR
-        PRINTF("Skipping QRY: is a leaf\n");
+        PRINTF("Skipping DIS: is a leaf\n");
 #else
-        handle_incoming_qry();
+        handle_incoming_dis();
 #endif
         break;
       case LRP_BRK_TYPE:
@@ -1676,12 +1676,12 @@ static void
 lrp_no_default_route(void)
 {
 #if !LRP_IS_COORDINATOR
-  // Is a leaf: resetting tree-related informations and broadcasting QRY
+  // Is a leaf: resetting tree-related informations and broadcasting DIS
   PRINTF("No more default route: deassociating with tree\n");
   state_new();
 #endif /* !LRP_IS_COORDINATOR */
 
-  retransmit_qry_brk();
+  retransmit_dis_brk();
 }
 #endif /* !LRP_IS_SINK */
 
@@ -1818,8 +1818,8 @@ PROCESS_THREAD(lrp_process, ev, data)
 #endif
 
 #if !LRP_IS_SINK
-  // Start sending QRY to find nodes just around
-  retransmit_qry_brk();
+  // Start sending DIS to find nodes just around
+  retransmit_dis_brk();
 #endif
 #if LRP_IS_SINK
   // Start sending DIO to build tree

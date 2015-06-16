@@ -12,7 +12,7 @@ It adds the construction of a collection tree by means of sending DIO messages, 
   - `LRP_CONF_IS_COORDINATOR`: If set to 1, this node will periodically re-send DIO messages -- set to 0 for a leaf node that will not relay traffic.
   - `LRP_CONF_IS_SINK`: this node will send DIO to advertise itself as a sink -- the LBR should do this (other nodes start transmitting DIO once they get one from the parent).
     This cannot be used with `LRP_IS_COORDINATOR` set to false.
-  - `LRP_CONF_SND_QRY`: if 1, the nodes send QRY packet to trigger the sending of DIO by surrounding nodes.
+  - `LRP_CONF_SND_DIS`: if 1, the nodes send DIS packet to trigger the sending of DIO by surrounding nodes.
     This allows to run with greater `SEND_INTERVAL` (between DIO).
   - Set `UIP_ND6_SEND_NA` to 1 if you want to use NS/NA, set it to 0 and lrp determines the link layer address from the link local address (and vice-versa).
     Obviously, the objective is to get rid of NS/NA, unless you use nullmac, for instance.

@@ -55,18 +55,18 @@
 /* Maximum time between two global repairs (ticks, on 32 bits) */
 #define MAX_DODAG_LIFETIME     1800 * CLOCK_SECOND
 
-/* Send DIO unicast to a QRY emitter, instead of broadcast */
+/* Send DIO unicast to a DIS emitter, instead of broadcast */
 #define SEND_DIO_UNICAST       1
 
-/* Do we use QRY, or not at all ? */
-#define SEND_QRY               1
+/* Do we use DIS, or not at all ? */
+#define SEND_DIS               1
 
-/* Number of times a QRY has to be sent, when starting a LR, before sending
- * BRK. 0 to not send any QRY, and start with BRK */
-#define LR_SEND_QRY_NB         0
+/* Number of times a DIS has to be sent, when starting a LR, before sending
+ * BRK. 0 to not send any DIS, and start with BRK */
+#define LR_SEND_DIS_NB         0
 
-/* Exponential parameter for QRY sending. @see retransmit_qry_brk */
-#define QRY_EXP_PARAM          0.90
+/* Exponential parameter for DIS sending. @see retransmit_dis_brk */
+#define DIS_EXP_PARAM          0.90
 
 /* Re-send RREQ n times if no RREP recieved. 0 implies don't retry at all */
 #define LRP_RREQ_RETRIES       0
@@ -207,11 +207,11 @@ struct lrp_msg_dio {
 };
 #endif /* USE_DIO */
 
-/* LRP QRY message */
-#define LRP_QRY_TYPE      5
+/* LRP DIS message */
+#define LRP_DIS_TYPE      5
 
 #if USE_DIO
-struct lrp_msg_qry {
+struct lrp_msg_dis {
   uint8_t type;
   uint8_t addr_len;
 };
