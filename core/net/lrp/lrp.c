@@ -574,6 +574,8 @@ send_dis()
 #endif /* SEND_DIS && !LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
+/* Send a BRK message to the specified nexthop, or broadcast it if `nexthop`
+ * is NULL */
 #if LRP_IS_COORDINATOR && !LRP_IS_SINK
 static void
 send_brk(const uip_ipaddr_t *lost_node, const uip_ipaddr_t *nexthop,
@@ -583,8 +585,13 @@ send_brk(const uip_ipaddr_t *lost_node, const uip_ipaddr_t *nexthop,
   char buf[MAX_PAYLOAD_LEN];
   struct lrp_msg_brk *rm = (struct lrp_msg_brk *) buf;
 
-  PRINTF("Send BRK -> ");
-  PRINT6ADDR(nexthop);
+  PRINTF("Send BRK ");
+  if(nexthop == NULL) {
+    PRINTF("(broadcast)");
+  } else {
+    PRINTF("-> ");
+    PRINT6ADDR(nexthop);
+  }
   PRINTF(" lost_node=");
   PRINT6ADDR(lost_node);
   PRINTF("\n");
@@ -598,7 +605,11 @@ send_brk(const uip_ipaddr_t *lost_node, const uip_ipaddr_t *nexthop,
   rm->metric_value = metric_value;
   uip_ipaddr_copy(&rm->lost_node, lost_node);
 
-  uip_ipaddr_copy(&udpconn->ripaddr, nexthop);
+  if(nexthop == NULL) {
+    uip_create_linklocal_lln_routers_mcast(&udpconn->ripaddr);
+  } else {
+    uip_ipaddr_copy(&udpconn->ripaddr, nexthop);
+  }
   uip_udp_packet_send(udpconn, buf, sizeof(struct lrp_msg_brk));
   memset(&udpconn->ripaddr, 0, sizeof(udpconn->ripaddr));
 }
@@ -637,8 +648,7 @@ retransmit_dis_brk()
 #if SAVE_STATE
     state_save();
 #endif /* SAVE_STATE */
-    send_brk(&myipaddr, &mcastipaddr, state.node_seqno,
-        LRP_METRIC_HOP_COUNT, 0);
+    send_brk(&myipaddr, NULL, state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
 #endif /* LRP_IS_COORDINATOR */
 #if SEND_DIS
   } else {
@@ -1429,7 +1439,7 @@ handle_incoming_brk()
     // BRK comes from our default next hop. Broadcasting
     brc_force_add(&rm->lost_node, rm->node_seqno, &UIP_IP_BUF->srcipaddr);
     lrp_rand_wait();
-    send_brk(&rm->lost_node, &mcastipaddr, rm->node_seqno, rm->metric_type,
+    send_brk(&rm->lost_node, NULL, rm->node_seqno, rm->metric_type,
         rm->metric_value + lc);
   } else {
     // BRK comes from a neighbor broken branch. Forwarding BRK to sink
