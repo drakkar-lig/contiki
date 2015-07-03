@@ -40,6 +40,7 @@
  * \author
  *         Chi-Anh La la@imag.fr
  *         Martin Heusse Martin.Heusse@imag.fr
+ *         Audéoud Henry-Joseph henry-joseph.audeoud@imag.fr
  */
 
 #if WITH_IPV6_LRP
@@ -432,7 +433,6 @@ get_global_addr(uip_ipaddr_t *addr)
 
 /*---------------------------------------------------------------------------*/
 /* Return true if `addr` is empty */
-#if !LRP_IS_SINK
 static uint8_t
 lrp_ipaddr_is_empty(uip_ipaddr_t* addr)
 {
@@ -440,7 +440,6 @@ lrp_ipaddr_is_empty(uip_ipaddr_t* addr)
   uip_create_linklocal_empty_addr(&empty);
   return uip_ipaddr_cmp(&empty, addr);
 }
-#endif /* !LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
 #if LRP_IS_COORDINATOR
@@ -727,13 +726,11 @@ global_repair()
   }
 
   // Reinitialize the 32bits timer
-  if(gr_32bits_timer > ~((uint16_t)0)) {
-    ctimer_set(&gr_timer, ~((uint16_t)0),
-        (void (*)(void*))&global_repair, NULL);
-    gr_32bits_timer -= ~((uint16_t)0);
+  if(gr_32bits_timer > 0xFFFF) {
+    ctimer_set(&gr_timer, 0xFFFF, &global_repair, NULL);
+    gr_32bits_timer -= 0xFFFF;
   } else {
-    ctimer_set(&gr_timer, (uint16_t)gr_32bits_timer,
-        (void (*)(void*))&global_repair, NULL);
+    ctimer_set(&gr_timer, (uint16_t)gr_32bits_timer, &global_repair, NULL);
     gr_32bits_timer = 0;
   }
 }
@@ -988,6 +985,7 @@ offer_default_route(const uip_ipaddr_t* sink_addr, uip_ipaddr_t* next_hop,
 #if SAVE_STATE
     state_save();
 #endif
+printf("JS: TonMessageIci %d\n", state.metric_value);
 
     // Check if we are actually changing of next hop!
     defrt = uip_ds6_defrt_lookup(uip_ds6_defrt_choose());
@@ -1180,7 +1178,7 @@ handle_incoming_rrep(void)
 #else /* !USE_DIO */
 #if LRP_IS_SINK
   // RREP must be for myself, and must not be forwarded
-  if(!lrp_is_my_global_address(&rm->dest_addr)) { // FIXME: et si l'adresse est link-local ?
+  if(!lrp_is_my_global_address(&rm->dest_addr)) {
     PRINTF("Unable to forward RREP: is a sink\n");
     send_ack = (0==1);
   }
@@ -1202,6 +1200,7 @@ handle_incoming_rrep(void)
 #endif /* !USE_DIO */
 
 #if !LRP_IS_SINK || !USE_DIO
+  // Store informations for the RACK message: send RREP message will modify *rm
   node_seqno = rm->node_seqno;
   uip_ipaddr_copy(&orig_addr, &rm->orig_addr);
   uip_ipaddr_copy(&src_ipaddr, &UIP_IP_BUF->srcipaddr);
@@ -1220,11 +1219,11 @@ handle_incoming_rrep(void)
 
   // Ack the route
 #if LRP_RREP_ACK
+  // Use stored information: RREP has modified *rm
   if(send_ack) {
     send_rack(&orig_addr, &src_ipaddr, node_seqno);
   }
 #endif
-  // TODO: warning: problème de stockage dans les buffers: rm n'est plus valide à partir de là à cause du RACK.
 }
 #endif /* LRP_IS_COORDINATOR */
 
