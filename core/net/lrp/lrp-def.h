@@ -27,15 +27,14 @@
  * SUCH DAMAGE.
  *
  * This file is part of the Contiki operating system.
- *
- * $Id: lrp-def.h,v 1.5 2010/05/28 16:33:19 bg- Exp $
  */
 
 /**
  * \file
  *         Definitions for the LRP ad hoc routing protocol
- * \author
- *         Chi-Anh La la@imag.fr
+ * \author Chi-Anh La <la@imag.fr>
+ * \author Martin Heusse <martin.heusse@imag.fr>
+ * \author Audéoud Henry-Joseph <henry-joseph.audeoud@imag.fr>
  */
 
 #ifndef __LRP_DEF_H__
@@ -102,6 +101,8 @@
  * when the number of consecutive noacked messages reach this constant. */
 #define LRP_MAX_CONSECUTIVE_NOACKED_MESSAGES  9
 
+#define LRP_ADDR_LEN_IPV6       15
+
 /* Is a sink node */
 #ifdef LRP_CONF_IS_SINK
 #define LRP_IS_SINK            LRP_CONF_IS_SINK
@@ -139,108 +140,5 @@
 
 /* Define metric types */
 #define LRP_METRIC_HOP_COUNT 1
-
-/* Generic LRP message */
-struct lrp_msg {
-  uint8_t type;
-};
-
-/* LRP RREQ message */
-#define LRP_RREQ_TYPE     0
-
-struct lrp_msg_rreq {
-  uint8_t type;
-  uint8_t addr_len;
-  uint16_t node_seqno;
-  uint8_t metric_type;
-  uint16_t metric_value;
-  uip_ipaddr_t dest_addr;
-  uip_ipaddr_t orig_addr;
-};
-
-/* LRP RREP message */
-#define LRP_RREP_TYPE     1
-
-struct lrp_msg_rrep {
-  uint8_t type;
-  uint8_t addr_len;
-  uint16_t node_seqno;
-  uint8_t metric_type;
-  uint16_t metric_value;
-  uip_ipaddr_t dest_addr;
-  uip_ipaddr_t orig_addr;
-};
-
-/* LRP RREP-ACK message */
-#define LRP_RACK_TYPE     2
-
-#if LRP_RREP_ACK
-struct lrp_msg_rack {
-  uint8_t type;
-  uint8_t addr_len;
-  uip_ipaddr_t src_addr;
-  uint16_t node_seqno;
-};
-#endif /* LRP_RREP_ACK */
-
-/* LRP RERR message */
-#define LRP_RERR_TYPE     3
-
-struct lrp_msg_rerr {
-  uint8_t type;
-  uint8_t addr_len;
-  uip_ipaddr_t src_addr;
-  uip_ipaddr_t addr_in_error;
-};
-
-/* LRP DIO message */
-#define LRP_DIO_TYPE      4
-
-#if USE_DIO
-struct lrp_msg_dio {
-  uint8_t type;
-  uint8_t addr_len;
-  uint16_t tree_seqno;
-  uint8_t metric_type;
-  uint16_t metric_value;
-  uip_ipaddr_t sink_addr;
-};
-#endif /* USE_DIO */
-
-/* LRP DIS message */
-#define LRP_DIS_TYPE      5
-
-#if USE_DIO
-struct lrp_msg_dis {
-  uint8_t type;
-  uint8_t addr_len;
-};
-#endif /* USE_DIO */
-
-/* LRP BRK message */
-#define LRP_BRK_TYPE      6
-
-struct lrp_msg_brk {
-  uint8_t type;
-  uint8_t addr_len;
-  uint16_t node_seqno;
-  uint8_t metric_type;
-  uint16_t metric_value;
-  uip_ipaddr_t lost_node;
-};
-
-/* LRP UPD message */
-#define LRP_UPD_TYPE      7
-
-struct lrp_msg_upd {
-  uint8_t type;
-  uint8_t addr_len;
-  uint16_t tree_seqno;
-  uint16_t repair_seqno;
-  uint8_t metric_type;
-  uint16_t metric_value;
-  uip_ipaddr_t sink_addr;
-  uip_ipaddr_t lost_node;
-};
 
 #endif /* __LRP_DEF_H__ */

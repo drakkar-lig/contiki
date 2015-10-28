@@ -31,52 +31,24 @@
 
 /**
  * \file
- *         LRP routing header.
+ *         Collection Tree maintenance algorithm.
  * \author Chi-Anh La <la@imag.fr>
  * \author Martin Heusse <martin.heusse@imag.fr>
  * \author Audéoud Henry-Joseph <henry-joseph.audeoud@imag.fr>
  */
 
-#ifndef __LRP_H__
-#define __LRP_H__
+#ifndef __LRP_CT_H__
+#define __LRP_CT_H__
 
-#include "contiki.h"
+// Inform maintenance algorithm that successor is unreachable.
+#if !LRP_IS_SINK
+void lrp_no_more_default_route(void);
+#endif /* !LRP_IS_SINK */
 
-#ifdef UIP_DS6_ROUTE_STATE_TYPE
-#undef UIP_DS6_ROUTE_STATE_TYPE
-#endif
+// Handle incoming tree maintenance messages
+void handle_incoming_dio(void);
+void handle_incoming_dis(void);
+void handle_incoming_brk(void);
+void handle_incoming_upd(void);
 
-// This is used in uip-ds6-route included further down
-#define UIP_DS6_ROUTE_STATE_TYPE lrp_route_entry_t
-typedef struct lrp_route_entry {
-  uint16_t seqno;
-  uint8_t metric_type;
-  uint16_t metric_value;
-  uint32_t valid_time;
-  uint8_t ack_received;
-} lrp_route_entry_t;
-
-#include "net/ipv6/uip-ds6.h"
-#include "net/ipv6/uip-ds6-route.h"
-
-
-void
-lrp_set_local_prefix(uip_ipaddr_t *prefix, uint8_t len);
-
-/**
- * \brief   Select and return the nexthop to which send the packet described
- *          by parameters.
- * \return  The nexthop to use, or NULL if the packet has to be discarded
- */
-uip_ipaddr_t*
-lrp_select_nexthop_for(uip_ipaddr_t* source, uip_ipaddr_t* destination,
-    uip_lladdr_t* previoushop);
-
-#if !UIP_ND6_SEND_NA
-void
-lrp_link_next_hop_callback(const rimeaddr_t *addr, int status, int mutx);
-#endif /* !UIP_ND6_SEND_NA */
-
-PROCESS_NAME(lrp_process);
-
-#endif /* __LRP_H__ */
+#endif /* __LRP_CT_H__ */

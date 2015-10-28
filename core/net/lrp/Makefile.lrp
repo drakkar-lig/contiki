@@ -1,3 +1,1 @@
-CONTIKI_SOURCEFILES += lrp.c
-
-
+CONTIKI_SOURCEFILES += lrp.c lrp-ct.c lrp-routes.c lrp-msg.c lrp-global.c
