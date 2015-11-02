@@ -66,8 +66,7 @@
 #define LAST_RSSI ((int8_t) cc2420_last_rssi)
 // extern int8_t last_rssi; // for stm32w
 extern signed char cc2420_last_rssi;
-static uint16_t local_prefix_len;
-static uip_ipaddr_t local_prefix, mcastipaddr;
+static uip_ipaddr_t mcastipaddr;
 
 #if !UIP_ND6_SEND_NA
 typedef struct {
@@ -167,7 +166,7 @@ static void
 get_prefix_from_addr(uip_ipaddr_t *addr, uip_ipaddr_t *prefix, uint8_t len)
 {
   uint8_t i;
-  local_prefix_len = len;
+  lrp_local_prefix.len = len;
   for(i = 0; i < 16; i++) {
     if(i < len/8)
     {
@@ -345,7 +344,7 @@ send_rack(const uip_ipaddr_t *src, const uip_ipaddr_t *nexthop,
 static uint8_t
 lrp_addr_matches_local_prefix(uip_ipaddr_t *host)
 {
-  return uip_ipaddr_prefixcmp(&local_prefix, host, local_prefix_len);
+  return uip_ipaddr_prefixcmp(&lrp_local_prefix.prefix, host, lrp_local_prefix.len);
 }
 #endif /* LRP_IS_SINK */
 
@@ -420,8 +419,8 @@ lrp_routing_error(uip_ipaddr_t* source, uip_ipaddr_t* destination,
 void
 lrp_set_local_prefix(uip_ipaddr_t *prefix, uint8_t len)
 {
-  uip_ipaddr_copy(&local_prefix, prefix);
-  local_prefix_len = len;
+  uip_ipaddr_copy(&lrp_local_prefix.prefix, prefix);
+  lrp_local_prefix.len = len;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -520,7 +519,7 @@ PROCESS_THREAD(lrp_process, ev, data)
 #endif
 
   get_global_addr(&lrp_myipaddr);
-  get_prefix_from_addr(&lrp_myipaddr, &local_prefix, DEFAULT_LOCAL_PREFIX);
+  get_prefix_from_addr(&lrp_myipaddr, &lrp_local_prefix.prefix, DEFAULT_LOCAL_PREFIX);
   uip_create_linklocal_lln_routers_mcast(&mcastipaddr);
   uip_ds6_maddr_add(&mcastipaddr);
 

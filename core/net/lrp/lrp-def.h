@@ -62,7 +62,7 @@
 
 /* Number of times a DIS has to be sent, when starting a LR, before sending
  * BRK. 0 to not send any DIS, and start with BRK */
-#define LR_SEND_DIS_NB         0
+#define LRP_LR_SEND_DIS_NB     2
 
 /* Exponential parameter for DIS sending. @see retransmit_dis_brk */
 #define DIS_EXP_PARAM          0.90
@@ -99,7 +99,7 @@
 
 /* If NUD is deactivated, unacked messages are counted, and next hop is deleted
  * when the number of consecutive noacked messages reach this constant. */
-#define LRP_MAX_CONSECUTIVE_NOACKED_MESSAGES  9
+#define LRP_MAX_CONSECUTIVE_NOACKED_MESSAGES  5
 
 #define LRP_ADDR_LEN_IPV6       15
 

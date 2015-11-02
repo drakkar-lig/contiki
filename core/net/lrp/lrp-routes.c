@@ -288,12 +288,11 @@ handle_incoming_rrep(void)
 void
 handle_incoming_rerr(void)
 {
-#if LRP_IS_COORDINATOR
   struct lrp_msg_rerr *rm = (struct lrp_msg_rerr *)uip_appdata;
 #if !USE_DIO
   struct uip_ds6_route *rt;
 #endif
-#if !LRP_IS_SINK
+#if LRP_IS_COORDINATOR && USE_DIO && !LRP_IS_SINK
   uip_ipaddr_t* defrt;
 #endif
 
@@ -307,6 +306,7 @@ handle_incoming_rerr(void)
   PRINT6ADDR(&rm->dest_addr);
   PRINTF("\n");
 
+#if LRP_IS_COORDINATOR
   // Remove route
   uip_ds6_route_rm(uip_ds6_route_lookup(&rm->addr_in_error));
 
@@ -334,6 +334,12 @@ handle_incoming_rerr(void)
   }
 #endif /* !LRP_IS_SINK */
 #endif /* !USE_DIO */
+#else /* LRP_IS_COORDINATOR */
+  PRINTF("Successor doesn't know us. Spontaneously send RREP\n");
+  SEQNO_INCREASE(lrp_state.node_seqno);
+  lrp_state_save();
+  send_rrep(&lrp_state.sink_addr, &UIP_IP_BUF->srcipaddr, &lrp_myipaddr,
+      lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
 #endif /* LRP_IS_COORDINATOR */
 }
 

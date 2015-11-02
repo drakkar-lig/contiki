@@ -71,7 +71,7 @@ lrp_state_new(void)
   lrp_state.node_seqno = 1;
 }
 
-#if USE_CFS
+#if LRP_USE_CFS
 void
 lrp_state_save(void)
 {
@@ -115,20 +115,7 @@ lrp_state_restore(void)
   PRINTF("Creating new state\n");
   state_new();
 }
-
-#else /* USE_CFS */
-void
-lrp_state_save(void)
-{
-  return;
-}
-
-void
-lrp_state_restore(void)
-{
-  lrp_state_new();
-}
-#endif /* USE_CFS */
+#endif /* LRP_USE_CFS */
 
 
 /*---------------------------------------------------------------------------*/
@@ -187,6 +174,7 @@ lrp_nbr_add(uip_ipaddr_t* next_hop)
 {
 #if !UIP_ND6_SEND_NA
   uip_lladdr_t nbr_lladdr;
+  uip_ipaddr_t *def_nexthop;
 #endif
   uip_ds6_nbr_t *nbr = uip_ds6_nbr_lookup(next_hop);
 
@@ -205,7 +193,7 @@ lrp_nbr_add(uip_ipaddr_t* next_hop)
     PRINTF("\n");
     uip_ds6_nbr_add(next_hop, &nbr_lladdr, 0, NBR_REACHABLE);
 //    nbr->nscount = 1;
-#else /* if not !UIP_ND6_SEND_NA */
+#else /* !UIP_ND6_SEND_NA */
     PRINTF(" (waiting for a NA)\n");
     uip_ds6_nbr_add(next_hop, NULL, 0, NBR_INCOMPLETE);
 #endif /* !UIP_ND6_SEND_NA */
@@ -216,9 +204,30 @@ lrp_nbr_add(uip_ipaddr_t* next_hop)
     PRINTLLADDR(uip_ds6_nbr_get_ll(nbr));
     PRINTF(")\n");
   }
+#if !UIP_ND6_SEND_NA
+  // Puts back default route neighbor in table if it was discarded: we have to keep it.
+  def_nexthop = uip_ds6_defrt_choose();
+  if(def_nexthop){
+    if(uip_ds6_nbr_lladdr_from_ipaddr(def_nexthop) == NULL) {
+      // puts it back in the table
+      memcpy(&nbr_lladdr, &def_nexthop->u8[8],
+             UIP_LLADDR_LEN);
+      nbr_lladdr.addr[0] ^= 2;
+      uip_ds6_nbr_add(def_nexthop, &nbr_lladdr, 0, NBR_REACHABLE);
+      PRINTF("def route neighbor re-installed in neighbor table\n");
+    }
+  }
+#endif /* !UIP_ND6_SEND_NA */
 }
 
 /*---------------------------------------------------------------------------*/
+/* Return a random duration (in ticks). `scale` is the interval (in
+ * milliseconds) where the random duration must be taken into. */
+uint32_t
+rand_wait_duration_before_broadcast(uint16_t scale)
+{
+  return (random_rand() % 256) * scale * CLOCK_SECOND / 256 / 1000;
+}
 #if LRP_IS_COORDINATOR
 inline void
 lrp_rand_wait()

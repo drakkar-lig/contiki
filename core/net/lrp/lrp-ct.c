@@ -54,6 +54,12 @@
 #define UIP_IP_BUF ((struct uip_udpip_hdr *)&uip_buf[UIP_LLH_LEN])
 #define HOST_ROUTE_PREFIX_LEN 128
 
+#if !LRP_IS_SINK
+static struct ctimer retransmit_timer = {0};
+static uint16_t dis_brk_nb_sent = 0;
+static uint16_t exp_residuum = SEND_DIO_INTERVAL;
+#endif /* !LRP_IS_SINK */
+
 
 /*---------------------------------------------------------------------------*/
 /* Implementation of Broken Routes Cache to avoid multiple forwarding of BRK
@@ -132,19 +138,13 @@ offer_default_route(const uip_ipaddr_t* sink_addr, uip_ipaddr_t* next_hop,
     return NULL;
   }
 
-  // Computing link cost
   lc = lrp_link_cost(next_hop, metric_type);
-  if(lc == 0) {
-    PRINTF("Unable to determine the cost of the link to ");
-    PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
-    PRINTF("\n");
-    return NULL;
-  }
-
   if(SEQNO_GREATER_THAN(repair_seqno, lrp_state.repair_seqno) ||
       (repair_seqno == lrp_state.repair_seqno &&
        (metric_type == lrp_state.metric_type &&
-        metric_value + lc < lrp_state.metric_value))) {
+        (metric_value + lc < lrp_state.metric_value ||
+         (metric_value + lc == lrp_state.metric_value &&
+          uip_ds6_defrt_choose() == NULL))))) {
 
     // Offered route is accepted, changing the state
     uip_ipaddr_copy(&lrp_state.sink_addr, sink_addr);
@@ -165,16 +165,8 @@ offer_default_route(const uip_ipaddr_t* sink_addr, uip_ipaddr_t* next_hop,
       lrp_nbr_add(next_hop);
       defrt = uip_ds6_defrt_add(next_hop, LRP_DEFRT_LIFETIME);
 #if LRP_SEND_SPONTANEOUS_RREP
-      PRINTF("Sending spontaneous RREP to new successor\n");
-      SEQNO_INCREASE(lrp_state.node_seqno);
-      lrp_state_save();
-        PRINTF("Print before send: ");
-        PRINT6ADDR(&lrp_state.sink_addr);
-        PRINTF(" ");
-        PRINT6ADDR(&lrp_myipaddr);
-        PRINTF("\n");
-      send_rrep(&lrp_state.sink_addr, next_hop, &lrp_myipaddr, lrp_state.node_seqno,
-          LRP_METRIC_HOP_COUNT, 0);
+      PRINTF("Will send spontaneous RREP to new successor\n");
+      delayed_rrep();
 #endif /* LRP_SEND_SPONTANEOUS_RREP */
     } else if(defrt != NULL) {
       // We just need to refresh the route
@@ -190,6 +182,16 @@ offer_default_route(const uip_ipaddr_t* sink_addr, uip_ipaddr_t* next_hop,
 
 
 /*---------------------------------------------------------------------------*/
+/* Stop the reconnection algorithm */
+#if !LRP_IS_SINK
+static void
+stop_reconnect_callback()
+{
+    ctimer_stop(&retransmit_timer);
+    dis_brk_nb_sent = 0;
+    exp_residuum = SEND_DIO_INTERVAL;
+}
+
 /* Emit messages needed when the node is disconnected to the LRP tree
  * structure.
  *
@@ -197,40 +199,39 @@ offer_default_route(const uip_ipaddr_t* sink_addr, uip_ipaddr_t* next_hop,
  * tries a Link Reversal (LR) by sending BRK messages. If the node was never
  * associated to any tree, it may use only DR.
  */
-#if !LRP_IS_SINK
 static void
 reconnect_callback()
 {
-  static struct ctimer retransmit_timer = {0};
-  static uint16_t exp_residuum = SEND_DIO_INTERVAL;
-  static uint16_t nb_sent = 0;
-
   if(uip_ds6_defrt_choose() != NULL) {
-    ctimer_stop(&retransmit_timer);
-    // Reset lrp_state
-    nb_sent = 0;
-    exp_residuum = SEND_DIO_INTERVAL;
-    return;
+    if(dis_brk_nb_sent >= LRP_LR_SEND_DIS_NB) {
+      // We have a default route. Stop the reconnection algorithm.
+      stop_reconnect_callback();
+      return;
+    }
+    // Else, we do not have send enough DIS messages. Maybe a neighbour has
+    // not send us a DIO message successfully. We thus continue sending DIS
+    // messages.
   }
 
+  // Send DIS/BRK message.
 #if !LRP_IS_COORDINATOR
   // Is a leaf: only use DR.
   send_dis();
 #else /* !LRP_IS_COORDINATOR */
   // Not a leaf. Should one use LR or DR?
-  if(nb_sent < LR_SEND_DIS_NB || lrp_ipaddr_is_empty(&lrp_state.sink_addr)) {
+  if(dis_brk_nb_sent < LRP_LR_SEND_DIS_NB || lrp_ipaddr_is_empty(&lrp_state.sink_addr)) {
     // Use DR
     send_dis();
   } else {
     // Use LR
     SEQNO_INCREASE(lrp_state.node_seqno);
-#if SAVE_STATE
-    state_save();
-#endif /* SAVE_STATE */
+    lrp_state_save();
     send_brk(&lrp_myipaddr, NULL, lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
   }
 #endif /* !LRP_IS_COORDINATOR */
-  nb_sent++;
+
+  // Update state
+  dis_brk_nb_sent++;
   exp_residuum *= DIS_EXP_PARAM;
 
   // Configure the callback timer
@@ -274,8 +275,14 @@ handle_incoming_dio(void)
   if(old_seqno != lrp_state.tree_seqno ||
       old_metric_type != lrp_state.metric_type ||
       old_metric_value != lrp_state.metric_value) {
-    PRINTF("Position has changed. Broadcating DIO message\n");
-    send_dio(NULL);
+    PRINTF("Position has changed. Will broadcast DIO message\n");
+    delayed_dio(NULL);
+  } else if(SEQNO_GREATER_THAN(lrp_state.tree_seqno, rm->tree_seqno) ||
+      (lrp_state.metric_type == rm->metric_type &&
+       lrp_state.metric_value + lrp_link_cost(&UIP_IP_BUF->srcipaddr, rm->metric_type) < rm->metric_value)) {
+    // Assume symmetric costs
+    PRINTF("Sender node may be interested by our DIO...\n");
+    send_dio(&UIP_IP_BUF->srcipaddr);
   }
 #endif
 #endif /* !LRP_IS_SINK */
@@ -344,11 +351,9 @@ handle_incoming_brk()
 #if LRP_IS_SINK
   // Send UPD on the reversed route and exits
   SEQNO_INCREASE(lrp_state.repair_seqno);
-#if SAVE_STATE
-  state_save();
-#endif /* SAVE_STATE */
+  lrp_state_save();
   send_upd(&rm->lost_node, &lrp_state.sink_addr, &UIP_IP_BUF->srcipaddr,
-           lrp_state.tree_seqno, lrp_state.repair_seqno, 0, 0);
+           lrp_state.tree_seqno, lrp_state.repair_seqno, lrp_state.metric_type, 0);
 
 #else /* LRP_IS_SINK */
 

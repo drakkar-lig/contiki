@@ -94,6 +94,7 @@ void send_rrep(
     const uint16_t source_seqno,
     const uint8_t metric_type,
     const uint16_t metric_value);
+void delayed_rrep();
 #endif /* !LRP_IS_SINK */
 
 /*-------------------------------------------------------------------*/
@@ -141,6 +142,7 @@ struct lrp_msg_dio {
 };
 #if LRP_IS_COORDINATOR
 void send_dio(uip_ipaddr_t* destination);
+void delayed_dio();
 #endif /* LRP_IS_COORDINATOR */
 
 /*-------------------------------------------------------------------*/

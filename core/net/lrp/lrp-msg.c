@@ -120,6 +120,25 @@ send_rrep(
   uip_udp_packet_send(lrp_udpconn, &rm, sizeof(struct lrp_msg_rrep));
   memset(&lrp_udpconn->ripaddr, 0, sizeof(lrp_udpconn->ripaddr));
 }
+
+/* Wrapper to use `send_rrep` as a ctimer callback function */
+static void
+call_send_rrep(void* nothing)
+{
+  SEQNO_INCREASE(lrp_state.node_seqno);
+  lrp_state_save();
+  send_rrep(&lrp_state.sink_addr, uip_ds6_defrt_choose(), &lrp_myipaddr, lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
+}
+
+/* Schedule a RREP message sending later. */
+void
+delayed_rrep()
+{
+  static struct ctimer delayed_rrep_timer = {0};
+  if (!ctimer_expired(&delayed_rrep_timer)) return;
+  ctimer_set(&delayed_rrep_timer, rand_wait_duration_before_broadcast(1000),
+      (void (*)(void*))&call_send_rrep, NULL);
+}
 #endif /* !LRP_IS_SINK */
 
 
@@ -162,6 +181,13 @@ send_dio(uip_ipaddr_t* destination)
 {
   struct lrp_msg_dio rm;
 
+#if !LRP_IS_SINK
+  if(uip_ds6_defrt_choose() == NULL) {
+    PRINTF("Skipping send_dio: no default route\n");
+    return;
+  }
+#endif /* !LRP_IS_SINK */
+
   PRINTF("Send DIO");
   if(destination == NULL) {
     PRINTF(" (broadcast)\n");
@@ -185,6 +211,16 @@ send_dio(uip_ipaddr_t* destination)
   }
   uip_udp_packet_send(lrp_udpconn, &rm, sizeof(struct lrp_msg_dio));
   memset(&lrp_udpconn->ripaddr, 0, sizeof(lrp_udpconn->ripaddr));
+}
+
+/* Schedule a DIO message broadcasting later. Useful to avoid collisions */
+void
+delayed_dio()
+{
+  static struct ctimer delayed_dio_timer = {0};
+  if (!ctimer_expired(&delayed_dio_timer)) return;
+  ctimer_set(&delayed_dio_timer, rand_wait_duration_before_broadcast(1000),
+      (void (*)(void*))&send_dio, NULL);
 }
 #endif /* LRP_IS_COORDINATOR */
 

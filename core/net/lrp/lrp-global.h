@@ -78,13 +78,25 @@ struct {
   seqno_t      node_seqno;
 } lrp_state;
 
+struct {
+  uint8_t len;
+  uip_ipaddr_t prefix;
+} lrp_local_prefix;
+
 void lrp_state_new(void);
+#if LRP_USE_CFS
 void lrp_state_save(void);
 void lrp_state_restore(void);
+#else /* LRP_USE_CFS */
+// Deactivate saving on the non-volatile memory
+#define lrp_state_save()
+#define lrp_state_restore() lrp_state_new()
+#endif /* LRP_USE_CFS */
 
 inline uint8_t lrp_ipaddr_is_empty(uip_ipaddr_t* addr);
 inline uint16_t lrp_link_cost(uip_ipaddr_t* link, uint8_t metric_type);
 inline uint8_t lrp_is_my_global_address(uip_ipaddr_t *addr);
 void lrp_nbr_add(uip_ipaddr_t* next_hop);
+uint32_t rand_wait_duration_before_broadcast(uint16_t scale);
 inline void lrp_rand_wait();
 #endif /* __LRP_GLOBAL_H__ */
