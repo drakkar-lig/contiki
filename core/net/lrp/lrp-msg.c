@@ -55,7 +55,7 @@
 /* Format and broadcast a RREQ type packet. */
 #if LRP_IS_COORDINATOR
 void
-send_rreq(
+lrp_send_rreq(
     const uip_ipaddr_t *searched_addr,
     const uip_ipaddr_t *source_addr,
     const uint16_t source_seqno,
@@ -89,7 +89,7 @@ send_rreq(
 /* Format and send a RREP type packet. */
 #if !LRP_IS_SINK
 void
-send_rrep(
+lrp_send_rrep(
     const uip_ipaddr_t *dest_addr,
     const uip_ipaddr_t *nexthop,
     const uip_ipaddr_t *source_addr,
@@ -121,18 +121,18 @@ send_rrep(
   memset(&lrp_udpconn->ripaddr, 0, sizeof(lrp_udpconn->ripaddr));
 }
 
-/* Wrapper to use `send_rrep` as a ctimer callback function */
+/* Wrapper to use `lrp_send_rrep` as a ctimer callback function */
 static void
 call_send_rrep(void* nothing)
 {
   SEQNO_INCREASE(lrp_state.node_seqno);
   lrp_state_save();
-  send_rrep(&lrp_state.sink_addr, uip_ds6_defrt_choose(), &lrp_myipaddr, lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
+  lrp_send_rrep(&lrp_state.sink_addr, uip_ds6_defrt_choose(), &lrp_myipaddr, lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
 }
 
 /* Schedule a RREP message sending later. */
 void
-delayed_rrep()
+lrp_delayed_rrep()
 {
   static struct ctimer delayed_rrep_timer = {0};
   if (!ctimer_expired(&delayed_rrep_timer)) return;
@@ -146,7 +146,7 @@ delayed_rrep()
 /* Format and send a RERR type to `nexthop`. */
 #if !LRP_IS_SINK
 void
-send_rerr(
+lrp_send_rerr(
     const uip_ipaddr_t *dest_addr,
     const uip_ipaddr_t *addr_in_error,
     const uip_ipaddr_t *nexthop)
@@ -177,13 +177,13 @@ send_rerr(
  * `destination` is NULL */
 #if LRP_IS_COORDINATOR
 void
-send_dio(uip_ipaddr_t* destination)
+lrp_send_dio(uip_ipaddr_t* destination)
 {
   struct lrp_msg_dio rm;
 
 #if !LRP_IS_SINK
   if(uip_ds6_defrt_choose() == NULL) {
-    PRINTF("Skipping send_dio: no default route\n");
+    PRINTF("Do not send DIO: no default route\n");
     return;
   }
 #endif /* !LRP_IS_SINK */
@@ -215,12 +215,12 @@ send_dio(uip_ipaddr_t* destination)
 
 /* Schedule a DIO message broadcasting later. Useful to avoid collisions */
 void
-delayed_dio()
+lrp_delayed_dio()
 {
   static struct ctimer delayed_dio_timer = {0};
   if (!ctimer_expired(&delayed_dio_timer)) return;
   ctimer_set(&delayed_dio_timer, rand_wait_duration_before_broadcast(1000),
-      (void (*)(void*))&send_dio, NULL);
+      (void (*)(void*))&lrp_send_dio, NULL);
 }
 #endif /* LRP_IS_COORDINATOR */
 
@@ -229,7 +229,7 @@ delayed_dio()
 /* Format and broadcast a DIS type packet. */
 #if !LRP_IS_SINK
 void
-send_dis()
+lrp_send_dis()
 {
   struct lrp_msg_dis rm;
 
@@ -251,7 +251,7 @@ send_dis()
  * nexthop, or broadcast it if `nexthop` is NULL */
 #if LRP_IS_COORDINATOR && !LRP_IS_SINK
 void
-send_brk(
+lrp_send_brk(
     const uip_ipaddr_t *lost_node,
     const uip_ipaddr_t *nexthop,
     const uint16_t node_seqno,
@@ -294,7 +294,7 @@ send_brk(
 /* Format and send a UPD type message. */
 #if LRP_IS_COORDINATOR
 void
-send_upd(
+lrp_send_upd(
     const uip_ipaddr_t *lost_node,
     const uip_ipaddr_t *sink_addr,
     const uip_ipaddr_t *nexthop,
@@ -330,30 +330,30 @@ send_upd(
 /*---------------------------------------------------------------------------*/
 /* Handle an incoming LRP message. */
 void
-handle_incoming_msg(void)
+lrp_handle_incoming_msg(void)
 {
   uint8_t type = ((struct lrp_msg *)uip_appdata)->type >> 4;
   switch(type) {
     case LRP_RREQ_TYPE:
-      handle_incoming_rreq();
+      lrp_handle_incoming_rreq();
       break;
     case LRP_RREP_TYPE:
-      handle_incoming_rrep();
+      lrp_handle_incoming_rrep();
       break;
     case LRP_RERR_TYPE:
-      handle_incoming_rerr();
+      lrp_handle_incoming_rerr();
       break;
     case LRP_DIO_TYPE:
-      handle_incoming_dio();
+      lrp_handle_incoming_dio();
       break;
     case LRP_DIS_TYPE:
-      handle_incoming_dis();
+      lrp_handle_incoming_dis();
       break;
     case LRP_BRK_TYPE:
-      handle_incoming_brk();
+      lrp_handle_incoming_brk();
       break;
     case LRP_UPD_TYPE:
-      handle_incoming_upd();
+      lrp_handle_incoming_upd();
       break;
     default:
       PRINTF("Unknown message type\n");

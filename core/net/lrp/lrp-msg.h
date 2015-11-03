@@ -50,7 +50,7 @@ struct lrp_msg {
 };
 
 /*---------------------------------------------------------------------------*/
-void handle_incoming_msg(void);
+void lrp_handle_incoming_msg(void);
 
 
 /*-------------------------------------------------------------------*/
@@ -66,7 +66,7 @@ struct lrp_msg_rreq {
   uint16_t metric_value;
 };
 #if LRP_IS_COORDINATOR
-void send_rreq(
+void lrp_send_rreq(
     const uip_ipaddr_t *dest,
     const uip_ipaddr_t *orig,
     const uint16_t node_seqno,
@@ -87,14 +87,14 @@ struct lrp_msg_rrep {
   uint16_t metric_value;
 };
 #if !LRP_IS_SINK
-void send_rrep(
+void lrp_send_rrep(
     const uip_ipaddr_t *dest,
     const uip_ipaddr_t *nexthop,
     const uip_ipaddr_t *source,
     const uint16_t source_seqno,
     const uint8_t metric_type,
     const uint16_t metric_value);
-void delayed_rrep();
+void lrp_delayed_rrep();
 #endif /* !LRP_IS_SINK */
 
 /*-------------------------------------------------------------------*/
@@ -119,7 +119,7 @@ struct lrp_msg_rerr {
   uip_ipaddr_t addr_in_error;
 };
 #if !LRP_IS_SINK
-void send_rerr(
+void lrp_send_rerr(
     const uip_ipaddr_t *dest_addr,
     const uip_ipaddr_t *addr_in_error,
     const uip_ipaddr_t *nexthop);
@@ -127,7 +127,7 @@ void send_rerr(
 
 /*---------------------------------------------------------------------------*/
 /* Messages non available on LoadNG */
-#if USE_DIO
+#if LRP_USE_DIO
 
 /*-------------------------------------------------------------------*/
 /* LRP DIO message */
@@ -141,8 +141,8 @@ struct lrp_msg_dio {
   uip_ipaddr_t sink_addr;
 };
 #if LRP_IS_COORDINATOR
-void send_dio(uip_ipaddr_t* destination);
-void delayed_dio();
+void lrp_send_dio(uip_ipaddr_t* destination);
+void lrp_delayed_dio();
 #endif /* LRP_IS_COORDINATOR */
 
 /*-------------------------------------------------------------------*/
@@ -153,7 +153,7 @@ struct lrp_msg_dis {
   uint8_t addr_len;
 };
 #if !LRP_IS_SINK
-void send_dis(void);
+void lrp_send_dis(void);
 #endif /* !LRP_IS_SINK */
 
 /*-------------------------------------------------------------------*/
@@ -168,7 +168,7 @@ struct lrp_msg_brk {
   uip_ipaddr_t lost_node;
 };
 #if LRP_IS_COORDINATOR && !LRP_IS_SINK
-void send_brk(
+void lrp_send_brk(
     const uip_ipaddr_t *initial_sender,
     const uip_ipaddr_t *nexthop,
     const uint16_t node_seqno,
@@ -190,7 +190,7 @@ struct lrp_msg_upd {
   uip_ipaddr_t lost_node;
 };
 #if LRP_IS_COORDINATOR
-void send_upd(
+void lrp_send_upd(
     const uip_ipaddr_t *lost_node,
     const uip_ipaddr_t *sink_addr,
     const uip_ipaddr_t *nexthop,
@@ -200,6 +200,6 @@ void send_upd(
     const uint16_t metric_value);
 #endif /* LRP_IS_COORDINATOR */
 
-#endif /* USE_DIO */
+#endif /* LRP_USE_DIO */
 
 #endif /* __LRP_MSG_H__ */

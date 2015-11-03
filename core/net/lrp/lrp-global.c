@@ -50,7 +50,7 @@
 #include <string.h>
 
 /*---------------------------------------------------------------------------*/
-/* State saving managment. If macro USE_CFS is set to true, the variable
+/* State saving managment. If macro LRP_USE_CFS is set to true, the variable
  * `lrp_state` content is stored into the file system to save its value beyond
  * reboots. */
 void
@@ -113,7 +113,7 @@ lrp_state_restore(void)
   }
 
   PRINTF("Creating new state\n");
-  state_new();
+  lrp_state_new();
 }
 #endif /* LRP_USE_CFS */
 
@@ -163,6 +163,16 @@ lrp_is_my_global_address(uip_ipaddr_t *addr)
   }
   return 0;
 }
+
+/*---------------------------------------------------------------------------*/
+#if LRP_IS_SINK
+inline uint8_t
+lrp_addr_match_local_prefix(uip_ipaddr_t *host)
+{
+  return uip_ipaddr_prefixcmp(&lrp_local_prefix.prefix, host,
+      lrp_local_prefix.len);
+}
+#endif /* LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
 /* Signal to neighbor table a new neighbor. If node cannot send NA

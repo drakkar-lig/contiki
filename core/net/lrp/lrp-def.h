@@ -49,23 +49,21 @@
 #define LRP_NET_TRAVERSAL_TIME 10 * CLOCK_SECOND
 
 /* Frequency of DIO broadcasting (ticks) */
-#define SEND_DIO_INTERVAL      480 * CLOCK_SECOND
+#define LRP_SEND_DIO_INTERVAL  480 * CLOCK_SECOND
 
-/* Maximum time between two global repairs (ticks, on 32 bits) */
-#define MAX_DODAG_LIFETIME     1800 * CLOCK_SECOND
+/* Maximum time between two global repairs (ticks, on 32 bits). 0 to perform
+ * no automatic global repair */
+#define LRP_MAX_DODAG_LIFETIME 1800 * CLOCK_SECOND
 
 /* Send DIO unicast to a DIS emitter, instead of broadcast */
-#define SEND_DIO_UNICAST       1
-
-/* Do we use DIS, or not at all ? */
-#define SEND_DIS               1
+#define LRP_SEND_DIO_UNICAST   1
 
 /* Number of times a DIS has to be sent, when starting a LR, before sending
  * BRK. 0 to not send any DIS, and start with BRK */
 #define LRP_LR_SEND_DIS_NB     2
 
 /* Exponential parameter for DIS sending. @see retransmit_dis_brk */
-#define DIS_EXP_PARAM          0.90
+#define LRP_DIS_EXP_PARAM      0.90
 
 /* Re-send RREQ n times if no RREP recieved. 0 implies don't retry at all */
 #define LRP_RREQ_RETRIES       0
@@ -74,22 +72,22 @@
 #define LRP_RREQ_MININTERVAL   0
 
 /* RREQ retransmission interval (ticks) */
-#define RETRY_RREQ_INTERVAL    5 * CLOCK_SECOND / 1000
+#define LRP_RETRY_RREQ_INTERVAL 5 * CLOCK_SECOND / 1000
 
 /* Spontaneously send a RREP message, when selecting a new successor */
 #define LRP_SEND_SPONTANEOUS_RREP 1
 
 /* Ack routes replies */
-#define LRP_RREP_ACK           0
+#define LRP_RREP_ACK           0 // TODO Manage RREP acks
 
 /* Default route lifetime (ticks) */
 #define LRP_DEFRT_LIFETIME     0
 
-/* Route retention interval (ticks). 0 for infinite interval */
-#define LRP_R_HOLD_TIME        0
+/* Route retention interval (ticks). 0 to never timeout a host route */
+#define LRP_ROUTE_HOLD_TIME    0
 
 /* Route validity check interval (ticks) */
-#define RV_CHECK_INTERVAL      10 * CLOCK_SECOND
+#define LRP_ROUTE_VALIDITY_CHECK_INTERVAL 10 * CLOCK_SECOND
 
 /* Threshold below which a link is considered as weak */
 #define LRP_RSSI_THRESHOLD    -65 // Ana measured value
@@ -101,42 +99,30 @@
  * when the number of consecutive noacked messages reach this constant. */
 #define LRP_MAX_CONSECUTIVE_NOACKED_MESSAGES  5
 
-#define LRP_ADDR_LEN_IPV6       15
+/* Use contiki filesystem to save state, or do not save state */
+#define LRP_USE_CFS            0
+
+#define LRP_ADDR_LEN_IPV6      15
 
 /* Is a sink node */
-#ifdef LRP_CONF_IS_SINK
-#define LRP_IS_SINK            LRP_CONF_IS_SINK
-#else
+#ifndef LRP_IS_SINK
 #define LRP_IS_SINK            1
 #endif
 
 /* Is a coordinator node */
-#ifdef LRP_CONF_IS_COORDINATOR
-#define LRP_IS_COORDINATOR     LRP_CONF_IS_COORDINATOR
-#else
+#ifndef LRP_IS_COORDINATOR
 #define LRP_IS_COORDINATOR     1
 #endif
 
 /* Use DIO, or keep a LOADng's standard comportment */
-#ifdef LRP_CONF_USE_DIO
-#define USE_DIO                LRP_CONF_USE_DIO
-#else
-#define USE_DIO                1
-#endif
-
-/* Save seqno into flash, to be able to restore it if node reboots. */
-#if !LRP_IS_COORDINATOR
-// Non-coordinator nodes does not need SAVE_STATE at all
-#define SAVE_STATE             0
-#else
-#define SAVE_STATE             0
+#ifndef LRP_USE_DIO
+#define LRP_USE_DIO            1
 #endif
 
 #if LRP_IS_SINK && !LRP_IS_COORDINATOR
 #error The node is sink but not coordinator, which is particularly \
   problematic (and stupid). Please check again your settings.
 #endif
-
 
 /* Define metric types */
 #define LRP_METRIC_HOP_COUNT 1

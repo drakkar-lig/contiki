@@ -46,6 +46,7 @@
 #include "net/lrp/lrp.h"
 #include "net/lrp/lrp-def.h"
 #include "net/lrp/lrp-ct.h"
+#include "net/lrp/lrp-routes.h"
 #include "net/lrp/lrp-global.h"
 #include "net/lrp/lrp-msg.h"
 #include "contiki.h"
@@ -77,89 +78,6 @@ NBR_TABLE(lrp_next_hop_t, lrp_next_hops);
 
 /*---------------------------------------------------------------------------*/
 PROCESS(lrp_process, "LRP process");
-
-/*---------------------------------------------------------------------------*/
-/* Implementation of route validity time check and purge */
-#if LRP_R_HOLD_TIME
-static void
-lrp_check_expired_route(uint16_t interval)
-{
-  uip_ds6_route_t *r;
-
-  for(r = uip_ds6_route_head();
-  r != NULL;
-  r = uip_ds6_route_next(r)) {
-
-    if(r->state.valid_time <= interval) {
-      uip_ds6_route_rm(r);
-    } else {
-      r->state.valid_time -= interval;
-    }
-  }
-}
-#endif /* LRP_R_HOLD_TIME */
-
-
-/*---------------------------------------------------------------------------*/
-/* Implementation of Route Request Cache for LRP_RREQ_RETRIES and
- * LRP_NET_TRAVERSAL_TIME */
-#if LRP_RREQ_RETRIES
-#define RRCACHE 2 /* Size of the cache */
-
-static struct {
-  uip_ipaddr_t dest;
-  uint16_t expire_time;
-  uint8_t request_time;
-} rrcache[RRCACHE];
-
-static int
-rrc_lookup(const uip_ipaddr_t *dest)
-{
-  unsigned n = (((uint8_t *)dest)[0] + ((uint8_t *)dest)[15]) % RRCACHE;
-  return uip_ipaddr_cmp(&rrcache[n].dest, dest);
-}
-
-static void
-rrc_remove(const uip_ipaddr_t *dest)
-{
-  unsigned n = (((uint8_t *)dest)[0] + ((uint8_t *)dest)[15]) % RRCACHE;
-  if(uip_ipaddr_cmp(&rrcache[n].dest, dest)) {
-     memset(&rrcache[n].dest, 0, sizeof(&rrcache[n].dest));
-     rrcache[n].expire_time = 0;
-     rrcache[n].request_time = 0;
-  }
-}
-
-static void
-rrc_add(const uip_ipaddr_t *dest)
-{
-  unsigned n = (((uint8_t *)dest)[0] + ((uint8_t *)dest)[15]) % RRCACHE;
-  rrcache[n].expire_time = 2 * LRP_NET_TRAVERSAL_TIME;
-  rrcache[n].request_time = 1;
-  uip_ipaddr_copy(&rrcache[n].dest, dest);
-}
-
-/* Check the expired RREQ. `interval` is the time interval between last check
- * and now (expressed in ticks). */
-static void
-rrc_check_expired_rreq(const uint16_t interval)
-{
-  int i;
-  for(i = 0; i < RRCACHE; ++i) {
-    rrcache[i].expire_time -= interval;
-    if(rrcache[i].expire_time <= 0) {
-      lrp_request_route_to(&rrcache[i].dest);
-      if(rrcache[i].request_time == LRP_RREQ_RETRIES) {
-         rrc_remove(&rrcache[i].dest);
-      } else {
-        rrcache[i].request_time++;
-        rrcache[i].expire_time = 2 * LRP_NET_TRAVERSAL_TIME;
-      }
-    }
-  }
-}
-#endif /* LRP_RREQ_RETRIES */
-
 
 /*---------------------------------------------------------------------------*/
 static void
@@ -276,146 +194,6 @@ lrp_link_next_hop_callback(const rimeaddr_t *addr, int status, int mutx)
 
 
 /*---------------------------------------------------------------------------*/
-/* Initiate a global repair. Launch it once at start; then, it will be
- * automatically called again aftr MAX_DODAG_LIFETIME time. Or, it may be
- * called to force the global repair. */
-#if LRP_IS_SINK
-static void
-global_repair()
-{
-  static uint32_t gr_32bits_timer = 0;
-  static struct ctimer gr_timer = {0};
-
-  if(!ctimer_expired(&gr_timer) || gr_32bits_timer == 0) {
-    // GR has been forced or has expired
-    PRINTF("Initiating global repair\n");
-    lrp_state.tree_seqno = SEQNO_INCREASE(lrp_state.repair_seqno);
-#if SAVE_STATE
-    state_save();
-#endif /* SAVE_STATE */
-    send_dio(NULL);
-    gr_32bits_timer = MAX_DODAG_LIFETIME;
-  }
-
-  // Reinitialize the 32bits timer
-  if(gr_32bits_timer > 0xFFFF) {
-    ctimer_set(&gr_timer, 0xFFFF, &global_repair, NULL);
-    gr_32bits_timer -= 0xFFFF;
-  } else {
-    ctimer_set(&gr_timer, (uint16_t)gr_32bits_timer, &global_repair, NULL);
-    gr_32bits_timer = 0;
-  }
-}
-#endif /* LRP_IS_sink */
-
-/*---------------------------------------------------------------------------*/
-/* Format and send a RACK to `nexthop`. */
-#if LRP_RREP_ACK && LRP_IS_COORDINATOR
-static void
-send_rack(const uip_ipaddr_t *src, const uip_ipaddr_t *nexthop,
-    const uint16_t node_seqno)
-{
-  char buf[MAX_PAYLOAD_LEN];
-  struct lrp_msg_rack *rm = (struct lrp_msg_rack *)buf;
-
-  PRINTF("Send RACK -> ");
-  PRINT6ADDR(nexthop);
-  PRINTF(" node_seqno=%u", node_seqno);
-  PRINTF(" src=");
-  PRINT6ADDR(src);
-  PRINTF("\n");
-
-  rm->type = LRP_RACK_TYPE;
-  rm->type = (rm->type << 4) | LRP_RSVD1;
-  rm->addr_len = LRP_RSVD2;
-  rm->addr_len = (rm->addr_len << 4) | LRP_ADDR_LEN_IPV6;
-  uip_ipaddr_copy(&rm->src_addr, src);
-  rm->node_seqno = uip_htons(node_seqno);
-
-  uip_ipaddr_copy(&lrp_udpconn->ripaddr, nexthop);
-  uip_udp_packet_send(lrp_udpconn, buf, sizeof(struct lrp_msg_rack));
-  memset(&lrp_udpconn->ripaddr, 0, sizeof(lrp_udpconn->ripaddr));
-}
-#endif /* LRP_RREP_ACK && LRP_IS_COORDINATOR */
-
-
-/*---------------------------------------------------------------------------*/
-#if LRP_IS_SINK
-static uint8_t
-lrp_addr_matches_local_prefix(uip_ipaddr_t *host)
-{
-  return uip_ipaddr_prefixcmp(&lrp_local_prefix.prefix, host, lrp_local_prefix.len);
-}
-#endif /* LRP_IS_SINK */
-
-/*---------------------------------------------------------------------------*/
-#if LRP_IS_SINK || !USE_DIO
-static void
-lrp_request_route_to(uip_ipaddr_t *host)
-{
-#if LRP_RREQ_MININTERVAL
-  static struct timer rreq_ratelimit_timer = {0};
-#endif
-
-  PRINTF("Request a route towards ");
-  PRINT6ADDR(host);
-  PRINTF("\n");
-
-  if(!lrp_addr_matches_local_prefix(host)) {
-    // Address cannot be on the managed network: address does not match.
-    PRINTF("Skipping: No RREQ for a non-local address\n");
-    return;
-  }
-
-#if LRP_RREQ_MININTERVAL
-  if(!timer_expired(&rreq_ratelimit_timer)) {
-     PRINTF("Skipping: RREQ exceeds rate limit\n");
-     return;
-  }
-#endif /* LRP_RREQ_MININTERVAL */
-
-  lrp_rand_wait();
-  SEQNO_INCREASE(lrp_state.node_seqno);
-#if SAVE_STATE
-  state_save();
-#endif
-  send_rreq(host, &lrp_myipaddr, lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
-#if LRP_RREQ_RETRIES
-  if(!rrc_lookup(&rreq_addr)) {
-    rrc_add(&rreq_addr);
-  }
-#endif /* LRP_RREQ_RETRIES */
-
-#if LRP_RREQ_MININTERVAL
-  timer_set(&rreq_ratelimit_timer, LRP_RREQ_MININTERVAL);
-#endif /* LRP_RREQ_MININTERVAL */
-}
-#endif /* LRP_IS_SINK */
-
-/*---------------------------------------------------------------------------*/
-#if LRP_IS_COORDINATOR && !LRP_IS_SINK
-static void
-lrp_routing_error(uip_ipaddr_t* source, uip_ipaddr_t* destination,
-    uip_lladdr_t* previoushop)
-{
-  uip_ipaddr_t *prevhop, ipaddr;
-  prevhop = uip_ds6_nbr_ipaddr_from_lladdr(previoushop);
-  if(prevhop == NULL) {
-    // Neighbor is unknown. Calculating its fe80:: ipaddr (it must listen it
-    // even if it does not really use it).
-    uip_create_linklocal_prefix(&ipaddr);
-    uip_ds6_set_addr_iid(&ipaddr, previoushop);
-    uip_ds6_nbr_add(&ipaddr, previoushop, 0, NBR_REACHABLE);
-    prevhop = &ipaddr;
-  }
-  if(prevhop != NULL) {
-    send_rerr(source, destination, prevhop);
-  }
-}
-#endif /* LRP_IS_COORDINATOR && !LRP_IS_SINK */
-
-
-/*---------------------------------------------------------------------------*/
 void
 lrp_set_local_prefix(uip_ipaddr_t *prefix, uint8_t len)
 {
@@ -432,7 +210,7 @@ lrp_select_nexthop_for(uip_ipaddr_t* source, uip_ipaddr_t* destination,
   uip_ipaddr_t *nexthop;
 
   route_to_dest = uip_ds6_route_lookup(destination);
-#if USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK
+#if LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK
   // Do not forward through default route a packet that comes from higher
   if(!lrp_is_my_global_address(source) &&
       !lrp_is_predecessor(uip_ds6_nbr_ipaddr_from_lladdr(previoushop))) {
@@ -447,7 +225,7 @@ lrp_select_nexthop_for(uip_ipaddr_t* source, uip_ipaddr_t* destination,
       return NULL;
     }
   }
-#endif /* USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK */
+#endif /* LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK */
 
   if(route_to_dest == NULL) {
     // No host route
@@ -523,6 +301,7 @@ PROCESS_THREAD(lrp_process, ev, data)
   uip_create_linklocal_lln_routers_mcast(&mcastipaddr);
   uip_ds6_maddr_add(&mcastipaddr);
 
+  lrp_state_restore();
   lrp_udpconn = udp_new(NULL, UIP_HTONS(LRP_UDPPORT), NULL);
   udp_bind(lrp_udpconn, UIP_HTONS(LRP_UDPPORT));
   lrp_udpconn->ttl = 1;
@@ -534,24 +313,15 @@ PROCESS_THREAD(lrp_process, ev, data)
   nbr_table_register(lrp_next_hops, NULL);
 #endif /* !UIP_ND6_SEND_NA */
 
-#if SAVE_STATE
-  lrp_state_restore();
-#else
-  lrp_state_new();
-#endif
+#if LRP_ROUTE_HOLD_TIME
+  // Activate route expiration checker
+  lrp_check_expired_route();
+#endif /* LRP_ROUTE_HOLD_TIME */
 
-#if LRP_RREQ_RETRIES
-  PRINTF("Set RREQ timer (%lums)\n",
-      RETRY_RREQ_INTERVAL * 1000 / CLOCK_SECOND);
-  etimer_set(&dfet, RETRY_RREQ_INTERVAL);
-#endif
-
-#if LRP_R_HOLD_TIME
-  // Routes validity
-  PRINTF("Set route validity timer (%ums)\n",
-      RV_CHECK_INTERVAL * 1000 / CLOCK_SECOND);
-  etimer_set(&rv, RV_CHECK_INTERVAL);
-#endif
+#if LRP_RREQ_RETRIES && (LRP_IS_SINK || !LRP_USE_DIO)
+  // Activate RREQ retransmission
+  rrc_check_expired_rreq();
+#endif /* LRP_RREQ_RETRIES && (LRP_IS_SINK || !LRP_USE_DIO) */
 
 #if !LRP_IS_SINK
   // Start sending DIS to find nodes just around
@@ -567,25 +337,9 @@ PROCESS_THREAD(lrp_process, ev, data)
 
     if(ev == tcpip_event) {
       if(uip_newdata()) {
-        handle_incoming_msg();
+        lrp_handle_incoming_msg();
       }
     }
-
-#if LRP_RREQ_RETRIES
-    // Retry pending RREQs
-    if(etimer_expired(&dfet)) {
-      rrc_check_expired_rreq(RETRY_RREQ_INTERVAL);
-      etimer_restart(&dfet);
-    }
-#endif
-
-#if LRP_R_HOLD_TIME
-    // Mark old routes as expired
-    if(etimer_expired(&rv)) {
-      lrp_check_expired_route(RV_CHECK_INTERVAL);
-      etimer_restart(&rv);
-    }
-#endif /* LRP_R_HOLD_TIME */
   }
   PROCESS_END();
 }

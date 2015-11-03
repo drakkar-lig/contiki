@@ -43,6 +43,7 @@
 
 #include "net/lrp/lrp.h"
 #include "net/lrp/lrp-def.h"
+#include "net/lrp/lrp-ct.h"
 #include "net/lrp/lrp-global.h"
 #include "net/lrp/lrp-msg.h"
 #include "net/uip-debug.h"
@@ -57,14 +58,14 @@
 #if !LRP_IS_SINK
 static struct ctimer retransmit_timer = {0};
 static uint16_t dis_brk_nb_sent = 0;
-static uint16_t exp_residuum = SEND_DIO_INTERVAL;
+static uint16_t exp_residuum = LRP_SEND_DIO_INTERVAL;
 #endif /* !LRP_IS_SINK */
 
 
 /*---------------------------------------------------------------------------*/
 /* Implementation of Broken Routes Cache to avoid multiple forwarding of BRK
  * messages and to be able to retransmit UPD on the reverted path */
-#if USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK
+#if LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK
 #define BRCACHESIZE 2
 
 static struct {
@@ -114,7 +115,7 @@ brc_add(const uip_ipaddr_t *brk_sender, const uint16_t seqno,
     return (0==1);
   }
 }
-#endif /* USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK */
+#endif /* LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK */
 
 
 /*---------------------------------------------------------------------------*/
@@ -166,7 +167,7 @@ offer_default_route(const uip_ipaddr_t* sink_addr, uip_ipaddr_t* next_hop,
       defrt = uip_ds6_defrt_add(next_hop, LRP_DEFRT_LIFETIME);
 #if LRP_SEND_SPONTANEOUS_RREP
       PRINTF("Will send spontaneous RREP to new successor\n");
-      delayed_rrep();
+      lrp_delayed_rrep();
 #endif /* LRP_SEND_SPONTANEOUS_RREP */
     } else if(defrt != NULL) {
       // We just need to refresh the route
@@ -189,7 +190,7 @@ stop_reconnect_callback()
 {
     ctimer_stop(&retransmit_timer);
     dis_brk_nb_sent = 0;
-    exp_residuum = SEND_DIO_INTERVAL;
+    exp_residuum = LRP_SEND_DIO_INTERVAL;
 }
 
 /* Emit messages needed when the node is disconnected to the LRP tree
@@ -216,29 +217,29 @@ reconnect_callback()
   // Send DIS/BRK message.
 #if !LRP_IS_COORDINATOR
   // Is a leaf: only use DR.
-  send_dis();
+  lrp_send_dis();
 #else /* !LRP_IS_COORDINATOR */
   // Not a leaf. Should one use LR or DR?
   if(dis_brk_nb_sent < LRP_LR_SEND_DIS_NB || lrp_ipaddr_is_empty(&lrp_state.sink_addr)) {
     // Use DR
-    send_dis();
+    lrp_send_dis();
   } else {
     // Use LR
     SEQNO_INCREASE(lrp_state.node_seqno);
     lrp_state_save();
-    send_brk(&lrp_myipaddr, NULL, lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
+    lrp_send_brk(&lrp_myipaddr, NULL, lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
   }
 #endif /* !LRP_IS_COORDINATOR */
 
   // Update state
   dis_brk_nb_sent++;
-  exp_residuum *= DIS_EXP_PARAM;
+  exp_residuum *= LRP_DIS_EXP_PARAM;
 
   // Configure the callback timer
-  ctimer_set(&retransmit_timer, SEND_DIO_INTERVAL - exp_residuum,
+  ctimer_set(&retransmit_timer, LRP_SEND_DIO_INTERVAL - exp_residuum,
       (void (*)(void*))&reconnect_callback, NULL);
   PRINTF("DIS-BRK timer reset (%lums)\n",
-      (SEND_DIO_INTERVAL - exp_residuum) * 1000 / CLOCK_SECOND);
+      (LRP_SEND_DIO_INTERVAL - exp_residuum) * 1000 / CLOCK_SECOND);
 }
 #endif /* !LRP_IS_SINK */
 
@@ -246,7 +247,7 @@ reconnect_callback()
 /*---------------------------------------------------------------------------*/
 /* Handle an incoming DIO type message. */
 void
-handle_incoming_dio(void)
+lrp_handle_incoming_dio(void)
 {
 #if !LRP_IS_SINK
   struct lrp_msg_dio *rm = (struct lrp_msg_dio *)uip_appdata;
@@ -276,13 +277,13 @@ handle_incoming_dio(void)
       old_metric_type != lrp_state.metric_type ||
       old_metric_value != lrp_state.metric_value) {
     PRINTF("Position has changed. Will broadcast DIO message\n");
-    delayed_dio(NULL);
+    lrp_delayed_dio(NULL);
   } else if(SEQNO_GREATER_THAN(lrp_state.tree_seqno, rm->tree_seqno) ||
       (lrp_state.metric_type == rm->metric_type &&
        lrp_state.metric_value + lrp_link_cost(&UIP_IP_BUF->srcipaddr, rm->metric_type) < rm->metric_value)) {
     // Assume symmetric costs
     PRINTF("Sender node may be interested by our DIO...\n");
-    send_dio(&UIP_IP_BUF->srcipaddr);
+    lrp_send_dio(&UIP_IP_BUF->srcipaddr);
   }
 #endif
 #endif /* !LRP_IS_SINK */
@@ -292,7 +293,7 @@ handle_incoming_dio(void)
 /*---------------------------------------------------------------------------*/
 /* Handle an incoming DIS type message. */
 void
-handle_incoming_dis(void)
+lrp_handle_incoming_dis(void)
 {
 #if LRP_IS_COORDINATOR
   PRINTF("Received DIS\n");
@@ -309,12 +310,12 @@ handle_incoming_dis(void)
   }
 #endif
   lrp_rand_wait();
-#if SEND_DIO_UNICAST
+#if LRP_SEND_DIO_UNICAST
   lrp_nbr_add(&UIP_IP_BUF->srcipaddr);
-  send_dio(&UIP_IP_BUF->srcipaddr);
-#else
-  send_dio(NULL);
-#endif
+  lrp_send_dio(&UIP_IP_BUF->srcipaddr);
+#else /* LRP_SEND_DIO_UNICAST */
+  lrp_send_dio(NULL);
+#endif /* LRP_SEND_DIO_UNICAST */
 #endif /* LRP_IS_COORDINATOR */
 }
 
@@ -322,9 +323,9 @@ handle_incoming_dis(void)
 /*---------------------------------------------------------------------------*/
 /* Handle an incoming BRK type message. */
 void
-handle_incoming_brk()
+lrp_handle_incoming_brk()
 {
-#if USE_DIO && LRP_IS_COORDINATOR
+#if LRP_USE_DIO && LRP_IS_COORDINATOR
   struct lrp_msg_brk *rm = (struct lrp_msg_brk *)uip_appdata;
 #if !LRP_IS_SINK
   uip_ds6_defrt_t* defrt;
@@ -352,7 +353,7 @@ handle_incoming_brk()
   // Send UPD on the reversed route and exits
   SEQNO_INCREASE(lrp_state.repair_seqno);
   lrp_state_save();
-  send_upd(&rm->lost_node, &lrp_state.sink_addr, &UIP_IP_BUF->srcipaddr,
+  lrp_send_upd(&rm->lost_node, &lrp_state.sink_addr, &UIP_IP_BUF->srcipaddr,
            lrp_state.tree_seqno, lrp_state.repair_seqno, lrp_state.metric_type, 0);
 
 #else /* LRP_IS_SINK */
@@ -371,7 +372,7 @@ handle_incoming_brk()
     // BRK comes from our default next hop. Broadcasting
     brc_force_add(&rm->lost_node, rm->node_seqno, &UIP_IP_BUF->srcipaddr);
     lrp_rand_wait();
-    send_brk(&rm->lost_node, NULL, rm->node_seqno, rm->metric_type,
+    lrp_send_brk(&rm->lost_node, NULL, rm->node_seqno, rm->metric_type,
         rm->metric_value + lc);
   } else {
     // BRK comes from a neighbor broken branch. Forwarding BRK to sink
@@ -379,20 +380,20 @@ handle_incoming_brk()
       PRINTF("Skipping: BRK is older than previous one\n");
       return;
     }
-    send_brk(&rm->lost_node, uip_ds6_defrt_choose(), rm->node_seqno,
+    lrp_send_brk(&rm->lost_node, uip_ds6_defrt_choose(), rm->node_seqno,
         rm->metric_type, rm->metric_value + lc);
   }
 #endif /* LRP_IS_SINK */
-#endif /* USE_DIO && LRP_IS_COORDINATOR */
+#endif /* LRP_USE_DIO && LRP_IS_COORDINATOR */
 }
 
 
 /*---------------------------------------------------------------------------*/
 /* Handle an incoming UPD type message. */
 void
-handle_incoming_upd()
+lrp_handle_incoming_upd()
 {
-#if USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK
+#if LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK
   struct lrp_msg_upd *rm = (struct lrp_msg_upd *)uip_appdata;
   uip_ipaddr_t *nexthop;
   uint16_t lc;
@@ -441,9 +442,9 @@ handle_incoming_upd()
     return;
   }
 
-  send_upd(&rm->lost_node, &rm->sink_addr, nexthop, rm->tree_seqno,
+  lrp_send_upd(&rm->lost_node, &rm->sink_addr, nexthop, rm->tree_seqno,
       rm->repair_seqno, rm->metric_type, rm->metric_value + lc);
-#endif /* USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK */
+#endif /* LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK */
 }
 
 
@@ -461,5 +462,44 @@ void lrp_no_more_default_route(void)
   reconnect_callback();
 }
 #endif /* !LRP_IS_SINK */
+
+/*---------------------------------------------------------------------------*/
+/* Initiate a global repair. Launch it once at start; then, it will be
+ * automatically called again aftr LRP_MAX_DODAG_LIFETIME time. Or, it may be
+ * called to force the global repair. */
+#if LRP_IS_SINK
+void
+global_repair()
+{
+#if !LRP_MAX_DODAG_LIFETIME
+  lrp_state.tree_seqno = SEQNO_INCREASE(lrp_state.repair_seqno);
+  lrp_state_save();
+  lrp_send_dio(NULL);
+#else /* !LRP_MAX_DODAG_LIFETIME */
+  static uint32_t gr_32bits_timer = 0;
+  static struct ctimer gr_timer = {0};
+
+  if(!ctimer_expired(&gr_timer) || gr_32bits_timer == 0) {
+    // GR has been forced or has expired
+    PRINTF("Initiating global repair\n");
+    lrp_state.tree_seqno = SEQNO_INCREASE(lrp_state.repair_seqno);
+    lrp_state_save();
+    lrp_send_dio(NULL);
+    gr_32bits_timer = LRP_MAX_DODAG_LIFETIME;
+  }
+
+  // Reinitialize the 32bits timer
+  if(gr_32bits_timer > 0xFFFF) {
+    ctimer_set(&gr_timer, 0xFFFF,
+        (void (*)(void*))&global_repair, NULL);
+    gr_32bits_timer -= 0xFFFF;
+  } else {
+    ctimer_set(&gr_timer, (uint16_t)gr_32bits_timer,
+        (void (*)(void*))&global_repair, NULL);
+    gr_32bits_timer = 0;
+  }
+#endif /* !LRP_MAX_DODAG_LIFETIME */
+}
+#endif /* LRP_IS_SINK */
 
 #endif /* WITH_IPV6_LRP */

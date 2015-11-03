@@ -40,8 +40,23 @@
 #ifndef __LRP_ROUTES_H__
 #define __LRP_ROUTES_H__
 
-void handle_incoming_rreq(void);
-void handle_incoming_rrep(void);
-void handle_incoming_rerr(void);
+void lrp_handle_incoming_rreq(void);
+void lrp_handle_incoming_rrep(void);
+void lrp_handle_incoming_rerr(void);
+
+#if LRP_RREQ_RETRIES && (LRP_IS_SINK || !LRP_USE_DIO)
+void rrc_check_expired_rreq(void);
+#endif /* LRP_RREQ_RETRIES && (LRP_IS_SINK || !LRP_USE_DIO) */
+
+#if LRP_ROUTE_HOLD_TIME
+void lrp_check_expired_route(void);
+#endif /* LRP_ROUTE_HOLD_TIME */
+
+#if LRP_IS_COORDINATOR && !LRP_IS_SINK
+void lrp_routing_error(uip_ipaddr_t* source, uip_ipaddr_t* destination,
+    uip_lladdr_t* previoushop);
+#endif /* LRP_IS_COORDINATOR && !LRP_IS_SINK */
+
+void lrp_request_route_to(uip_ipaddr_t *host);
 
 #endif /* __LRP_ROUTES_H__ */

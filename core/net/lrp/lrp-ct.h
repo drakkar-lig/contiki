@@ -40,15 +40,20 @@
 #ifndef __LRP_CT_H__
 #define __LRP_CT_H__
 
-// Inform maintenance algorithm that successor is unreachable.
+/* Handle incoming tree maintenance messages */
+void lrp_handle_incoming_dio(void);
+void lrp_handle_incoming_dis(void);
+void lrp_handle_incoming_brk(void);
+void lrp_handle_incoming_upd(void);
+
+/* Inform maintenance algorithm that successor is unreachable. */
 #if !LRP_IS_SINK
 void lrp_no_more_default_route(void);
 #endif /* !LRP_IS_SINK */
 
-// Handle incoming tree maintenance messages
-void handle_incoming_dio(void);
-void handle_incoming_dis(void);
-void handle_incoming_brk(void);
-void handle_incoming_upd(void);
+/* Rebuild the tree with a new sequence number */
+#if LRP_IS_SINK
+void global_repair(void);
+#endif /* LRP_IS_SINK */
 
 #endif /* __LRP_CT_H__ */
