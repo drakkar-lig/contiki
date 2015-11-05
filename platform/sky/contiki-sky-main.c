@@ -104,8 +104,8 @@ static uint8_t is_gateway;
 #define PRINTF(...)
 #endif /* DEBUG */
 
-#if WITH_IPV6_RRPL
-#include "net/rrpl/rrpl.h"
+#if UIP_CONF_IPV6_LRP
+#include "net/lrp/lrp.h"
 #endif
 
 void init_platform(void);
@@ -374,9 +374,10 @@ main(int argc, char **argv)
 
 #else /* NETSTACK_CONF_WITH_IPV6 */
 
-#if WITH_IPV6_RRPL
-  printf("rrpl start ?\n");
-  process_start(&rrpl_process, NULL);
+#if 0
+#if UIP_CONF_IPV6_LRP
+  process_start(&lrp_process, NULL);
+#endif
 #endif
 
   NETSTACK_RDC.init();

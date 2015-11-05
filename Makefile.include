@@ -84,12 +84,14 @@ ifneq ($(CONTIKI_WITH_IPV6),0)
 CONTIKI_WITH_IPV6 = 1
 endif
 endif
-include $(CONTIKI)/core/net/lrp/Makefile.lrp
 
 ifeq ($(CONTIKI_WITH_IPV6),1)
   CFLAGS += -DNETSTACK_CONF_WITH_IPV6=1
   ifneq ($(CONTIKI_WITH_RPL),0)
-  	CONTIKI_WITH_RPL = 1
+    CONTIKI_WITH_RPL = 1
+  endif
+  ifneq($(CONTIKI_WITH_LRP),0)
+    CONTIKI_WITH_LRP = 1
   endif
   MODULES += core/net/ipv6 core/net/ip
 endif
@@ -99,6 +101,13 @@ ifeq ($(CONTIKI_WITH_RPL),1)
     MODULES += core/net/rpl
 else
     CFLAGS += -DUIP_CONF_IPV6_RPL=0
+endif
+
+ifeq ($(CONTIKI_WITH_LRP),1)
+    CFLAGS += -DUIP_CONF_IPV6_LRP=1
+    MODULES += core/net/lrp
+else
+    CFLAGS += -DUIP_CONF_IPV6_LRP=0
 endif
 
 CONTIKI_SOURCEFILES += $(CONTIKIFILES)

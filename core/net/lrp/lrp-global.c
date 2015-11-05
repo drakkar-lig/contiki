@@ -37,7 +37,7 @@
  * \author Audéoud Henry-Joseph <henry-joseph.audeoud@imag.fr>
  */
 
-#if WITH_IPV6_LRP
+#if UIP_CONF_IPV6_LRP
 
 #define DEBUG DEBUG_PRINT
 
@@ -250,4 +250,4 @@ lrp_rand_wait()
 }
 #endif /* LRP_IS_COORDINATOR */
 
-#endif /* WITH_IPV6_LRP */
+#endif /* UIP_CONF_IPV6_LRP */

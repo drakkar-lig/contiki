@@ -41,7 +41,7 @@
  * \author Audéoud Henry-Joseph <henry-joseph.audeoud@imag.fr>
  */
 
-#if WITH_IPV6_LRP
+#if UIP_CONF_IPV6_LRP
 
 #include "net/lrp/lrp.h"
 #include "net/lrp/lrp-def.h"
@@ -344,5 +344,5 @@ PROCESS_THREAD(lrp_process, ev, data)
   PROCESS_END();
 }
 
-#endif /* WITH_IPV6_LRP */
+#endif /* UIP_CONF_IPV6_LRP */
 /*---------------------------------------------------------------------------*/

@@ -2,8 +2,8 @@ This is an implementation of LRP, derived from the AODV of contiki. It adds the
 construction of a collection tree by means of sending DIO messages, as RPL's
 ones.
 
-LRP is enabled when the macro `WITH_IPV6_LRP`==1. (Obviously, one needs to set
-`UIP_CONF_IPV6_RPL`=0)
+LRP is enabled when the macro `UIP_CONF_IPV6_LRP=1`. (Obviously, one needs to
+set `UIP_CONF_IPV6_RPL=0`)
 
 LRP is the process `lrp_process`. It needs to be started! Eg. add in the
 contiki-main.c file: `process_start(&lrp_process, NULL);`
@@ -28,7 +28,7 @@ Many other constants are available and documented in `lrp-def.h`.
 
 So a typical Makefile could look like this:
 
-    CFLAGS += -DWITH_IPV6_LRP=1
+    CFLAGS += -DUIP_CONF_IPV6_LRP=1
     CFLAGS += -DUIP_CONF_IPV6_RPL=0
     
     CFLAGS += -DLRP_IS_COORDINATOR=1

@@ -37,7 +37,7 @@
  * \author Audéoud Henry-Joseph <henry-joseph.audeoud@imag.fr>
  */
 
-#if WITH_IPV6_LRP
+#if UIP_CONF_IPV6_LRP
 
 #define DEBUG DEBUG_PRINT
 
@@ -499,4 +499,4 @@ lrp_routing_error(uip_ipaddr_t* source, uip_ipaddr_t* destination,
 }
 #endif /* LRP_IS_COORDINATOR && !LRP_IS_SINK */
 
-#endif /* WITH_IPV6_LRP */
+#endif /* UIP_CONF_IPV6_LRP */
