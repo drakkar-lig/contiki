@@ -46,7 +46,7 @@
 #include "net/lrp/lrp-routes.h"
 #include "net/lrp/lrp-global.h"
 #include "net/lrp/lrp-msg.h"
-#include "net/uip-debug.h"
+#include "net/ip/uip-debug.h"
 #include <string.h>
 
 #define UIP_IP_BUF ((struct uip_udpip_hdr *)&uip_buf[UIP_LLH_LEN])

@@ -90,7 +90,7 @@ ifeq ($(CONTIKI_WITH_IPV6),1)
   ifneq ($(CONTIKI_WITH_RPL),0)
     CONTIKI_WITH_RPL = 1
   endif
-  ifneq($(CONTIKI_WITH_LRP),0)
+  ifneq ($(CONTIKI_WITH_LRP),0)
     CONTIKI_WITH_LRP = 1
   endif
   MODULES += core/net/ipv6 core/net/ip

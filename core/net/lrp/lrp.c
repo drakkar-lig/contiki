@@ -142,6 +142,7 @@ lrp_is_predecessor(uip_ipaddr_t *addr)
 
 /*---------------------------------------------------------------------------*/
 /* Link-layer callback. Used to discover neighbors unreachability */
+#if 0
 #if !UIP_ND6_SEND_NA
 void
 lrp_link_next_hop_callback(const rimeaddr_t *addr, int status, int mutx)
@@ -191,6 +192,7 @@ lrp_link_next_hop_callback(const rimeaddr_t *addr, int status, int mutx)
   }
 }
 #endif /* !UIP_ND6_SEND_NA */
+#endif
 
 
 /*---------------------------------------------------------------------------*/

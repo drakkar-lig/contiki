@@ -47,7 +47,7 @@
 #include "net/lrp/lrp-ct.h"
 #include "net/lrp/lrp-routes.h"
 #include "net/lrp/lrp-msg.h"
-#include "net/uip-debug.h"
+#include "net/ip/uip-debug.h"
 #include <string.h>
 
 

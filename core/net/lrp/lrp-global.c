@@ -44,7 +44,7 @@
 #include "net/lrp/lrp.h"
 #include "net/lrp/lrp-global.h"
 #include "net/lrp/lrp-def.h"
-#include "net/uip-debug.h"
+#include "net/ip/uip-debug.h"
 #include "contiki-net.h"
 #include "cfs/cfs.h"
 #include <string.h>

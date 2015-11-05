@@ -38,7 +38,7 @@
  */
 
 #include "net/lrp/lrp-def.h"
-#include "net/uip.h"
+#include "net/ip/uip.h"
 
 #ifndef __LRP_MSG_H__
 #define __LRP_MSG_H__
