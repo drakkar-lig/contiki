@@ -45,6 +45,11 @@
 #include "lib/memb.h"
 #include "net/nbr-table.h"
 
+
+#if UIP_CONF_IPV6_LOADNG
+#include "net/loadng/loadng.h"
+#endif
+
 #include <string.h>
 
 /* The nbr_routes holds a neighbor table to be able to maintain
@@ -238,6 +243,11 @@ uip_ds6_route_lookup(uip_ipaddr_t *addr)
     PRINTF("\n");
   } else {
     PRINTF("uip-ds6-route: No route found\n");
+#if UIP_CONF_IPV6_LOADNG
+    PRINTF("uip-ds6-route: Call LOADng to request route\n");
+    loadng_request_route_to(addr);
+#endif
+
   }
 
   if(found_route != NULL && found_route != list_head(routelist)) {
