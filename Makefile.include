@@ -89,9 +89,10 @@ ifeq ($(CONTIKI_WITH_IPV6),1)
   CFLAGS += -DNETSTACK_CONF_WITH_IPV6=1
   ifneq ($(CONTIKI_WITH_RPL),0)
     CONTIKI_WITH_RPL = 1
+    CONTIKI_WITH_LRP = 0
   endif
-  ifneq ($(CONTIKI_WITH_LRP),0)
-    CONTIKI_WITH_LRP = 1
+  ifeq ($(CONTIKI_WITH_LRP),1)
+    CONTIKI_WITH_RPL = 0
   endif
   MODULES += core/net/ipv6 core/net/ip
 endif
