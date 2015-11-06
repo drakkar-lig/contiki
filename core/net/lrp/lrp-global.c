@@ -70,7 +70,6 @@ lrp_state_new(void)
   lrp_state.repair_seqno = lrp_state.tree_seqno;
   lrp_state.node_seqno = 1;
 }
-
 #if LRP_USE_CFS
 void
 lrp_state_save(void)
@@ -79,8 +78,8 @@ lrp_state_save(void)
   fd = cfs_open(STATE_SVFILE, CFS_WRITE);
   if(fd != -1) {
     do {
-      rcode = cfs_write(fd, ((uint8_t*) &lrp_state) + written,
-          sizeof(lrp_state) - written);
+      rcode = cfs_write(fd, ((uint8_t *)&lrp_state) + written,
+                        sizeof(lrp_state) - written);
       written += rcode;
     } while(rcode != -1 && written != sizeof(lrp_state));
     cfs_close(fd);
@@ -92,7 +91,6 @@ lrp_state_save(void)
     PRINTF("State saved\n");
   }
 }
-
 void
 lrp_state_restore(void)
 {
@@ -100,8 +98,8 @@ lrp_state_restore(void)
   fd = cfs_open(STATE_SVFILE, CFS_READ);
   if(fd != -1) {
     do {
-      rcode = cfs_read(fd, ((uint8_t*) &lrp_state) + read,
-          sizeof(lrp_state) - read);
+      rcode = cfs_read(fd, ((uint8_t *)&lrp_state) + read,
+                       sizeof(lrp_state) - read);
       read += rcode;
     } while(rcode != -1 && read != sizeof(lrp_state));
     cfs_close(fd);
@@ -117,34 +115,34 @@ lrp_state_restore(void)
 }
 #endif /* LRP_USE_CFS */
 
-
 /*---------------------------------------------------------------------------*/
 inline uint8_t
-lrp_ipaddr_is_empty(uip_ipaddr_t* addr)
+lrp_ipaddr_is_empty(uip_ipaddr_t *addr)
 {
   uint8_t i;
   for(i = 0; i < 8; i++) {
-    if (((uint16_t*)addr)[i] != 0x0000) return (0==1);
+    if(((uint16_t *)addr)[i] != 0x0000) {
+      return 0 == 1;
+    }
   }
-  return (1==1);
+  return 1 == 1;
 }
-
 /*---------------------------------------------------------------------------*/
 /* Return the link cost between this node and the next_hop, depending on the
  * metric type. */
 inline uint16_t
-lrp_link_cost(uip_ipaddr_t* link, uint8_t metric_type)
+lrp_link_cost(uip_ipaddr_t *link, uint8_t metric_type)
 {
-  switch (metric_type) {
-    default:
-      PRINTF("WARNING: unknown metric type (%x). Using hop count instead.\n", metric_type);
-      // Consider the metric as HOP_COUNT
-    case LRP_METRIC_HOP_COUNT:
-      return 1;
+  switch(metric_type) {
+  default:
+    PRINTF("WARNING: unknown metric type (%x)."
+           "Using hop count instead.\n", metric_type);
+  /* Consider the metric as HOP_COUNT */
+  case LRP_METRIC_HOP_COUNT:
+    return 1;
   }
   return 1;
 }
-
 /*---------------------------------------------------------------------------*/
 inline uint8_t
 lrp_is_my_global_address(uip_ipaddr_t *addr)
@@ -155,7 +153,7 @@ lrp_is_my_global_address(uip_ipaddr_t *addr)
   for(i = 0; i < UIP_DS6_ADDR_NB; i++) {
     state = uip_ds6_if.addr_list[i].state;
     if(uip_ds6_if.addr_list[i].isused &&
-        (state == ADDR_TENTATIVE || state == ADDR_PREFERRED)) {
+       (state == ADDR_TENTATIVE || state == ADDR_PREFERRED)) {
       if(uip_ipaddr_cmp(addr, &uip_ds6_if.addr_list[i].ipaddr)) {
         return 1;
       }
@@ -163,14 +161,13 @@ lrp_is_my_global_address(uip_ipaddr_t *addr)
   }
   return 0;
 }
-
 /*---------------------------------------------------------------------------*/
 #if LRP_IS_SINK
 inline uint8_t
 lrp_addr_match_local_prefix(uip_ipaddr_t *host)
 {
   return uip_ipaddr_prefixcmp(&lrp_local_prefix.prefix, host,
-      lrp_local_prefix.len);
+                              lrp_local_prefix.len);
 }
 #endif /* LRP_IS_SINK */
 
@@ -180,7 +177,7 @@ lrp_addr_match_local_prefix(uip_ipaddr_t *host)
  * neighbor is entred as "incomplete" entry, and NS/NA will be performed to
  * confirm neighbor presence and get its lladdr. */
 void
-lrp_nbr_add(uip_ipaddr_t* next_hop)
+lrp_nbr_add(uip_ipaddr_t *next_hop)
 {
 #if !UIP_ND6_SEND_NA
   uip_lladdr_t nbr_lladdr;
@@ -193,7 +190,7 @@ lrp_nbr_add(uip_ipaddr_t* next_hop)
     PRINT6ADDR(next_hop);
     PRINTF(" to neighbor table");
 #if !UIP_ND6_SEND_NA
-    // it's my responsability to create+maintain neighbor
+    /* it's my responsability to create+maintain neighbor */
     PRINTF(" (without NA),");
     memcpy(&nbr_lladdr, &next_hop->u8[8],
            UIP_LLADDR_LEN);
@@ -202,7 +199,7 @@ lrp_nbr_add(uip_ipaddr_t* next_hop)
     PRINTLLADDR(&nbr_lladdr);
     PRINTF("\n");
     uip_ds6_nbr_add(next_hop, &nbr_lladdr, 0, NBR_REACHABLE);
-//    nbr->nscount = 1;
+/*    nbr->nscount = 1; */
 #else /* !UIP_ND6_SEND_NA */
     PRINTF(" (waiting for a NA)\n");
     uip_ds6_nbr_add(next_hop, NULL, 0, NBR_INCOMPLETE);
@@ -215,11 +212,12 @@ lrp_nbr_add(uip_ipaddr_t* next_hop)
     PRINTF(")\n");
   }
 #if !UIP_ND6_SEND_NA
-  // Puts back default route neighbor in table if it was discarded: we have to keep it.
+  /* Puts back default route neighbor in table if it was discarded: we have to
+   * keep it. */
   def_nexthop = uip_ds6_defrt_choose();
-  if(def_nexthop){
+  if(def_nexthop) {
     if(uip_ds6_nbr_lladdr_from_ipaddr(def_nexthop) == NULL) {
-      // puts it back in the table
+      /* puts it back in the table */
       memcpy(&nbr_lladdr, &def_nexthop->u8[8],
              UIP_LLADDR_LEN);
       nbr_lladdr.addr[0] ^= 2;
@@ -229,7 +227,6 @@ lrp_nbr_add(uip_ipaddr_t* next_hop)
   }
 #endif /* !UIP_ND6_SEND_NA */
 }
-
 /*---------------------------------------------------------------------------*/
 /* Return a random duration (in ticks). `scale` is the interval (in
  * milliseconds) where the random duration must be taken into. */

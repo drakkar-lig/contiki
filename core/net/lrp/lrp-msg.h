@@ -52,7 +52,6 @@ struct lrp_msg {
 /*---------------------------------------------------------------------------*/
 void lrp_handle_incoming_msg(void);
 
-
 /*-------------------------------------------------------------------*/
 /* LRP RREQ message */
 #define LRP_RREQ_TYPE     0
@@ -66,12 +65,11 @@ struct lrp_msg_rreq {
   uint16_t metric_value;
 };
 #if LRP_IS_COORDINATOR
-void lrp_send_rreq(
-    const uip_ipaddr_t *dest,
-    const uip_ipaddr_t *orig,
-    const uint16_t node_seqno,
-    const uint8_t metric_type,
-    const uint16_t metric_value);
+void lrp_send_rreq(const uip_ipaddr_t *dest,
+                   const uip_ipaddr_t *orig,
+                   const uint16_t node_seqno,
+                   const uint8_t metric_type,
+                   const uint16_t metric_value);
 #endif /* LRP_IS_COORDINATOR */
 
 /*-------------------------------------------------------------------*/
@@ -87,13 +85,12 @@ struct lrp_msg_rrep {
   uint16_t metric_value;
 };
 #if !LRP_IS_SINK
-void lrp_send_rrep(
-    const uip_ipaddr_t *dest,
-    const uip_ipaddr_t *nexthop,
-    const uip_ipaddr_t *source,
-    const uint16_t source_seqno,
-    const uint8_t metric_type,
-    const uint16_t metric_value);
+void lrp_send_rrep(const uip_ipaddr_t *dest,
+                   const uip_ipaddr_t *nexthop,
+                   const uip_ipaddr_t *source,
+                   const uint16_t source_seqno,
+                   const uint8_t metric_type,
+                   const uint16_t metric_value);
 void lrp_delayed_rrep();
 #endif /* !LRP_IS_SINK */
 
@@ -119,10 +116,9 @@ struct lrp_msg_rerr {
   uip_ipaddr_t addr_in_error;
 };
 #if !LRP_IS_SINK
-void lrp_send_rerr(
-    const uip_ipaddr_t *dest_addr,
-    const uip_ipaddr_t *addr_in_error,
-    const uip_ipaddr_t *nexthop);
+void lrp_send_rerr(const uip_ipaddr_t *dest_addr,
+                   const uip_ipaddr_t *addr_in_error,
+                   const uip_ipaddr_t *nexthop);
 #endif /* !LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
@@ -141,7 +137,7 @@ struct lrp_msg_dio {
   uip_ipaddr_t sink_addr;
 };
 #if LRP_IS_COORDINATOR
-void lrp_send_dio(uip_ipaddr_t* destination);
+void lrp_send_dio(uip_ipaddr_t *destination);
 void lrp_delayed_dio();
 #endif /* LRP_IS_COORDINATOR */
 
@@ -168,12 +164,11 @@ struct lrp_msg_brk {
   uip_ipaddr_t lost_node;
 };
 #if LRP_IS_COORDINATOR && !LRP_IS_SINK
-void lrp_send_brk(
-    const uip_ipaddr_t *initial_sender,
-    const uip_ipaddr_t *nexthop,
-    const uint16_t node_seqno,
-    const uint8_t metric_type,
-    const uint16_t metric_value);
+void lrp_send_brk(const uip_ipaddr_t *initial_sender,
+                  const uip_ipaddr_t *nexthop,
+                  const uint16_t node_seqno,
+                  const uint8_t metric_type,
+                  const uint16_t metric_value);
 #endif /* LRP_IS_COORDINATOR && !LRP_IS_SINK */
 
 /*-------------------------------------------------------------------*/
@@ -190,14 +185,13 @@ struct lrp_msg_upd {
   uip_ipaddr_t lost_node;
 };
 #if LRP_IS_COORDINATOR
-void lrp_send_upd(
-    const uip_ipaddr_t *lost_node,
-    const uip_ipaddr_t *sink_addr,
-    const uip_ipaddr_t *nexthop,
-    const uint16_t tree_seqno,
-    const uint16_t repair_seqno,
-    const uint8_t metric_type,
-    const uint16_t metric_value);
+void lrp_send_upd(const uip_ipaddr_t *lost_node,
+                  const uip_ipaddr_t *sink_addr,
+                  const uip_ipaddr_t *nexthop,
+                  const uint16_t tree_seqno,
+                  const uint16_t repair_seqno,
+                  const uint8_t metric_type,
+                  const uint16_t metric_value);
 #endif /* LRP_IS_COORDINATOR */
 
 #endif /* LRP_USE_DIO */

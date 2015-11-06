@@ -53,7 +53,7 @@ struct uip_udp_conn *lrp_udpconn;
   uip_ip6addr(a, 0xff02, 0, 0, 0, 0, 0, 0, 0x001b)
 #define uip_create_linklocal_empty_addr(a) \
   uip_ip6addr(a, 0, 0, 0, 0, 0, 0, 0, 0)
-inline uint8_t lrp_ipaddr_is_empty(uip_ipaddr_t* addr);
+inline uint8_t lrp_ipaddr_is_empty(uip_ipaddr_t *addr);
 
 uip_ipaddr_t lrp_myipaddr;
 
@@ -61,9 +61,9 @@ uip_ipaddr_t lrp_myipaddr;
 /* Seqno managment */
 #define MAX_SEQNO               65534
 typedef uint16_t seqno_t;
-#define SEQNO_GREATER_THAN(s1, s2)                   \
-          ((((s1) > (s2)) && ((s1) - (s2) <= (MAX_SEQNO/2))) \
-        || (((s2) > (s1)) && ((s2) - (s1) > (MAX_SEQNO/2))))
+#define SEQNO_GREATER_THAN(s1, s2) \
+  ((((s1) > (s2)) && ((s1) - (s2) <= (MAX_SEQNO / 2))) \
+   || (((s2) > (s1)) && ((s2) - (s1) > (MAX_SEQNO / 2))))
 #define SEQNO_INCREASE(seqno) ((seqno) >= MAX_SEQNO ? (seqno) = 1 : ++(seqno))
 #define SEQNO_INCREASE(seqno) ((seqno) >= MAX_SEQNO ? (seqno) = 1 : ++(seqno))
 
@@ -72,11 +72,11 @@ typedef uint16_t seqno_t;
 #define STATE_SVFILE            "lrp/state"
 struct {
   uip_ipaddr_t sink_addr;
-  seqno_t      tree_seqno;
-  seqno_t      repair_seqno;
-  uint8_t      metric_type;
-  uint16_t     metric_value;
-  seqno_t      node_seqno;
+  seqno_t tree_seqno;
+  seqno_t repair_seqno;
+  uint8_t metric_type;
+  uint16_t metric_value;
+  seqno_t node_seqno;
 } lrp_state;
 
 struct {
@@ -89,16 +89,16 @@ void lrp_state_new(void);
 void lrp_state_save(void);
 void lrp_state_restore(void);
 #else /* LRP_USE_CFS */
-// Deactivate saving on the non-volatile memory
+/* Deactivate saving on the non-volatile memory */
 #define lrp_state_save()
 #define lrp_state_restore() lrp_state_new()
 #endif /* LRP_USE_CFS */
 
-inline uint8_t lrp_ipaddr_is_empty(uip_ipaddr_t*);
-inline uint16_t lrp_link_cost(uip_ipaddr_t* link, uint8_t metric_type);
-inline uint8_t lrp_is_my_global_address(uip_ipaddr_t*);
-inline uint8_t lrp_addr_match_local_prefix(uip_ipaddr_t*);
-void lrp_nbr_add(uip_ipaddr_t* next_hop);
+inline uint8_t lrp_ipaddr_is_empty(uip_ipaddr_t *);
+inline uint16_t lrp_link_cost(uip_ipaddr_t *link, uint8_t metric_type);
+inline uint8_t lrp_is_my_global_address(uip_ipaddr_t *);
+inline uint8_t lrp_addr_match_local_prefix(uip_ipaddr_t *);
+void lrp_nbr_add(uip_ipaddr_t *next_hop);
 uint32_t rand_wait_duration_before_broadcast(uint16_t scale);
 inline void lrp_rand_wait();
 #endif /* __LRP_GLOBAL_H__ */

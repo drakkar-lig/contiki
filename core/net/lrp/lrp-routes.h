@@ -53,8 +53,8 @@ void lrp_check_expired_route(void);
 #endif /* LRP_ROUTE_HOLD_TIME */
 
 #if LRP_IS_COORDINATOR && !LRP_IS_SINK
-void lrp_routing_error(uip_ipaddr_t* source, uip_ipaddr_t* destination,
-    uip_lladdr_t* previoushop);
+void lrp_routing_error(uip_ipaddr_t *source, uip_ipaddr_t *destination,
+                       uip_lladdr_t *previoushop);
 #endif /* LRP_IS_COORDINATOR && !LRP_IS_SINK */
 
 void lrp_request_route_to(uip_ipaddr_t *host);

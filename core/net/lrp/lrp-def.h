@@ -78,7 +78,7 @@
 #define LRP_SEND_SPONTANEOUS_RREP 1
 
 /* Ack routes replies */
-#define LRP_RREP_ACK           0 // TODO Manage RREP acks
+#define LRP_RREP_ACK           0 /* TODO Manage RREP acks */
 
 /* Default route lifetime (ticks) */
 #define LRP_DEFRT_LIFETIME     0
@@ -90,7 +90,7 @@
 #define LRP_ROUTE_VALIDITY_CHECK_INTERVAL 10 * CLOCK_SECOND
 
 /* Threshold below which a link is considered as weak */
-#define LRP_RSSI_THRESHOLD    -65 // Ana measured value
+#define LRP_RSSI_THRESHOLD    -65 /* Ana measured value */
 
 /* Wait randomly when flooding the network */
 #define LRP_RANDOM_WAIT        1

@@ -50,17 +50,15 @@
 #include "net/ip/uip-debug.h"
 #include <string.h>
 
-
 /*---------------------------------------------------------------------------*/
 /* Format and broadcast a RREQ type packet. */
 #if LRP_IS_COORDINATOR
 void
-lrp_send_rreq(
-    const uip_ipaddr_t *searched_addr,
-    const uip_ipaddr_t *source_addr,
-    const uint16_t source_seqno,
-    const uint8_t metric_type,
-    const uint16_t metric_value)
+lrp_send_rreq(const uip_ipaddr_t *searched_addr,
+              const uip_ipaddr_t *source_addr,
+              const uint16_t source_seqno,
+              const uint8_t metric_type,
+              const uint16_t metric_value)
 {
   struct lrp_msg_rreq rm;
 
@@ -68,7 +66,7 @@ lrp_send_rreq(
   PRINT6ADDR(searched_addr);
   PRINTF(" metric t/v=%x/%u\n", metric_type, metric_value);
 
-  // Fill message
+  /* Fill message */
   rm.type = (LRP_RREQ_TYPE << 4) | 0x0;
   rm.addr_len = (0x0 << 4) | LRP_ADDR_LEN_IPV6;
   rm.source_seqno = uip_htons(source_seqno);
@@ -77,25 +75,23 @@ lrp_send_rreq(
   uip_ipaddr_copy(&rm.searched_addr, searched_addr);
   uip_ipaddr_copy(&rm.source_addr, source_addr);
 
-  // Send packet
+  /* Send packet */
   uip_create_linklocal_lln_routers_mcast(&lrp_udpconn->ripaddr);
   uip_udp_packet_send(lrp_udpconn, &rm, sizeof(struct lrp_msg_rreq));
   memset(&lrp_udpconn->ripaddr, 0, sizeof(lrp_udpconn->ripaddr));
 }
 #endif /* LRP_IS_COORDINATOR */
 
-
 /*---------------------------------------------------------------------------*/
 /* Format and send a RREP type packet. */
 #if !LRP_IS_SINK
 void
-lrp_send_rrep(
-    const uip_ipaddr_t *dest_addr,
-    const uip_ipaddr_t *nexthop,
-    const uip_ipaddr_t *source_addr,
-    const uint16_t source_seqno,
-    const uint8_t metric_type,
-    const uint16_t metric_value)
+lrp_send_rrep(const uip_ipaddr_t *dest_addr,
+              const uip_ipaddr_t *nexthop,
+              const uip_ipaddr_t *source_addr,
+              const uint16_t source_seqno,
+              const uint8_t metric_type,
+              const uint16_t metric_value)
 {
   struct lrp_msg_rrep rm;
 
@@ -120,36 +116,35 @@ lrp_send_rrep(
   uip_udp_packet_send(lrp_udpconn, &rm, sizeof(struct lrp_msg_rrep));
   memset(&lrp_udpconn->ripaddr, 0, sizeof(lrp_udpconn->ripaddr));
 }
-
 /* Wrapper to use `lrp_send_rrep` as a ctimer callback function */
 static void
-call_send_rrep(void* nothing)
+call_send_rrep(void *nothing)
 {
   SEQNO_INCREASE(lrp_state.node_seqno);
   lrp_state_save();
-  lrp_send_rrep(&lrp_state.sink_addr, uip_ds6_defrt_choose(), &lrp_myipaddr, lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
+  lrp_send_rrep(&lrp_state.sink_addr, uip_ds6_defrt_choose(), &lrp_myipaddr,
+                lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
 }
-
 /* Schedule a RREP message sending later. */
 void
 lrp_delayed_rrep()
 {
-  static struct ctimer delayed_rrep_timer = {0};
-  if (!ctimer_expired(&delayed_rrep_timer)) return;
+  static struct ctimer delayed_rrep_timer = { 0 };
+  if(!ctimer_expired(&delayed_rrep_timer)) {
+    return;
+  }
   ctimer_set(&delayed_rrep_timer, rand_wait_duration_before_broadcast(1000),
-      (void (*)(void*))&call_send_rrep, NULL);
+             (void (*)(void *)) & call_send_rrep, NULL);
 }
 #endif /* !LRP_IS_SINK */
-
 
 /*---------------------------------------------------------------------------*/
 /* Format and send a RERR type to `nexthop`. */
 #if !LRP_IS_SINK
 void
-lrp_send_rerr(
-    const uip_ipaddr_t *dest_addr,
-    const uip_ipaddr_t *addr_in_error,
-    const uip_ipaddr_t *nexthop)
+lrp_send_rerr(const uip_ipaddr_t *dest_addr,
+              const uip_ipaddr_t *addr_in_error,
+              const uip_ipaddr_t *nexthop)
 {
   struct lrp_msg_rerr rm;
 
@@ -170,14 +165,13 @@ lrp_send_rerr(
 }
 #endif /* !LRP_IS_SINK */
 
-
 /*---------------------------------------------------------------------------*/
 /* Format and send a DIO type packet. */
 /* Format and send a DIO packet to `destination`, or broadcast if
  * `destination` is NULL */
 #if LRP_IS_COORDINATOR
 void
-lrp_send_dio(uip_ipaddr_t* destination)
+lrp_send_dio(uip_ipaddr_t *destination)
 {
   struct lrp_msg_dio rm;
 
@@ -208,22 +202,21 @@ lrp_send_dio(uip_ipaddr_t* destination)
     uip_create_linklocal_lln_routers_mcast(&lrp_udpconn->ripaddr);
   } else {
     uip_ipaddr_copy(&lrp_udpconn->ripaddr, destination);
-  }
-  uip_udp_packet_send(lrp_udpconn, &rm, sizeof(struct lrp_msg_dio));
+  } uip_udp_packet_send(lrp_udpconn, &rm, sizeof(struct lrp_msg_dio));
   memset(&lrp_udpconn->ripaddr, 0, sizeof(lrp_udpconn->ripaddr));
 }
-
 /* Schedule a DIO message broadcasting later. Useful to avoid collisions */
 void
 lrp_delayed_dio()
 {
-  static struct ctimer delayed_dio_timer = {0};
-  if (!ctimer_expired(&delayed_dio_timer)) return;
+  static struct ctimer delayed_dio_timer = { 0 };
+  if(!ctimer_expired(&delayed_dio_timer)) {
+    return;
+  }
   ctimer_set(&delayed_dio_timer, rand_wait_duration_before_broadcast(1000),
-      (void (*)(void*))&lrp_send_dio, NULL);
+             (void (*)(void *)) & lrp_send_dio, NULL);
 }
 #endif /* LRP_IS_COORDINATOR */
-
 
 /*---------------------------------------------------------------------------*/
 /* Format and broadcast a DIS type packet. */
@@ -245,18 +238,16 @@ lrp_send_dis()
 }
 #endif /* !LRP_IS_SINK */
 
-
 /*---------------------------------------------------------------------------*/
 /* Format and send a BRK type message. It will be send to the specified
  * nexthop, or broadcast it if `nexthop` is NULL */
 #if LRP_IS_COORDINATOR && !LRP_IS_SINK
 void
-lrp_send_brk(
-    const uip_ipaddr_t *lost_node,
-    const uip_ipaddr_t *nexthop,
-    const uint16_t node_seqno,
-    const uint8_t metric_type,
-    const uint16_t metric_value)
+lrp_send_brk(const uip_ipaddr_t *lost_node,
+             const uip_ipaddr_t *nexthop,
+             const uint16_t node_seqno,
+             const uint8_t metric_type,
+             const uint16_t metric_value)
 {
   struct lrp_msg_brk rm;
 
@@ -283,25 +274,22 @@ lrp_send_brk(
     uip_create_linklocal_lln_routers_mcast(&lrp_udpconn->ripaddr);
   } else {
     uip_ipaddr_copy(&lrp_udpconn->ripaddr, nexthop);
-  }
-  uip_udp_packet_send(lrp_udpconn, &rm, sizeof(struct lrp_msg_brk));
+  } uip_udp_packet_send(lrp_udpconn, &rm, sizeof(struct lrp_msg_brk));
   memset(&lrp_udpconn->ripaddr, 0, sizeof(lrp_udpconn->ripaddr));
 }
 #endif /* LRP_IS_COORDINATOR && !LRP_IS_SINK */
-
 
 /*---------------------------------------------------------------------------*/
 /* Format and send a UPD type message. */
 #if LRP_IS_COORDINATOR
 void
-lrp_send_upd(
-    const uip_ipaddr_t *lost_node,
-    const uip_ipaddr_t *sink_addr,
-    const uip_ipaddr_t *nexthop,
-    const uint16_t tree_seqno,
-    const uint16_t repair_seqno,
-    const uint8_t metric_type,
-    const uint16_t metric_value)
+lrp_send_upd(const uip_ipaddr_t *lost_node,
+             const uip_ipaddr_t *sink_addr,
+             const uip_ipaddr_t *nexthop,
+             const uint16_t tree_seqno,
+             const uint16_t repair_seqno,
+             const uint8_t metric_type,
+             const uint16_t metric_value)
 {
   struct lrp_msg_upd rm;
 
@@ -326,7 +314,6 @@ lrp_send_upd(
 }
 #endif /* LRP_IS_COORDINATOR */
 
-
 /*---------------------------------------------------------------------------*/
 /* Handle an incoming LRP message. */
 void
@@ -334,30 +321,29 @@ lrp_handle_incoming_msg(void)
 {
   uint8_t type = ((struct lrp_msg *)uip_appdata)->type >> 4;
   switch(type) {
-    case LRP_RREQ_TYPE:
-      lrp_handle_incoming_rreq();
-      break;
-    case LRP_RREP_TYPE:
-      lrp_handle_incoming_rrep();
-      break;
-    case LRP_RERR_TYPE:
-      lrp_handle_incoming_rerr();
-      break;
-    case LRP_DIO_TYPE:
-      lrp_handle_incoming_dio();
-      break;
-    case LRP_DIS_TYPE:
-      lrp_handle_incoming_dis();
-      break;
-    case LRP_BRK_TYPE:
-      lrp_handle_incoming_brk();
-      break;
-    case LRP_UPD_TYPE:
-      lrp_handle_incoming_upd();
-      break;
-    default:
-      PRINTF("Unknown message type\n");
+  case LRP_RREQ_TYPE:
+    lrp_handle_incoming_rreq();
+    break;
+  case LRP_RREP_TYPE:
+    lrp_handle_incoming_rrep();
+    break;
+  case LRP_RERR_TYPE:
+    lrp_handle_incoming_rerr();
+    break;
+  case LRP_DIO_TYPE:
+    lrp_handle_incoming_dio();
+    break;
+  case LRP_DIS_TYPE:
+    lrp_handle_incoming_dis();
+    break;
+  case LRP_BRK_TYPE:
+    lrp_handle_incoming_brk();
+    break;
+  case LRP_UPD_TYPE:
+    lrp_handle_incoming_upd();
+    break;
+  default:
+    PRINTF("Unknown message type\n");
   }
 }
-
 #endif /* UIP_CONF_IPV6_LRP */

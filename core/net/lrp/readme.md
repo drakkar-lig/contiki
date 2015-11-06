@@ -8,8 +8,8 @@ set `UIP_CONF_IPV6_RPL=0`)
 LRP is the process `lrp_process`. It needs to be started! Eg. add in the
 contiki-main.c file: `process_start(&lrp_process, NULL);`
 
-`LRP_USE_DIO`: this macro is for the code that is specific to cases where we use
-collection tree. If set to false, then LRP works as LOADng.
+`LRP_USE_DIO`: this macro is for the code that is specific to cases where we
+use collection tree. If set to false, then LRP works as LOADng.
 
 `LRP_IS_COORDINATOR`: If set to 1, this node will periodically re-send DIO
 messages -- set to 0 for a leaf node that will not relay traffic.
