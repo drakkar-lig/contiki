@@ -280,6 +280,7 @@ lrp_select_nexthop_for(uip_ipaddr_t *source, uip_ipaddr_t *destination,
 PROCESS_THREAD(lrp_process, ev, data)
 {
   PROCESS_BEGIN();
+  PROCESS_PAUSE();
   PRINTF("LRP process started\n");
 #if LRP_IS_SINK
   PRINTF("This node is a sink\n");

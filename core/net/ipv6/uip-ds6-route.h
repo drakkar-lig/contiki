@@ -43,6 +43,10 @@
 #include "sys/stimer.h"
 #include "lib/list.h"
 
+#if UIP_CONF_IPV6_LRP
+#include "net/lrp/lrp.h"
+#endif /* UIP_CONF_IPV6_LRP */
+
 void uip_ds6_route_init(void);
 
 #ifndef UIP_CONF_UIP_DS6_NOTIFICATIONS

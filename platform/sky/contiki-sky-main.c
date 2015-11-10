@@ -372,13 +372,11 @@ main(int argc, char **argv)
          CC2420_CONF_CHANNEL,
          CC2420_CONF_CCA_THRESH);
 
-#else /* NETSTACK_CONF_WITH_IPV6 */
-
-#if 0
 #if UIP_CONF_IPV6_LRP
   process_start(&lrp_process, NULL);
 #endif
-#endif
+
+#else /* NETSTACK_CONF_WITH_IPV6 */
 
   NETSTACK_RDC.init();
   NETSTACK_MAC.init();
