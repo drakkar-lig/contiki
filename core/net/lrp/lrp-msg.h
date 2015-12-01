@@ -56,7 +56,7 @@ void lrp_handle_incoming_msg(void);
 /*-------------------------------------------------------------------*/
 /* LRP RREQ message */
 #define LRP_RREQ_TYPE     0
-struct lrp_msg_rreq {
+struct lrp_msg_rreq_t {
   uint8_t type;
   uint8_t addr_len;
   uip_ipaddr_t searched_addr;
@@ -71,12 +71,17 @@ void lrp_send_rreq(const uip_ipaddr_t *dest,
                    const uint16_t node_seqno,
                    const uint8_t metric_type,
                    const uint16_t metric_value);
+void lrp_delayed_rreq(const uip_ipaddr_t *dest,
+                      const uip_ipaddr_t *orig,
+                      const uint16_t node_seqno,
+                      const uint8_t metric_type,
+                      const uint16_t metric_value);
 #endif /* LRP_IS_COORDINATOR */
 
 /*-------------------------------------------------------------------*/
 /* LRP RREP message */
 #define LRP_RREP_TYPE     1
-struct lrp_msg_rrep {
+struct lrp_msg_rrep_t {
   uint8_t type;
   uint8_t addr_len;
   uip_ipaddr_t dest_addr;
@@ -99,7 +104,7 @@ void lrp_delayed_rrep();
 /* LRP RREP-ACK message */
 #define LRP_RACK_TYPE     2
 #if LRP_RREP_ACK
-struct lrp_msg_rack {
+struct lrp_msg_rack_t {
   uint8_t type;
   uint8_t addr_len;
   uip_ipaddr_t src_addr;
@@ -110,7 +115,7 @@ struct lrp_msg_rack {
 /*-------------------------------------------------------------------*/
 /* LRP RERR message */
 #define LRP_RERR_TYPE     3
-struct lrp_msg_rerr {
+struct lrp_msg_rerr_t {
   uint8_t type;
   uint8_t addr_len;
   uip_ipaddr_t dest_addr;
@@ -129,7 +134,7 @@ void lrp_send_rerr(const uip_ipaddr_t *dest_addr,
 /*-------------------------------------------------------------------*/
 /* LRP DIO message */
 #define LRP_DIO_TYPE      4
-struct lrp_msg_dio {
+struct lrp_msg_dio_t {
   uint8_t type;
   uint8_t addr_len;
   uint16_t tree_seqno;
@@ -139,30 +144,38 @@ struct lrp_msg_dio {
 };
 #if LRP_IS_COORDINATOR
 void lrp_send_dio(uip_ipaddr_t *destination);
-void lrp_delayed_dio();
+void lrp_delayed_dio(uip_ipaddr_t *destination);
 #endif /* LRP_IS_COORDINATOR */
 
 /*-------------------------------------------------------------------*/
 /* LRP DIS message */
 #define LRP_DIS_TYPE      5
-struct lrp_msg_dis {
+struct lrp_msg_dis_t {
   uint8_t type;
   uint8_t addr_len;
 };
+struct lrp_msg_extended_dis_t {
+  uint8_t type;
+  uint8_t addr_len;
+  uint16_t tree_seqno;
+  uint8_t metric_type;
+  uint16_t metric_value;
+  uip_ipaddr_t sink_addr;
+};
 #if !LRP_IS_SINK
-void lrp_send_dis(void);
+void lrp_send_dis(uint8_t extended);
 #endif /* !LRP_IS_SINK */
 
 /*-------------------------------------------------------------------*/
 /* LRP BRK message */
 #define LRP_BRK_TYPE      6
-struct lrp_msg_brk {
+struct lrp_msg_brk_t {
   uint8_t type;
   uint8_t addr_len;
   uint16_t node_seqno;
   uint8_t metric_type;
   uint16_t metric_value;
-  uip_ipaddr_t lost_node;
+  uip_ipaddr_t initial_sender;
 };
 #if LRP_IS_COORDINATOR && !LRP_IS_SINK
 void lrp_send_brk(const uip_ipaddr_t *initial_sender,
@@ -170,12 +183,17 @@ void lrp_send_brk(const uip_ipaddr_t *initial_sender,
                   const uint16_t node_seqno,
                   const uint8_t metric_type,
                   const uint16_t metric_value);
+void lrp_delayed_brk(const uip_ipaddr_t *initial_sender,
+                     const uip_ipaddr_t *nexthop,
+                     const uint16_t node_seqno,
+                     const uint8_t metric_type,
+                     const uint16_t metric_value);
 #endif /* LRP_IS_COORDINATOR && !LRP_IS_SINK */
 
 /*-------------------------------------------------------------------*/
 /* LRP UPD message */
 #define LRP_UPD_TYPE      7
-struct lrp_msg_upd {
+struct lrp_msg_upd_t {
   uint8_t type;
   uint8_t addr_len;
   uint16_t tree_seqno;

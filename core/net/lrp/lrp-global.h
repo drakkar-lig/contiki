@@ -100,8 +100,6 @@ inline uint16_t lrp_link_cost(uip_ipaddr_t *link, uint8_t metric_type);
 inline uint8_t lrp_is_my_global_address(uip_ipaddr_t *);
 inline uint8_t lrp_addr_match_local_prefix(uip_ipaddr_t *);
 void lrp_nbr_add(uip_ipaddr_t *next_hop);
-uint32_t rand_wait_duration_before_broadcast(uint16_t scale);
-inline void lrp_rand_wait();
-
+uint32_t rand_wait_duration_before_broadcast();
 #endif /* UIP_CONF_IPV6_LRP */
 #endif /* __LRP_GLOBAL_H__ */

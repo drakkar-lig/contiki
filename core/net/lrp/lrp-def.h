@@ -91,14 +91,15 @@
 /* Threshold below which a link is considered as weak */
 #define LRP_RSSI_THRESHOLD    -65 /* Ana measured value */
 
-/* Wait randomly when flooding the network */
-#define LRP_RANDOM_WAIT        1
+/* Wait randomly this given time (in ticks) before sending a message, when
+ * flooding the network */
+#define LRP_RANDOM_WAIT        500 * CLOCK_SECOND / 1000
 
 /* If NUD is deactivated, unacked messages are counted, and next hop is deleted
  * when the number of consecutive noacked messages reach this constant. */
 #define LRP_MAX_CONSECUTIVE_NOACKED_MESSAGES  5
 
-/* Use contiki filesystem to save state, or do not save state */
+/* Use contiki filesystem to save state, or do not save state. */
 #define LRP_USE_CFS            0
 
 #define LRP_ADDR_LEN_IPV6      15

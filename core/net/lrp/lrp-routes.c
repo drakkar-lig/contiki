@@ -190,7 +190,7 @@ offer_route(uip_ipaddr_t *orig_addr, const uint8_t length,
      SEQNO_GREATER_THAN(node_seqno, rt->state.seqno) ||
      (node_seqno == rt->state.seqno &&
       (metric_type == rt->state.metric_type &&
-        metric_value + lc < rt->state.metric_value))) {
+       metric_value + lc < rt->state.metric_value))) {
     /* Offered route is better than previous one */
     if(rt != NULL) {
       uip_ds6_route_rm(rt);
@@ -218,7 +218,7 @@ void
 lrp_handle_incoming_rreq(void)
 {
 #if !LRP_IS_SINK
-  struct lrp_msg_rreq *rm = (struct lrp_msg_rreq *)uip_appdata;
+  struct lrp_msg_rreq_t *rreq = (struct lrp_msg_rreq_t *)uip_appdata;
   /* uip_ipaddr_t dest_addr, orig_addr; // FIXME */
 #if !LRP_USE_DIO
   uip_ds6_route_t *rt;
@@ -232,49 +232,48 @@ lrp_handle_incoming_rreq(void)
   PRINTF(" -> ");
   PRINT6ADDR(&UIP_IP_BUF->destipaddr);
   PRINTF(" orig=");
-  PRINT6ADDR(&rm->source_addr);
+  PRINT6ADDR(&rreq->source_addr);
   PRINTF(" searched=");
-  PRINT6ADDR(&rm->searched_addr);
-  PRINTF(" seq=%u", uip_ntohs(rm->source_seqno));
-  PRINTF(" metric t/v=%x/%u\n", rm->metric_type, rm->metric_value);
+  PRINT6ADDR(&rreq->searched_addr);
+  PRINTF(" seq=%u", uip_ntohs(rreq->source_seqno));
+  PRINTF(" metric t/v=%x/%u\n", rreq->metric_type, rreq->metric_value);
 
-  rm->source_seqno = uip_ntohs(rm->source_seqno);
+  rreq->source_seqno = uip_ntohs(rreq->source_seqno);
 
   /* Check if we do not have already received a better RREQ message */
 #if !LRP_USE_DIO
   /* LOADng's: try to add route to source */
-  if(!lrp_is_my_global_address(&rm->orig_addr)) {
-    if((rt = offer_route(&rm->orig_addr, HOST_ROUTE_PREFIX_LEN,
-                         &UIP_IP_BUF->srcipaddr, rm->metric_type,
-                         metric_value, rm->node_seqno)) == NULL) {
+  if(!lrp_is_my_global_address(&rreq->orig_addr)) {
+    if((rt = offer_route(&rreq->orig_addr, HOST_ROUTE_PREFIX_LEN,
+                         &UIP_IP_BUF->srcipaddr, rreq->metric_type,
+                         metric_value, rreq->node_seqno)) == NULL) {
       PRINTF("Skipping: has a better RREQ to dest\n");
       return;
     }
   }
 #else
   /* LRP: consult cache */
-  if(fwc_lookup(&rm->source_addr, &rm->source_seqno)) {
+  if(fwc_lookup(&rreq->source_addr, &rreq->source_seqno)) {
     PRINTF("Skipping: RREQ cached\n");
     return;
   }
-  fwc_add(&rm->source_addr, &rm->source_seqno);
+  fwc_add(&rreq->source_addr, &rreq->source_seqno);
 #endif /* !LRP_USE_DIO */
 
   /* Answer to RREQ if the searched address is our address */
-  if(lrp_is_my_global_address(&rm->searched_addr)) {
+  if(lrp_is_my_global_address(&rreq->searched_addr)) {
     SEQNO_INCREASE(lrp_state.node_seqno);
     lrp_state_save();
-    lrp_send_rrep(&rm->source_addr, &UIP_IP_BUF->srcipaddr, &rm->searched_addr,
+    lrp_send_rrep(&rreq->source_addr, &UIP_IP_BUF->srcipaddr, &rreq->searched_addr,
                   lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
 
 #if LRP_IS_COORDINATOR
     /* Only coordinator forward RREQ */
   } else {
     PRINTF("Forward RREQ\n");
-    lc = lrp_link_cost(&UIP_IP_BUF->srcipaddr, rm->metric_type);
-    lrp_rand_wait();
-    lrp_send_rreq(&rm->searched_addr, &rm->source_addr, rm->source_seqno,
-                  rm->metric_type, rm->metric_value + lc);
+    lc = lrp_link_cost(&UIP_IP_BUF->srcipaddr, rreq->metric_type);
+    lrp_delayed_rreq(&rreq->searched_addr, &rreq->source_addr, rreq->source_seqno,
+                     rreq->metric_type, rreq->metric_value + lc);
 #endif /* LRP_IS_COORDINATOR */
   }
 #endif /* !LRP_IS_SINK */
@@ -285,7 +284,7 @@ void
 lrp_handle_incoming_rrep(void)
 {
 #if LRP_IS_COORDINATOR
-  struct lrp_msg_rrep *rm = (struct lrp_msg_rrep *)uip_appdata;
+  struct lrp_msg_rrep_t *rrep = (struct lrp_msg_rrep_t *)uip_appdata;
   struct uip_ds6_route *rt;
 #if !LRP_IS_SINK
   uip_ipaddr_t *nexthop = NULL;
@@ -297,13 +296,13 @@ lrp_handle_incoming_rrep(void)
   PRINTF(" -> ");
   PRINT6ADDR(&UIP_IP_BUF->destipaddr);
   PRINTF(" source=");
-  PRINT6ADDR(&rm->source_addr);
+  PRINT6ADDR(&rrep->source_addr);
   PRINTF(" dest=");
-  PRINT6ADDR(&rm->dest_addr);
-  PRINTF(" source_seqno=%u", uip_ntohs(rm->source_seqno));
-  PRINTF(" metric t/v=%x/%u\n", rm->metric_type, rm->metric_value);
+  PRINT6ADDR(&rrep->dest_addr);
+  PRINTF(" source_seqno=%u", uip_ntohs(rrep->source_seqno));
+  PRINTF(" metric t/v=%x/%u\n", rrep->metric_type, rrep->metric_value);
 
-  rm->source_seqno = uip_ntohs(rm->source_seqno);
+  rrep->source_seqno = uip_ntohs(rrep->source_seqno);
 
 #if LRP_USE_DIO
   /* LRP: Do not accept RREP from our default route */
@@ -314,9 +313,9 @@ lrp_handle_incoming_rrep(void)
 #endif /* LRP_USE_DIO */
 
   /* Offer route to routing table */
-  rt = offer_route(&rm->source_addr, HOST_ROUTE_PREFIX_LEN,
-                   &UIP_IP_BUF->srcipaddr, rm->metric_type,
-                   rm->metric_value, rm->source_seqno);
+  rt = offer_route(&rrep->source_addr, HOST_ROUTE_PREFIX_LEN,
+                   &UIP_IP_BUF->srcipaddr, rrep->metric_type,
+                   rrep->metric_value, rrep->source_seqno);
   if(rt != NULL) {
     PRINTF("Route inserted from RREP\n");
 #if LRP_RREP_ACK
@@ -327,14 +326,14 @@ lrp_handle_incoming_rrep(void)
   }
 #if LRP_RREQ_RETRIES && (LRP_IS_SINK || !LRP_USE_DIO)
   /* Clean route request cache */
-  rrc_remove(&rm->source_addr);
+  rrc_remove(&rrep->source_addr);
 #endif /* LRP_RREQ_RETRIES && (LRP_IS_SINK || !LRP_USE_DIO) */
 
   /* Select next hop */
 #if !LRP_USE_DIO
   /* LOADng: find a host route to destination */
-  if(!lrp_is_my_global_address(&rm->dest_addr)) {
-    nexthop = uip_ds6_route_nexthop(uip_ds6_route_lookup(&rm->dest_addr));
+  if(!lrp_is_my_global_address(&rrep->dest_addr)) {
+    nexthop = uip_ds6_route_nexthop(uip_ds6_route_lookup(&rrep->dest_addr));
     if(nexthop == NULL) {
       PRINTF("Unable to forward RREP: unknown destination\n");
     }
@@ -352,9 +351,9 @@ lrp_handle_incoming_rrep(void)
 #if !LRP_IS_SINK
   /* Forward RREP to nexthop */
   if(nexthop != NULL) {
-    lc = lrp_link_cost(&UIP_IP_BUF->srcipaddr, rm->metric_type);
-    lrp_send_rrep(&rm->dest_addr, nexthop, &rm->source_addr, rm->source_seqno,
-                  rm->metric_type, rm->metric_value + lc);
+    lc = lrp_link_cost(&UIP_IP_BUF->srcipaddr, rrep->metric_type);
+    lrp_send_rrep(&rrep->dest_addr, nexthop, &rrep->source_addr, rrep->source_seqno,
+                  rrep->metric_type, rrep->metric_value + lc);
   }
 #endif
 #endif /* LRP_IS_COORDINATOR */
@@ -364,7 +363,7 @@ lrp_handle_incoming_rrep(void)
 void
 lrp_handle_incoming_rerr(void)
 {
-  struct lrp_msg_rerr *rm = (struct lrp_msg_rerr *)uip_appdata;
+  struct lrp_msg_rerr_t *rerr = (struct lrp_msg_rerr_t *)uip_appdata;
 #if !LRP_USE_DIO
   struct uip_ds6_route *rt;
 #endif
@@ -377,20 +376,20 @@ lrp_handle_incoming_rerr(void)
   PRINTF(" -> ");
   PRINT6ADDR(&UIP_IP_BUF->destipaddr);
   PRINTF(" addr_in_error=");
-  PRINT6ADDR(&rm->addr_in_error);
+  PRINT6ADDR(&rerr->addr_in_error);
   PRINTF(" dest=");
-  PRINT6ADDR(&rm->dest_addr);
+  PRINT6ADDR(&rerr->dest_addr);
   PRINTF("\n");
 
 #if LRP_IS_COORDINATOR
   /* Remove route */
-  uip_ds6_route_rm(uip_ds6_route_lookup(&rm->addr_in_error));
+  uip_ds6_route_rm(uip_ds6_route_lookup(&rerr->addr_in_error));
 
 #if !LRP_USE_DIO
   /* LOADng: forwarding RERR to dest_addr */
-  rt = uip_ds6_route_lookup(&rm->dest_addr);
+  rt = uip_ds6_route_lookup(&rerr->dest_addr);
   if(rt != NULL) {
-    lrp_send_rerr(&rm->dest_addr, &rm->addr_in_error,
+    lrp_send_rerr(&rerr->dest_addr, &rerr->addr_in_error,
                   uip_ds6_route_nexthop(rt));
   }
 #else
@@ -406,7 +405,7 @@ lrp_handle_incoming_rerr(void)
     /* Forward the RERR higher */
     defrt = uip_ds6_defrt_choose();
     if(defrt != NULL) {
-      lrp_send_rerr(&rm->dest_addr, &rm->addr_in_error, defrt);
+      lrp_send_rerr(&rerr->dest_addr, &rerr->addr_in_error, defrt);
     }
   }
 #endif /* !LRP_IS_SINK */
@@ -453,11 +452,10 @@ lrp_request_route_to(uip_ipaddr_t *host)
   }
 #endif /* LRP_RREQ_MININTERVAL */
 
-  lrp_rand_wait();
   SEQNO_INCREASE(lrp_state.node_seqno);
   lrp_state_save();
-  lrp_send_rreq(host, &lrp_myipaddr, lrp_state.node_seqno,
-                LRP_METRIC_HOP_COUNT, 0);
+  lrp_delayed_rreq(host, &lrp_myipaddr, lrp_state.node_seqno,
+                   LRP_METRIC_HOP_COUNT, 0);
 
 #if LRP_RREQ_MININTERVAL
   timer_set(&rreq_ratelimit_timer, LRP_RREQ_MININTERVAL);

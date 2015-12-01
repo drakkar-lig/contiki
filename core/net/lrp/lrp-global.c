@@ -231,20 +231,8 @@ lrp_nbr_add(uip_ipaddr_t *next_hop)
 /* Return a random duration (in ticks). `scale` is the interval (in
  * milliseconds) where the random duration must be taken into. */
 uint32_t
-rand_wait_duration_before_broadcast(uint16_t scale)
+rand_wait_duration_before_broadcast()
 {
-  return (random_rand() % 256) * scale * CLOCK_SECOND / 256 / 1000;
+  return (random_rand() % 256) * LRP_RANDOM_WAIT / 256;
 }
-#if LRP_IS_COORDINATOR
-inline void
-lrp_rand_wait()
-{
-#if LRP_RANDOM_WAIT
-  PRINTF("Waiting rand time\n");
-  clock_wait(random_rand() % 50 * CLOCK_SECOND / 100);
-  PRINTF("Done waiting rand time\n");
-#endif
-}
-#endif /* LRP_IS_COORDINATOR */
-
 #endif /* UIP_CONF_IPV6_LRP */
