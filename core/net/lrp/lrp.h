@@ -60,6 +60,9 @@ typedef struct lrp_route_entry {
 #include "net/ipv6/uip-ds6.h"
 #include "net/ipv6/uip-ds6-route.h"
 
+/**
+ * \brief  Set the local prefix of the network the node is into.
+ */
 void lrp_set_local_prefix(uip_ipaddr_t *prefix, uint8_t len);
 
 /**
@@ -71,12 +74,23 @@ uip_ipaddr_t *lrp_select_nexthop_for(uip_ipaddr_t *source,
                                      uip_ipaddr_t *destination,
                                      uip_lladdr_t *previoushop);
 
+/**
+ * \brief   Get the sink IPv6 address.
+ * \return  True if the node is associated to a LRP network. In this
+ *          situation, sink_address contains the IPv6 address of the sink.
+ *          Otherwise, return false and sink_address is not modified.
+ */
+uint8_t lrp_get_sink_address(uip_ipaddr_t *sink_address);
+
 #if 0
 #if !UIP_ND6_SEND_NA
 void lrp_link_next_hop_callback(const rimeaddr_t *addr, int status, int mutx);
 #endif /* !UIP_ND6_SEND_NA */
 #endif
 
+/**
+ * LRP process
+ */
 PROCESS_NAME(lrp_process);
 
 #endif /* UIP_CONF_IPV6_LRP */

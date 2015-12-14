@@ -156,7 +156,9 @@ offer_default_route(const uip_ipaddr_t *sink_addr, uip_ipaddr_t *next_hop,
     defrt = uip_ds6_defrt_lookup(uip_ds6_defrt_choose());
     if(defrt == NULL || !uip_ip6addr_cmp(&defrt->ipaddr, next_hop)) {
       /* New default route, remove previous one */
-      PRINTF("New default route\n");
+      PRINTF("New default route. Successor is ");
+      PRINT6ADDR(next_hop);
+      PRINTF("\n");
       uip_ds6_defrt_rm(defrt);
       /* Flush routes through new default route */
       uip_ds6_route_rm_by_nexthop(next_hop);

@@ -277,6 +277,17 @@ lrp_select_nexthop_for(uip_ipaddr_t *source, uip_ipaddr_t *destination,
   return nexthop;
 }
 /*---------------------------------------------------------------------------*/
+uint8_t
+lrp_get_sink_address(uip_ipaddr_t *sink_address)
+{
+  if(uip_ds6_defrt_choose() == NULL) {
+    /* Not associated with a LRP network */
+    return (0 == 1);
+  }
+  uip_ipaddr_copy(sink_address, &lrp_state.sink_addr);
+  return (1 == 1);
+}
+/*---------------------------------------------------------------------------*/
 PROCESS_THREAD(lrp_process, ev, data)
 {
   PROCESS_BEGIN();
