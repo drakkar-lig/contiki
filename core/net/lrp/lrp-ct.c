@@ -51,6 +51,7 @@
 #include "contiki-lib.h"
 #include "contiki-net.h"
 #include <string.h>
+#include <inttypes.h>
 
 #define UIP_IP_BUF ((struct uip_udpip_hdr *)&uip_buf[UIP_LLH_LEN])
 #define HOST_ROUTE_PREFIX_LEN 128
@@ -231,8 +232,8 @@ reconnect_callback()
 
   /* Configure the callback timer */
   ctimer_set(&retransmit_timer, LRP_SEND_DIO_INTERVAL - exp_residuum,
-             (void (*)(void *)) & reconnect_callback, NULL);
-  PRINTF("DIS-BRK timer reset (%lums)\n",
+             (void (*)(void *)) &reconnect_callback, NULL);
+  PRINTF("DIS-BRK timer reset (%" PRIu16 "ms)\n",
          (LRP_SEND_DIO_INTERVAL - exp_residuum) * 1000 / CLOCK_SECOND);
 }
 #endif /* !LRP_IS_SINK */

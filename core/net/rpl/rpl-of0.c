@@ -41,6 +41,8 @@
  * @{
  */
 
+#if UIP_CONF_IPV6_RPL
+
 #include "net/rpl/rpl-private.h"
 
 #define DEBUG DEBUG_NONE
@@ -171,3 +173,4 @@ update_metric_container(rpl_instance_t *instance)
 }
 
 /** @}*/
+#endif /* UIP_CONF_IPV6_RPL */

@@ -39,6 +39,7 @@
 
 #ifndef __LRP_H__
 #define __LRP_H__
+#if UIP_CONF_IPV6_LRP
 
 #include "contiki.h"
 
@@ -78,4 +79,5 @@ void lrp_link_next_hop_callback(const rimeaddr_t *addr, int status, int mutx);
 
 PROCESS_NAME(lrp_process);
 
+#endif /* UIP_CONF_IPV6_LRP */
 #endif /* __LRP_H__ */

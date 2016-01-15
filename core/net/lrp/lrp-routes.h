@@ -39,6 +39,7 @@
 
 #ifndef __LRP_ROUTES_H__
 #define __LRP_ROUTES_H__
+#if UIP_CONF_IPV6_LRP
 
 void lrp_handle_incoming_rreq(void);
 void lrp_handle_incoming_rrep(void);
@@ -59,4 +60,5 @@ void lrp_routing_error(uip_ipaddr_t *source, uip_ipaddr_t *destination,
 
 void lrp_request_route_to(uip_ipaddr_t *host);
 
+#endif /* UIP_CONF_IPV6_LRP */
 #endif /* __LRP_ROUTES_H__ */

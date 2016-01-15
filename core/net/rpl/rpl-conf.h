@@ -37,6 +37,7 @@
 
 #ifndef RPL_CONF_H
 #define RPL_CONF_H
+#if UIP_CONF_IPV6_RPL
 
 #include "contiki-conf.h"
 
@@ -296,4 +297,5 @@
     + random_rand() % (RPL_PROBING_INTERVAL))
 #endif
 
+#endif /* UIP_CONF_IPV6_RPL */
 #endif /* RPL_CONF_H */

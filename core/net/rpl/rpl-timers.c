@@ -41,6 +41,8 @@
  * @{
  */
 
+#if UIP_CONF_IPV6_RPL
+
 #include "contiki-conf.h"
 #include "net/rpl/rpl-private.h"
 #include "net/ipv6/multicast/uip-mcast6.h"
@@ -422,3 +424,4 @@ rpl_schedule_probing(rpl_instance_t *instance)
 }
 #endif /* RPL_WITH_PROBING */
 /** @}*/
+#endif /* UIP_CONF_IPV6_RPL */

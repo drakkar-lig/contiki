@@ -36,6 +36,7 @@
 
 #ifndef RPL_PRIVATE_H
 #define RPL_PRIVATE_H
+#if UIP_CONF_IPV6_RPL
 
 #include "net/rpl/rpl.h"
 
@@ -322,4 +323,5 @@ void rpl_poison_routes(rpl_dag_t *, rpl_parent_t *);
 
 rpl_instance_t *rpl_get_default_instance(void);
 
+#endif /* UIP_CONF_IPV6_RPL */
 #endif /* RPL_PRIVATE_H */

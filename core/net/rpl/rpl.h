@@ -37,6 +37,7 @@
 
 #ifndef RPL_H
 #define RPL_H
+#if UIP_CONF_IPV6_RPL
 
 #include "rpl-conf.h"
 
@@ -292,4 +293,5 @@ enum rpl_mode rpl_set_mode(enum rpl_mode mode);
 enum rpl_mode rpl_get_mode(void);
 
 /*---------------------------------------------------------------------------*/
+#endif /* UIP_CONF_IPV6_RPL */
 #endif /* RPL_H */

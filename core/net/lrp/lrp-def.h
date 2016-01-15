@@ -39,8 +39,7 @@
 
 #ifndef __LRP_DEF_H__
 #define __LRP_DEF_H__
-
-#include "net/ip/uip.h"
+#if UIP_CONF_IPV6_LRP
 
 /* UDP port used for routing control messages */
 #define LRP_UDPPORT            6666
@@ -127,4 +126,5 @@
 /* Define metric types */
 #define LRP_METRIC_HOP_COUNT 1
 
+#endif /* UIP_CONF_IPV6_LRP */
 #endif /* __LRP_DEF_H__ */

@@ -39,6 +39,7 @@
 
 #ifndef __LRP_CT_H__
 #define __LRP_CT_H__
+#if UIP_CONF_IPV6_LRP
 
 /* Handle incoming tree maintenance messages */
 void lrp_handle_incoming_dio(void);
@@ -56,4 +57,5 @@ void lrp_no_more_default_route(void);
 void global_repair(void);
 #endif /* LRP_IS_SINK */
 
+#endif /* UIP_CONF_IPV6_LRP */
 #endif /* __LRP_CT_H__ */

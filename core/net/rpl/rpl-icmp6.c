@@ -45,6 +45,8 @@
  * @{
  */
 
+#if UIP_CONF_IPV6_RPL
+
 #include "net/ip/tcpip.h"
 #include "net/ip/uip.h"
 #include "net/ipv6/uip-ds6.h"
@@ -962,3 +964,4 @@ rpl_icmp6_register_handlers()
 /*---------------------------------------------------------------------------*/
 
 /** @}*/
+#endif /* UIP_CONF_IPV6_RPL */

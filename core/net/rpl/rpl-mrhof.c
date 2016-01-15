@@ -46,6 +46,8 @@
  * @{
  */
 
+#if UIP_CONF_IPV6_RPL
+
 #include "net/rpl/rpl-private.h"
 #include "net/nbr-table.h"
 
@@ -293,3 +295,4 @@ update_metric_container(rpl_instance_t *instance)
 #endif /* RPL_DAG_MC == RPL_DAG_MC_NONE */
 
 /** @}*/
+#endif /* UIP_CONF_IPV6_RPL */

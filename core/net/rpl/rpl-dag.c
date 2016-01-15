@@ -43,6 +43,8 @@
  * @{
  */
 
+#if UIP_CONF_IPV6_RPL
+
 #include "contiki.h"
 #include "net/rpl/rpl-private.h"
 #include "net/ip/uip.h"
@@ -1413,3 +1415,4 @@ rpl_process_dio(uip_ipaddr_t *from, rpl_dio_t *dio)
 }
 /*---------------------------------------------------------------------------*/
 /** @} */
+#endif /* UIP_CONF_IPV6_RPL */

@@ -42,6 +42,8 @@
  * @{
  */
 
+#if UIP_CONF_IPV6_RPL
+
 #include "net/ip/uip.h"
 #include "net/ip/tcpip.h"
 #include "net/ipv6/uip-ds6.h"
@@ -351,3 +353,4 @@ rpl_init(void)
 /*---------------------------------------------------------------------------*/
 
 /** @}*/
+#endif /* UIP_CONF_IPV6_RPL */

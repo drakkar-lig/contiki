@@ -37,11 +37,12 @@
  * \author Audéoud Henry-Joseph <henry-joseph.audeoud@imag.fr>
  */
 
-#include "net/lrp/lrp-def.h"
-#include "net/ip/uip.h"
-
 #ifndef __LRP_MSG_H__
 #define __LRP_MSG_H__
+#if UIP_CONF_IPV6_LRP
+
+#include "net/lrp/lrp-def.h"
+#include "net/ip/uip.h"
 
 /*---------------------------------------------------------------------------*/
 /* Generic LRP message */
@@ -196,4 +197,5 @@ void lrp_send_upd(const uip_ipaddr_t *lost_node,
 
 #endif /* LRP_USE_DIO */
 
+#endif /* UIP_CONF_IPV6_LRP */
 #endif /* __LRP_MSG_H__ */
