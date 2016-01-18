@@ -116,7 +116,7 @@ lrp_state_restore(void)
 #endif /* LRP_USE_CFS */
 
 /*---------------------------------------------------------------------------*/
-inline uint8_t
+uint8_t
 lrp_ipaddr_is_empty(uip_ipaddr_t *addr)
 {
   uint8_t i;
@@ -130,7 +130,7 @@ lrp_ipaddr_is_empty(uip_ipaddr_t *addr)
 /*---------------------------------------------------------------------------*/
 /* Return the link cost between this node and the next_hop, depending on the
  * metric type. */
-inline uint16_t
+uint16_t
 lrp_link_cost(uip_ipaddr_t *link, uint8_t metric_type)
 {
   switch(metric_type) {
@@ -144,7 +144,7 @@ lrp_link_cost(uip_ipaddr_t *link, uint8_t metric_type)
   return 1;
 }
 /*---------------------------------------------------------------------------*/
-inline uint8_t
+uint8_t
 lrp_is_my_global_address(uip_ipaddr_t *addr)
 {
   int i;
@@ -163,7 +163,7 @@ lrp_is_my_global_address(uip_ipaddr_t *addr)
 }
 /*---------------------------------------------------------------------------*/
 #if LRP_IS_SINK
-inline uint8_t
+uint8_t
 lrp_addr_match_local_prefix(uip_ipaddr_t *host)
 {
   return uip_ipaddr_prefixcmp(&lrp_local_prefix.prefix, host,
