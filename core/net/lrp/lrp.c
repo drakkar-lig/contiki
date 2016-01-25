@@ -49,6 +49,7 @@
 #include "net/lrp/lrp-routes.h"
 #include "net/lrp/lrp-global.h"
 #include "net/lrp/lrp-msg.h"
+#include "net/linkaddr.h"
 #include "contiki.h"
 #include "contiki-lib.h"
 #include "contiki-net.h"
@@ -136,11 +137,10 @@ lrp_is_predecessor(uip_ipaddr_t *addr)
 
 /*---------------------------------------------------------------------------*/
 /* Link-layer callback. Used to discover neighbors unreachability */
-#if 0
-#if !UIP_ND6_SEND_NA
 void
-lrp_link_next_hop_callback(const rimeaddr_t *addr, int status, int mutx)
+lrp_link_next_hop_callback(const linkaddr_t *addr, int status, int mutx)
 {
+#if !UIP_ND6_SEND_NA
   uip_ds6_defrt_t *locdefrt;
   lrp_next_hop_t *nh = (lrp_next_hop_t *)nbr_table_get_from_lladdr(lrp_next_hops, addr);
   uip_ds6_nbr_t *nb = uip_ds6_nbr_ll_lookup((uip_lladdr_t *)addr);
@@ -185,9 +185,8 @@ lrp_link_next_hop_callback(const rimeaddr_t *addr, int status, int mutx)
       nh->nb_consecutive_noack_msg = 0;
     }
   }
-}
 #endif /* !UIP_ND6_SEND_NA */
-#endif
+}
 
 /*---------------------------------------------------------------------------*/
 void

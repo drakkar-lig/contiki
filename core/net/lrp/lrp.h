@@ -59,6 +59,7 @@ typedef struct lrp_route_entry {
 
 #include "net/ipv6/uip-ds6.h"
 #include "net/ipv6/uip-ds6-route.h"
+#include "net/linkaddr.h"
 
 /**
  * \brief  Set the local prefix of the network the node is into.
@@ -82,11 +83,7 @@ uip_ipaddr_t *lrp_select_nexthop_for(uip_ipaddr_t *source,
  */
 uint8_t lrp_get_sink_address(uip_ipaddr_t *sink_address);
 
-#if 0
-#if !UIP_ND6_SEND_NA
-void lrp_link_next_hop_callback(const rimeaddr_t *addr, int status, int mutx);
-#endif /* !UIP_ND6_SEND_NA */
-#endif
+void lrp_link_next_hop_callback(const linkaddr_t *addr, int status, int mutx);
 
 /**
  * LRP process
