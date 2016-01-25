@@ -160,6 +160,7 @@ wrap_send_rrep(void *_)
 void
 lrp_delayed_rrep()
 {
+    
   ctimer_set(&delayed_message_timer, rand_wait_duration_before_broadcast(),
              &wrap_send_rrep, NULL);
 }
@@ -201,18 +202,17 @@ lrp_send_dio(uip_ipaddr_t *destination)
 {
   struct lrp_msg_dio_t rm;
 
-#if !LRP_IS_SINK
-  if(uip_ds6_defrt_choose() == NULL) {
-    PRINTF("Do not send DIO: no default route\n");
-    return;
-  }
-#endif /* !LRP_IS_SINK */
-
-  PRINTF("Send DIO");
-  if(destination == NULL) {
-    PRINTF(" (broadcast)\n");
+  PRINTF("Send DIO ");
+  if(lrp_state.tree_seqno == 0) {
+    PRINTF("infinite ");
   } else {
-    PRINTF(" -> ");
+    PRINTF("seqno/metric/value = %d/0x%x/%d ",
+        lrp_state.tree_seqno, lrp_state.metric_type, lrp_state.metric_value);
+  }
+  if(destination == NULL) {
+    PRINTF("(broadcast)\n");
+  } else {
+    PRINTF("-> ");
     PRINT6ADDR(destination);
     PRINTF("\n");
   }
@@ -228,7 +228,8 @@ lrp_send_dio(uip_ipaddr_t *destination)
     uip_create_linklocal_lln_routers_mcast(&lrp_udpconn->ripaddr);
   } else {
     uip_ipaddr_copy(&lrp_udpconn->ripaddr, destination);
-  } uip_udp_packet_send(lrp_udpconn, &rm, sizeof(struct lrp_msg_dio_t));
+  }
+  uip_udp_packet_send(lrp_udpconn, &rm, sizeof(struct lrp_msg_dio_t));
   memset(&lrp_udpconn->ripaddr, 0, sizeof(lrp_udpconn->ripaddr));
 }
 /* Schedule a DIO message broadcasting later. Useful to avoid collisions */
@@ -239,43 +240,6 @@ lrp_delayed_dio(uip_ipaddr_t *destination)
              (void (*)(void *)) & lrp_send_dio, destination);
 }
 #endif /* LRP_IS_COORDINATOR */
-
-/*---------------------------------------------------------------------------*/
-/* Format and broadcast a DIS type packet. If `extended` is true, tree
- * association information are transmitted into an extended DIS */
-#if !LRP_IS_SINK
-void
-lrp_send_dis(uint8_t extended)
-{
-  struct lrp_msg_extended_dis_t dis;
-
-  if(extended && uip_ds6_defrt_choose() == NULL) {
-    PRINTF("Do not send extended DIS: no default route\n");
-    return;
-  }
-
-  PRINTF("Send DIS (broadcast)");
-  if(extended) {
-    PRINTF(" (extended)");
-  }
-  PRINTF("\n");
-
-  dis.type = LRP_DIS_TYPE << 4 | 0x0;
-  dis.addr_len = (0x0 << 4) | LRP_ADDR_LEN_IPV6;
-  if(extended) {
-    dis.tree_seqno = uip_htons(lrp_state.tree_seqno);
-    dis.metric_type = lrp_state.metric_type;
-    dis.metric_value = lrp_state.metric_value;
-    uip_ipaddr_copy(&dis.sink_addr, &lrp_state.sink_addr);
-  }
-
-  uip_create_linklocal_lln_routers_mcast(&lrp_udpconn->ripaddr);
-  uip_udp_packet_send(lrp_udpconn, &dis,
-                      extended ? sizeof(struct lrp_msg_extended_dis_t)
-                      : sizeof(struct lrp_msg_dis_t));
-  memset(&lrp_udpconn->ripaddr, 0, sizeof(lrp_udpconn->ripaddr));
-}
-#endif /* !LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
 /* Format and send a BRK type message. It will be send to the specified
@@ -399,9 +363,6 @@ lrp_handle_incoming_msg(void)
     break;
   case LRP_DIO_TYPE:
     lrp_handle_incoming_dio();
-    break;
-  case LRP_DIS_TYPE:
-    lrp_handle_incoming_dis();
     break;
   case LRP_BRK_TYPE:
     lrp_handle_incoming_brk();

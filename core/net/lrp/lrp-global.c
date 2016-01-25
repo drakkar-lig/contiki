@@ -134,12 +134,14 @@ uint16_t
 lrp_link_cost(uip_ipaddr_t *link, uint8_t metric_type)
 {
   switch(metric_type) {
-  default:
-    PRINTF("WARNING: unknown metric type (%x)."
-           "Using hop count instead.\n", metric_type);
-  /* Consider the metric as HOP_COUNT */
-  case LRP_METRIC_HOP_COUNT:
-    return 1;
+    case LRP_METRIC_NONE:
+      return 0;
+    default:
+      PRINTF("WARNING: unknown metric type (%x)."
+             "Using hop count instead.\n", metric_type);
+      /* Consider the metric is HOP_COUNT */
+    case LRP_METRIC_HOP_COUNT:
+      return 1;
   }
   return 1;
 }
@@ -212,12 +214,12 @@ lrp_nbr_add(uip_ipaddr_t *next_hop)
     PRINTF(")\n");
   }
 #if !UIP_ND6_SEND_NA
-  /* Puts back default route neighbor in table if it was discarded: we have to
+  /* Put back default route neighbor in table if it was discarded: we have to
    * keep it. */
   def_nexthop = uip_ds6_defrt_choose();
   if(def_nexthop) {
     if(uip_ds6_nbr_lladdr_from_ipaddr(def_nexthop) == NULL) {
-      /* puts it back in the table */
+      /* Put it back in the table */
       memcpy(&nbr_lladdr, &def_nexthop->u8[8],
              UIP_LLADDR_LEN);
       nbr_lladdr.addr[0] ^= 2;

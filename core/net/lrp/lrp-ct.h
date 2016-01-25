@@ -43,7 +43,6 @@
 
 /* Handle incoming tree maintenance messages */
 void lrp_handle_incoming_dio(void);
-void lrp_handle_incoming_dis(void);
 void lrp_handle_incoming_brk(void);
 void lrp_handle_incoming_upd(void);
 

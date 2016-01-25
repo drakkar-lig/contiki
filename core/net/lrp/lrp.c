@@ -330,7 +330,7 @@ PROCESS_THREAD(lrp_process, ev, data)
 #endif /* LRP_RREQ_RETRIES && (LRP_IS_SINK || !LRP_USE_DIO) */
 
 #if !LRP_IS_SINK
-  /* Start sending DIS to find nodes just around */
+  /* Start LR to find nodes just around */
   lrp_no_more_default_route();
 #endif
 #if LRP_IS_SINK

@@ -148,25 +148,6 @@ void lrp_delayed_dio(uip_ipaddr_t *destination);
 #endif /* LRP_IS_COORDINATOR */
 
 /*-------------------------------------------------------------------*/
-/* LRP DIS message */
-#define LRP_DIS_TYPE      5
-struct lrp_msg_dis_t {
-  uint8_t type;
-  uint8_t addr_len;
-};
-struct lrp_msg_extended_dis_t {
-  uint8_t type;
-  uint8_t addr_len;
-  uint16_t tree_seqno;
-  uint8_t metric_type;
-  uint16_t metric_value;
-  uip_ipaddr_t sink_addr;
-};
-#if !LRP_IS_SINK
-void lrp_send_dis(uint8_t extended);
-#endif /* !LRP_IS_SINK */
-
-/*-------------------------------------------------------------------*/
 /* LRP BRK message */
 #define LRP_BRK_TYPE      6
 struct lrp_msg_brk_t {

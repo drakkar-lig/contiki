@@ -63,8 +63,9 @@ uip_ipaddr_t lrp_myipaddr;
 #define MAX_SEQNO               65534
 typedef uint16_t seqno_t;
 #define SEQNO_GREATER_THAN(s1, s2) \
-  ((((s1) > (s2)) && ((s1) - (s2) <= (MAX_SEQNO / 2))) \
-   || (((s2) > (s1)) && ((s2) - (s1) > (MAX_SEQNO / 2))))
+  (((s1) != 0) && (((s2) == 0) || \
+   ((((s1) > (s2)) && ((s1) - (s2) <= (MAX_SEQNO / 2))) || \
+    (((s2) > (s1)) && ((s2) - (s1) > (MAX_SEQNO / 2))))))
 #define SEQNO_INCREASE(seqno) ((seqno) >= MAX_SEQNO ? (seqno) = 1 : ++(seqno))
 #define SEQNO_INCREASE(seqno) ((seqno) >= MAX_SEQNO ? (seqno) = 1 : ++(seqno))
 

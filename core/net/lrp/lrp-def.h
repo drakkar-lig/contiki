@@ -54,15 +54,12 @@
  * no automatic global repair */
 #define LRP_MAX_DODAG_LIFETIME 1800 * CLOCK_SECOND
 
-/* Send DIO unicast to a DIS emitter, instead of broadcast */
-#define LRP_SEND_DIO_UNICAST   1
+/* Number of times a DIO has to be sent, when starting a LR, before sending
+ * BRK. 0 to not send any DIO, and start with BRK */
+#define LRP_LR_SEND_DIO_NB     2
 
-/* Number of times a DIS has to be sent, when starting a LR, before sending
- * BRK. 0 to not send any DIS, and start with BRK */
-#define LRP_LR_SEND_DIS_NB     2
-
-/* Exponential parameter for DIS sending. @see retransmit_dis_brk */
-#define LRP_DIS_EXP_PARAM      0.90
+/* Exponential parameter for DIO sending. @see retransmit_dio_brk */
+#define LRP_LR_EXP_PARAM      0.90
 
 /* Re-send RREQ n times if no RREP recieved. 0 implies don't retry at all */
 #define LRP_RREQ_RETRIES       0
@@ -125,7 +122,10 @@
 #endif
 
 /* Define metric types */
-#define LRP_METRIC_HOP_COUNT 1
+#define LRP_METRIC_HOP_COUNT 0x01
+/* Special placeholder metric. Is not comparable. Should always be used with
+ * a seqno of 0, in infinite-rank DIOs. */
+#define LRP_METRIC_NONE 0xff
 
 #endif /* UIP_CONF_IPV6_LRP */
 #endif /* __LRP_DEF_H__ */

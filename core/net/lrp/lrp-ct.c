@@ -58,7 +58,7 @@
 
 #if !LRP_IS_SINK
 static struct ctimer reconnect_timer = { 0 };
-static uint16_t dis_brk_nb_sent = 0;
+static uint16_t reconnect_nb_sent = 0;
 static uint16_t exp_residuum = LRP_SEND_DIO_INTERVAL;
 #endif /* !LRP_IS_SINK */
 
@@ -120,7 +120,7 @@ brc_add(const uip_ipaddr_t *brk_sender, const uint16_t seqno,
  * NULL if the route has not been added. tree_seqno is the seqno used into the
  * tree; repair_seqno is the last known seqno sent by the sink to handle local
  * reparations. To choose route, we rely on repair_seqno, but only tree_seqno
- * is broadcasted through DIOs. */
+ * is broadcast through DIOs. */
 #if !LRP_IS_SINK
 static uip_ds6_defrt_t *
 offer_default_route(const uip_ipaddr_t *sink_addr, uip_ipaddr_t *next_hop,
@@ -186,42 +186,40 @@ static void
 stop_reconnect_callback()
 {
   ctimer_stop(&reconnect_timer);
-  dis_brk_nb_sent = 0;
+  reconnect_nb_sent = 0;
   exp_residuum = LRP_SEND_DIO_INTERVAL;
 }
 /* Emit messages needed when the node is disconnected to the LRP tree
  * structure.
  *
- * Node tries first a Direct Reassociation (DR) by sending DIS messages, then
- * tries a Link Reversal (LR) by sending BRK messages. If the node was never
- * associated to any tree, it may use only DR.
+ * Node tries first a Direct Reassociation (DR) by sending infinite-rank DIO
+ * messages, then tries a Link Reversal (LR) by sending BRK messages. If the
+ * node was never associated to any tree, it may use only DR.
  */
 static void
 reconnect_callback()
 {
-  uint8_t extended = (0 == 1);
   if(uip_ds6_defrt_choose() != NULL) {
-    if(dis_brk_nb_sent >= LRP_LR_SEND_DIS_NB) {
-      /* We have a default route and have sent enough DIS messages. Stop the
+    if(reconnect_nb_sent >= LRP_LR_SEND_DIO_NB) {
+      /* We have a default route and have sent enough DIO messages. Stop the
        * reconnection algorithm. */
       stop_reconnect_callback();
       return;
     }
-    /* Else, we do not have send enough DIS messages. Maybe a neighbour has
-     * not send us a DIO message successfully. We thus continue sending DIS
-     * messages. */
-    extended = (1 == 1);
+    /* Else, we do not have send enough DIO messages. Maybe a neighbour has
+     * not send us a DIO message successfully. We thus continue sending
+     * DIO messages. */
   }
-  /* Send DIS/BRK message. */
+  /* Send infinite-rank DIO/BRK message. */
 #if !LRP_IS_COORDINATOR
   /* Is a leaf: only use DR. */
-  lrp_send_dis(extended);
+  lrp_send_dio(NULL);
 #else /* !LRP_IS_COORDINATOR */
   /* Not a leaf. Should one use LR or DR? */
-  if(dis_brk_nb_sent < LRP_LR_SEND_DIS_NB ||
+  if(reconnect_nb_sent < LRP_LR_SEND_DIO_NB ||
      lrp_ipaddr_is_empty(&lrp_state.sink_addr)) {
     /* Use DR */
-    lrp_send_dis(extended);
+    lrp_send_dio(NULL);
   } else {
     /* Use LR */
     SEQNO_INCREASE(lrp_state.node_seqno);
@@ -232,13 +230,13 @@ reconnect_callback()
 #endif /* !LRP_IS_COORDINATOR */
 
   /* Update state */
-  dis_brk_nb_sent++;
-  exp_residuum *= LRP_DIS_EXP_PARAM;
+  reconnect_nb_sent++;
+  exp_residuum *= LRP_LR_EXP_PARAM;
 
   /* Configure the callback timer */
   ctimer_set(&reconnect_timer, LRP_SEND_DIO_INTERVAL - exp_residuum,
              (void (*)(void *)) &reconnect_callback, NULL);
-  PRINTF("DIS-BRK timer reset (%" PRIu16 "ms)\n",
+  PRINTF("Local-repair timer reset (%" PRIu16 "ms)\n",
          (LRP_SEND_DIO_INTERVAL - exp_residuum) * 1000 / CLOCK_SECOND);
 }
 #endif /* !LRP_IS_SINK */
@@ -248,7 +246,6 @@ reconnect_callback()
 void
 lrp_handle_incoming_dio(void)
 {
-#if !LRP_IS_SINK
   struct lrp_msg_dio_t *dio = (struct lrp_msg_dio_t *)uip_appdata;
 #if LRP_IS_COORDINATOR
   uint16_t old_seqno = lrp_state.tree_seqno;
@@ -267,77 +264,41 @@ lrp_handle_incoming_dio(void)
 
   dio->tree_seqno = uip_ntohs(dio->tree_seqno);
 
+#if !LRP_IS_SINK
+  /* Check if this route is interesting or not. If so, select it as
+   * successor. */
   offer_default_route(&dio->sink_addr, &UIP_IP_BUF->srcipaddr,
                       dio->metric_type, dio->metric_value,
                       dio->tree_seqno, dio->tree_seqno);
 
-  /* Check if state has changed */
 #if LRP_IS_COORDINATOR
+  /* Ensure we have a default route, before sending any DIO */
+  if(uip_ds6_defrt_choose() == NULL) {
+    return;
+  }
+#endif /* LRP_IS_COORDINATOR */
+
+  /* Check if state has changed */
   if(old_seqno != lrp_state.tree_seqno ||
      old_metric_type != lrp_state.metric_type ||
      old_metric_value != lrp_state.metric_value) {
-    PRINTF("Position has changed. Will broadcast DIO message\n");
+    PRINTF("Position has changed. Will broadcast a DIO message\n");
     lrp_delayed_dio(NULL);
-  } else if(SEQNO_GREATER_THAN(lrp_state.tree_seqno, dio->tree_seqno) ||
-            (lrp_state.metric_type == dio->metric_type &&
-             lrp_state.metric_value +
-              lrp_link_cost(&UIP_IP_BUF->srcipaddr, dio->metric_type)
-              < dio->metric_value)) {
-    /* Assume symmetric costs */
-    PRINTF("Sender node may be interested by our DIO...\n");
-    lrp_send_dio(&UIP_IP_BUF->srcipaddr);
+    return;
   }
-#endif
 #endif /* !LRP_IS_SINK */
-}
-/*---------------------------------------------------------------------------*/
-/* Handle an incoming DIS type message. */
-void
-lrp_handle_incoming_dis(void)
-{
+
 #if LRP_IS_COORDINATOR
-  struct lrp_msg_extended_dis_t *dis_ex;
-  uint16_t lc;
-  PRINTF("Received DIS");
-  if(uip_len > sizeof(struct lrp_msg_dis_t)) {
-    PRINTF(" (extended)");
+  /* Check if other node needs a DIO */
+  if(SEQNO_GREATER_THAN(lrp_state.tree_seqno, dio->tree_seqno) ||
+     (lrp_state.tree_seqno == dio->tree_seqno &&
+      (lrp_state.metric_type == dio->metric_type &&
+       lrp_state.metric_value + lrp_link_cost(&UIP_IP_BUF->srcipaddr, dio->metric_type) < dio->metric_value))) {
+    /* Assume symmetric costs */
+    PRINTF("Sender node may be interested by our DIO => will send one to it\n");
+    lrp_nbr_add(&UIP_IP_BUF->srcipaddr);
+    lrp_delayed_dio(&UIP_IP_BUF->srcipaddr);
   }
-  PRINTF("\n");
-
-  if(uip_ds6_defrt_lookup(&UIP_IP_BUF->srcipaddr) != NULL) {
-    PRINTF("Skipping: it comes from a successor\n");
-    return;
-  }
-
-#if !LRP_IS_SINK
-  /* Ensure we have a default route */
-  if(uip_ds6_defrt_choose() == NULL) {
-    PRINTF("Skipping: no default route\n");
-    return;
-  }
-#endif
-
-  /* If DIS is extended with tree position information, ensure our
-   * proposition will be considered */
-  if(uip_len > sizeof(struct lrp_msg_dis_t)) {
-    dis_ex = (struct lrp_msg_extended_dis_t *)uip_appdata;
-    lc = lrp_link_cost(&UIP_IP_BUF->srcipaddr, lrp_state.metric_type);
-    if(SEQNO_GREATER_THAN(dis_ex->tree_seqno, lrp_state.tree_seqno) ||
-       (dis_ex->tree_seqno == lrp_state.tree_seqno &&
-        (dis_ex->metric_type == lrp_state.metric_type &&
-         (dis_ex->metric_value < lrp_state.metric_value + lc)))) {
-      PRINTF("Skipping: our default route is too bad\n");
-      return;
-    }
-  }
-
-  /* Schedule a DIO emission, but wait a little to avoid collisions. */
-#if LRP_SEND_DIO_UNICAST
-  lrp_nbr_add(&UIP_IP_BUF->srcipaddr);
-  lrp_delayed_dio(&UIP_IP_BUF->srcipaddr);
-#else /* LRP_SEND_DIO_UNICAST */
-  lrp_delayed_dio(NULL);
-#endif /* LRP_SEND_DIO_UNICAST */
 #endif /* LRP_IS_COORDINATOR */
 }
 /*---------------------------------------------------------------------------*/
