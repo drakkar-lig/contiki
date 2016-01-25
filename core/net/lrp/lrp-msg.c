@@ -50,8 +50,6 @@
 #include "net/ip/uip-debug.h"
 #include <string.h>
 
-static struct ctimer delayed_message_timer = { 0 };
-
 /*---------------------------------------------------------------------------*/
 /* Format and broadcast a RREQ type packet. */
 #if LRP_IS_COORDINATOR
@@ -83,8 +81,8 @@ lrp_send_rreq(const uip_ipaddr_t *searched_addr,
   memset(&lrp_udpconn->ripaddr, 0, sizeof(lrp_udpconn->ripaddr));
 }
 struct send_rreq_params_t {
-  const uip_ipaddr_t *searched_addr;
-  const uip_ipaddr_t *source_addr;
+  uip_ipaddr_t searched_addr;
+  uip_ipaddr_t source_addr;
   uint16_t source_seqno;
   uint8_t metric_type;
   uint16_t metric_value;
@@ -93,7 +91,7 @@ struct send_rreq_params_t {
 static void
 wrap_send_rreq(struct send_rreq_params_t *params)
 {
-  lrp_send_rreq(params->searched_addr, params->source_addr,
+  lrp_send_rreq(&params->searched_addr, &params->source_addr,
                 params->source_seqno, params->metric_type,
                 params->metric_value);
 }
@@ -104,12 +102,21 @@ lrp_delayed_rreq(const uip_ipaddr_t *searched_addr,
                  const uint8_t metric_type,
                  const uint16_t metric_value)
 {
+  static struct ctimer delayed_rreq_timer = { 0 };
   static struct send_rreq_params_t params;
-  params = (struct send_rreq_params_t){
-    searched_addr, source_addr, source_seqno, metric_type, metric_value
-  };
-  ctimer_set(&delayed_message_timer, rand_wait_duration_before_broadcast(),
-             (void (*)(void *)) & wrap_send_rreq, &params);
+  if(ctimer_expired(&delayed_rreq_timer)) {
+    uip_ipaddr_copy(&params.searched_addr, searched_addr);
+    uip_ipaddr_copy(&params.source_addr, source_addr);
+    params.source_seqno = source_seqno;
+    params.metric_type = metric_type;
+    params.metric_value = metric_value;
+    ctimer_set(&delayed_rreq_timer, rand_wait_duration_before_broadcast(),
+               (void (*)(void *)) &wrap_send_rreq, &params);
+  } else {
+    PRINTF("WARN: RREQ to ");
+    PRINT6ADDR(searched_addr);
+    PRINTF(" dropped: another one is pending\n");
+  }
 }
 #endif /* LRP_IS_COORDINATOR */
 
@@ -160,9 +167,13 @@ wrap_send_rrep(void *_)
 void
 lrp_delayed_rrep()
 {
-    
-  ctimer_set(&delayed_message_timer, rand_wait_duration_before_broadcast(),
-             &wrap_send_rrep, NULL);
+  static struct ctimer delayed_rrep_timer = { 0 };
+  if(ctimer_expired(&delayed_rrep_timer)) {
+    ctimer_set(&delayed_rrep_timer, rand_wait_duration_before_broadcast(),
+               &wrap_send_rrep, NULL);
+  } else {
+    PRINTF("WARN: RREP dropped: another one is pending\n");
+  }
 }
 #endif /* !LRP_IS_SINK */
 
@@ -203,18 +214,18 @@ lrp_send_dio(uip_ipaddr_t *destination)
   struct lrp_msg_dio_t rm;
 
   PRINTF("Send DIO ");
-  if(lrp_state.tree_seqno == 0) {
-    PRINTF("infinite ");
-  } else {
-    PRINTF("seqno/metric/value = %d/0x%x/%d ",
-        lrp_state.tree_seqno, lrp_state.metric_type, lrp_state.metric_value);
-  }
   if(destination == NULL) {
     PRINTF("(broadcast)\n");
   } else {
     PRINTF("-> ");
     PRINT6ADDR(destination);
     PRINTF("\n");
+  }
+  if(lrp_state.tree_seqno == 0) {
+    PRINTF("infinite ");
+  } else {
+    PRINTF("seqno/metric/value = %d/0x%x/%d ",
+        lrp_state.tree_seqno, lrp_state.metric_type, lrp_state.metric_value);
   }
 
   rm.type = (LRP_DIO_TYPE << 4) | 0x0;
@@ -236,8 +247,25 @@ lrp_send_dio(uip_ipaddr_t *destination)
 void
 lrp_delayed_dio(uip_ipaddr_t *destination)
 {
-  ctimer_set(&delayed_message_timer, rand_wait_duration_before_broadcast(),
-             (void (*)(void *)) & lrp_send_dio, destination);
+  static struct ctimer delayed_dio_timer = { 0 };
+  static uip_ipaddr_t params = { 0 };
+  if(ctimer_expired(&delayed_dio_timer)) {
+    if(destination == NULL) {
+      ctimer_set(&delayed_dio_timer, rand_wait_duration_before_broadcast(),
+                 (void (*)(void *)) &lrp_send_dio, NULL);
+    } else {
+      uip_ipaddr_copy(&params, destination);
+      ctimer_set(&delayed_dio_timer, rand_wait_duration_before_broadcast(),
+                 (void (*)(void *)) &lrp_send_dio, &params);
+    }
+  } else {
+    PRINTF("WARN: dropping DIO ");
+    if(destination != NULL) {
+      PRINTF("to ");
+      PRINT6ADDR(destination);
+    }
+    PRINTF(": another one is pending\n");
+  }
 }
 #endif /* LRP_IS_COORDINATOR */
 
@@ -281,8 +309,8 @@ lrp_send_brk(const uip_ipaddr_t *initial_sender,
   memset(&lrp_udpconn->ripaddr, 0, sizeof(lrp_udpconn->ripaddr));
 }
 struct send_brk_params_t {
-  const uip_ipaddr_t *initial_sender;
-  const uip_ipaddr_t *nexthop;
+  uip_ipaddr_t initial_sender;
+  uip_ipaddr_t nexthop;
   uint16_t node_seqno;
   uint8_t metric_type;
   uint16_t metric_value;
@@ -291,7 +319,7 @@ struct send_brk_params_t {
 static void
 wrap_send_brk(struct send_brk_params_t *params)
 {
-  lrp_send_brk(params->initial_sender, params->nexthop, params->node_seqno,
+  lrp_send_brk(&params->initial_sender, &params->nexthop, params->node_seqno,
                params->metric_type, params->metric_value);
 }
 void
@@ -301,12 +329,21 @@ lrp_delayed_brk(const uip_ipaddr_t *initial_sender,
                 const uint8_t metric_type,
                 const uint16_t metric_value)
 {
+  static struct ctimer delayed_brk_timer = { 0 };
   static struct send_brk_params_t params;
-  params = (struct send_brk_params_t){
-    initial_sender, nexthop, node_seqno, metric_type, metric_value
-  };
-  ctimer_set(&delayed_message_timer, rand_wait_duration_before_broadcast(),
-             (void (*)(void *)) & wrap_send_brk, &params);
+  if(ctimer_expired(&delayed_brk_timer)) {
+    uip_ipaddr_copy(&params.initial_sender, initial_sender);
+    uip_ipaddr_copy(&params.nexthop, nexthop);
+    params.node_seqno = node_seqno;
+    params.metric_type = metric_type;
+    params.metric_value = metric_value;
+    ctimer_set(&delayed_brk_timer, rand_wait_duration_before_broadcast(),
+               (void (*)(void *)) &wrap_send_brk, &params);
+  } else {
+    PRINTF("WARN: dropping BRK from ");
+    PRINT6ADDR(initial_sender);
+    PRINTF(": another one is pending\n");
+  }
 }
 #endif /* LRP_IS_COORDINATOR && !LRP_IS_SINK */
 
