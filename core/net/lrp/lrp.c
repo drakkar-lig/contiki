@@ -187,7 +187,6 @@ lrp_link_next_hop_callback(const linkaddr_t *addr, int status, int mutx)
   }
 #endif /* !UIP_ND6_SEND_NA */
 }
-
 /*---------------------------------------------------------------------------*/
 void
 lrp_set_local_prefix(uip_ipaddr_t *prefix, uint8_t len)
@@ -281,10 +280,10 @@ lrp_get_sink_address(uip_ipaddr_t *sink_address)
 {
   if(uip_ds6_defrt_choose() == NULL) {
     /* Not associated with a LRP network */
-    return (0 == 1);
+    return 0 == 1;
   }
   uip_ipaddr_copy(sink_address, &lrp_state.sink_addr);
-  return (1 == 1);
+  return 1 == 1;
 }
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(lrp_process, ev, data)

@@ -214,7 +214,7 @@ lrp_send_dio(uip_ipaddr_t *destination)
   struct lrp_msg_dio_t rm;
 
   PRINTF("Send DIO ");
-  if(destination == NULL) {
+  if(destination == NULL || destination->u8[0] == 0xFF) {
     PRINTF("(broadcast)\n");
   } else {
     PRINTF("-> ");
@@ -225,7 +225,7 @@ lrp_send_dio(uip_ipaddr_t *destination)
     PRINTF("infinite ");
   } else {
     PRINTF("seqno/metric/value = %d/0x%x/%d ",
-        lrp_state.tree_seqno, lrp_state.metric_type, lrp_state.metric_value);
+           lrp_state.tree_seqno, lrp_state.metric_type, lrp_state.metric_value);
   }
 
   rm.type = (LRP_DIO_TYPE << 4) | 0x0;
@@ -283,7 +283,7 @@ lrp_send_brk(const uip_ipaddr_t *initial_sender,
   struct lrp_msg_brk_t rm;
 
   PRINTF("Send BRK ");
-  if(nexthop == NULL) {
+  if(nexthop == NULL || nexthop->u8[0] == 0xFF) {
     PRINTF("(broadcast)");
   } else {
     PRINTF("-> ");
@@ -333,7 +333,11 @@ lrp_delayed_brk(const uip_ipaddr_t *initial_sender,
   static struct send_brk_params_t params;
   if(ctimer_expired(&delayed_brk_timer)) {
     uip_ipaddr_copy(&params.initial_sender, initial_sender);
-    uip_ipaddr_copy(&params.nexthop, nexthop);
+    if(nexthop == NULL) {
+      uip_create_linklocal_lln_routers_mcast(&params.nexthop);
+    } else {
+      uip_ipaddr_copy(&params.nexthop, nexthop);
+    }
     params.node_seqno = node_seqno;
     params.metric_type = metric_type;
     params.metric_value = metric_value;
