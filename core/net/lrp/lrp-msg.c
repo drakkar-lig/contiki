@@ -213,18 +213,17 @@ lrp_send_dio(uip_ipaddr_t *destination)
 {
   struct lrp_msg_dio_t rm;
 
-  PRINTF("Send DIO ");
+  PRINTF("Send DIO");
   if(destination == NULL || destination->u8[0] == 0xFF) {
-    PRINTF("(broadcast)\n");
+    PRINTF(" (broadcast)");
   } else {
-    PRINTF("-> ");
+    PRINTF(" -> ");
     PRINT6ADDR(destination);
-    PRINTF("\n");
   }
   if(lrp_state.tree_seqno == 0) {
-    PRINTF("infinite ");
+    PRINTF( "infinite\n");
   } else {
-    PRINTF("seqno/metric/value = %d/0x%x/%d ",
+    PRINTF(" seqno/metric/value = %d/0x%x/%d\n",
            lrp_state.tree_seqno, lrp_state.metric_type, lrp_state.metric_value);
   }
 
