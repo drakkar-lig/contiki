@@ -138,7 +138,7 @@ offer_default_route(const uip_ipaddr_t *sink_addr, uip_ipaddr_t *next_hop,
 
   lc = lrp_link_cost(next_hop, metric_type);
   if(SEQNO_GREATER_THAN(repair_seqno, lrp_state.repair_seqno) ||
-     (repair_seqno == lrp_state.repair_seqno &&
+     (repair_seqno != 0 && repair_seqno == lrp_state.repair_seqno &&
       (metric_type == lrp_state.metric_type &&
        (metric_value + lc < lrp_state.metric_value ||
         (metric_value + lc == lrp_state.metric_value &&
@@ -281,13 +281,13 @@ lrp_handle_incoming_dio(void)
   offer_default_route(&dio->sink_addr, &UIP_IP_BUF->srcipaddr,
                       dio->metric_type, dio->metric_value,
                       dio->tree_seqno, dio->tree_seqno);
+#endif /* !LRP_IS_SINK */
 
-#if LRP_IS_COORDINATOR
+#if !LRP_IS_SINK && LRP_IS_COORDINATOR
   /* Ensure we have a default route, before sending any DIO */
   if(uip_ds6_defrt_choose() == NULL) {
     return;
   }
-#endif /* LRP_IS_COORDINATOR */
 
   /* Check if state has changed */
   if(old_seqno != lrp_state.tree_seqno ||
@@ -297,7 +297,7 @@ lrp_handle_incoming_dio(void)
     lrp_delayed_dio(NULL);
     return;
   }
-#endif /* !LRP_IS_SINK */
+#endif /* !LRP_IS_SINK && LRP_IS_COORDINATOR */
 
 #if LRP_IS_COORDINATOR
   /* Check if other node needs a DIO */
