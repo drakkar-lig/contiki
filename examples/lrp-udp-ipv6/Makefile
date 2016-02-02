@@ -1,5 +1,3 @@
-all: udp-server udp-client relay
-
 CFLAGS += -DPROJECT_CONF_H=\"project-conf.h\"
 CONTIKI_WITH_RPL = 0
 CONTIKI_WITH_LRP = 1
