@@ -165,11 +165,17 @@ lrp_link_next_hop_callback(const linkaddr_t *addr, int status, int mutx)
     if(nh->nb_consecutive_noack_msg >= LRP_MAX_CONSECUTIVE_NOACKED_MESSAGES) {
       PRINTF("Deleting next hop ");
       PRINT6ADDR(uip_ds6_nbr_get_ipaddr(nb));
-      printf(" unreachability detected.\n");
+      PRINTF(": unreachability detected.\n");
+#if !LRP_IS_SINK
       if((locdefrt = uip_ds6_defrt_lookup(uip_ds6_nbr_get_ipaddr(nb)))
          != NULL) {
         uip_ds6_defrt_rm(locdefrt);
+        PRINTF("This was the default route. Launching LR algorithm\n");
+        PROCESS_CONTEXT_BEGIN(&lrp_process);
+        lrp_no_more_default_route();
+        PROCESS_CONTEXT_END();
       }
+#endif /* !LRP_IS_SINK */
       uip_ds6_route_rm_by_nexthop(uip_ds6_nbr_get_ipaddr(nb));
       uip_ds6_nbr_rm(nb);
       nbr_table_remove(lrp_next_hops, nh);

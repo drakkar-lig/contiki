@@ -156,6 +156,7 @@ struct lrp_msg_brk_t {
   uint16_t node_seqno;
   uint8_t metric_type;
   uint16_t metric_value;
+  uint8_t ring_size;
   uip_ipaddr_t initial_sender;
 };
 #if LRP_IS_COORDINATOR && !LRP_IS_SINK
@@ -163,12 +164,14 @@ void lrp_send_brk(const uip_ipaddr_t *initial_sender,
                   const uip_ipaddr_t *nexthop,
                   const uint16_t node_seqno,
                   const uint8_t metric_type,
-                  const uint16_t metric_value);
+                  const uint16_t metric_value,
+                  const uint8_t ring_size);
 void lrp_delayed_brk(const uip_ipaddr_t *initial_sender,
                      const uip_ipaddr_t *nexthop,
                      const uint16_t node_seqno,
                      const uint8_t metric_type,
-                     const uint16_t metric_value);
+                     const uint16_t metric_value,
+                     const uint8_t ring_size);
 #endif /* LRP_IS_COORDINATOR && !LRP_IS_SINK */
 
 /*-------------------------------------------------------------------*/

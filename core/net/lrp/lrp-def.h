@@ -61,6 +61,12 @@
 /* Exponential parameter for DIO sending. @see retransmit_dio_brk */
 #define LRP_LR_EXP_PARAM      0.90
 
+/* Maximal ring size for LR. At start, BRK will be sent with a ring_size of 0.
+ * Then, this field will be incremented each retransmission, until it reaches
+ * this value. With this value, the BRK message is flooded in the whole
+ * subtree, whatever its size. */
+#define LRP_LR_RING_INFINITE_SIZE 3
+
 /* Re-send RREQ n times if no RREP recieved. 0 implies don't retry at all */
 #define LRP_RREQ_RETRIES       0
 

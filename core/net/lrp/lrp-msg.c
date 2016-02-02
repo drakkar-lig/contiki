@@ -247,7 +247,7 @@ void
 lrp_delayed_dio(uip_ipaddr_t *destination)
 {
   static struct ctimer delayed_dio_timer = { 0 };
-  static uip_ipaddr_t params = { 0 };
+  static uip_ipaddr_t params;
   if(ctimer_expired(&delayed_dio_timer)) {
     if(destination == NULL) {
       ctimer_set(&delayed_dio_timer, rand_wait_duration_before_broadcast(),
@@ -277,13 +277,14 @@ lrp_send_brk(const uip_ipaddr_t *initial_sender,
              const uip_ipaddr_t *nexthop,
              const uint16_t node_seqno,
              const uint8_t metric_type,
-             const uint16_t metric_value)
+             const uint16_t metric_value,
+             const uint8_t ring_size)
 {
   struct lrp_msg_brk_t rm;
 
   PRINTF("Send BRK ");
   if(nexthop == NULL || nexthop->u8[0] == 0xFF) {
-    PRINTF("(broadcast)");
+    PRINTF("(broadcast) ring=%d", ring_size);
   } else {
     PRINTF("-> ");
     PRINT6ADDR(nexthop);
@@ -298,6 +299,7 @@ lrp_send_brk(const uip_ipaddr_t *initial_sender,
   rm.node_seqno = uip_htons(node_seqno);
   rm.metric_type = metric_type;
   rm.metric_value = metric_value;
+  rm.ring_size = ring_size;
   uip_ipaddr_copy(&rm.initial_sender, initial_sender);
 
   if(nexthop == NULL) {
@@ -313,20 +315,22 @@ struct send_brk_params_t {
   uint16_t node_seqno;
   uint8_t metric_type;
   uint16_t metric_value;
+  uint8_t ring_size;
 };
 
 static void
 wrap_send_brk(struct send_brk_params_t *params)
 {
   lrp_send_brk(&params->initial_sender, &params->nexthop, params->node_seqno,
-               params->metric_type, params->metric_value);
+               params->metric_type, params->metric_value, params->ring_size);
 }
 void
 lrp_delayed_brk(const uip_ipaddr_t *initial_sender,
                 const uip_ipaddr_t *nexthop,
                 const uint16_t node_seqno,
                 const uint8_t metric_type,
-                const uint16_t metric_value)
+                const uint16_t metric_value,
+                const uint8_t ring_size)
 {
   static struct ctimer delayed_brk_timer = { 0 };
   static struct send_brk_params_t params;
@@ -340,6 +344,7 @@ lrp_delayed_brk(const uip_ipaddr_t *initial_sender,
     params.node_seqno = node_seqno;
     params.metric_type = metric_type;
     params.metric_value = metric_value;
+    params.ring_size = ring_size;
     ctimer_set(&delayed_brk_timer, rand_wait_duration_before_broadcast(),
                (void (*)(void *)) &wrap_send_brk, &params);
   } else {

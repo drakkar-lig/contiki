@@ -65,7 +65,7 @@ static uint16_t exp_residuum = LRP_SEND_DIO_INTERVAL;
 /*---------------------------------------------------------------------------*/
 /* Implementation of Broken Routes Cache to avoid multiple forwarding of BRK
  * messages and to be able to retransmit UPD on the reverted path */
-#if LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK
+#if LRP_USE_DIO && LRP_IS_COORDINATOR
 #define BRCACHESIZE 2
 
 static struct {
@@ -113,7 +113,7 @@ brc_add(const uip_ipaddr_t *brk_sender, const uint16_t seqno,
     return 0 == 1;
   }
 }
-#endif /* LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK */
+#endif /* LRP_USE_DIO && LRP_IS_COORDINATOR */
 
 /*---------------------------------------------------------------------------*/
 /* Change default route if offered one is better than the previous one. Return
@@ -173,9 +173,11 @@ offer_default_route(const uip_ipaddr_t *sink_addr, uip_ipaddr_t *next_hop,
       PRINTF("Refreshing default route\n");
       stimer_set(&defrt->lifetime, LRP_DEFRT_LIFETIME);
     }
+    return defrt;
   } else {
     PRINTF("Skipping: route worse than previous\n");
-  } return defrt;
+    return NULL;
+  }
 }
 #endif /* !LRP_IS_SINK */
 
@@ -199,6 +201,13 @@ stop_reconnect_callback()
 static void
 reconnect_callback()
 {
+  uint8_t ring_size;
+
+  if(!ctimer_expired(&reconnect_timer)) {
+    PRINTF("Aborting reconnection: already pending\n");
+    return;
+  }
+
   if(uip_ds6_defrt_choose() != NULL) {
     if(reconnect_nb_sent >= LRP_LR_SEND_DIO_NB) {
       /* We have a default route and have sent enough DIO messages. Stop the
@@ -224,8 +233,10 @@ reconnect_callback()
     /* Use LR */
     SEQNO_INCREASE(lrp_state.node_seqno);
     lrp_state_save();
+    ring_size = reconnect_nb_sent - LRP_LR_SEND_DIO_NB;
+    if(ring_size > LRP_LR_RING_INFINITE_SIZE) ring_size = LRP_LR_RING_INFINITE_SIZE;
     lrp_send_brk(&lrp_myipaddr, NULL, lrp_state.node_seqno,
-                 LRP_METRIC_HOP_COUNT, 0);
+                 LRP_METRIC_HOP_COUNT, 0, ring_size);
   }
 #endif /* !LRP_IS_COORDINATOR */
 
@@ -247,11 +258,11 @@ void
 lrp_handle_incoming_dio(void)
 {
   struct lrp_msg_dio_t *dio = (struct lrp_msg_dio_t *)uip_appdata;
-#if LRP_IS_COORDINATOR
+#if !LRP_IS_SINK && LRP_IS_COORDINATOR
   uint16_t old_seqno = lrp_state.tree_seqno;
   uint8_t old_metric_type = lrp_state.metric_type;
   uint16_t old_metric_value = lrp_state.metric_value;
-#endif /* LRP_IS_COORDINATOR */
+#endif /* !LRP_IS_SINK && LRP_IS_COORDINATOR */
 
   PRINTF("Received DIO ");
   PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
@@ -322,9 +333,9 @@ lrp_handle_incoming_brk()
   PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
   PRINTF(" -> ");
   PRINT6ADDR(&UIP_IP_BUF->destipaddr);
-  PRINTF(" node_seqno=%d", uip_ntohs(brk->node_seqno));
-  PRINTF(" metric type/value=%x/%u", brk->metric_type, brk->metric_value);
-  PRINTF(" initial_sender=");
+  PRINTF(" ring=%d", brk->ring_size);
+  PRINTF(" seqno/type/value=%d/%x/%u", uip_ntohs(brk->node_seqno), brk->metric_type, brk->metric_value);
+  PRINTF(" initial=");
   PRINT6ADDR(&brk->initial_sender);
   PRINTF("\n");
 
@@ -332,6 +343,10 @@ lrp_handle_incoming_brk()
 
 #if LRP_IS_SINK
   /* Send UPD on the reversed route and exits */
+  if(!brc_add(&brk->initial_sender, brk->node_seqno, &UIP_IP_BUF->srcipaddr)) {
+    PRINTF("Skipping: BRK is worst than a former\n");
+    return;
+  }
   SEQNO_INCREASE(lrp_state.repair_seqno);
   lrp_state_save();
   lrp_send_upd(&brk->initial_sender, &lrp_state.sink_addr, &UIP_IP_BUF->srcipaddr,
@@ -351,18 +366,26 @@ lrp_handle_incoming_brk()
 
   defrt = uip_ds6_defrt_lookup(&UIP_IP_BUF->srcipaddr);
   if(defrt != NULL) {
-    /* BRK comes from our default next hop. Broadcasting */
+    /* BRK comes from our default next hop. Should be broadcast, but check the
+     * ring size before. */
+    if(brk->ring_size == 0) {
+      PRINTF("Skipping: BRK's ring is too large\n");
+      return;
+    }
+    if(brk->ring_size != LRP_LR_RING_INFINITE_SIZE) {
+      brk->ring_size--;
+    }
     brc_force_add(&brk->initial_sender, brk->node_seqno, &UIP_IP_BUF->srcipaddr);
     lrp_delayed_brk(&brk->initial_sender, NULL, brk->node_seqno,
-                    brk->metric_type, brk->metric_value + lc);
+                    brk->metric_type, brk->metric_value + lc, brk->ring_size);
   } else {
     /* BRK comes from a neighbor broken branch. Forwarding BRK to sink */
     if(!brc_add(&brk->initial_sender, brk->node_seqno, &UIP_IP_BUF->srcipaddr)) {
-      PRINTF("Skipping: BRK is older than previous one\n");
+      PRINTF("Skipping: BRK is worst than a former\n");
       return;
     }
     lrp_send_brk(&brk->initial_sender, uip_ds6_defrt_choose(), brk->node_seqno,
-                 brk->metric_type, brk->metric_value + lc);
+                 brk->metric_type, brk->metric_value + lc, brk->ring_size);
   }
 #endif /* LRP_IS_SINK */
 #endif /* LRP_USE_DIO && LRP_IS_COORDINATOR */
@@ -377,13 +400,12 @@ lrp_handle_incoming_upd()
   uip_ipaddr_t *nexthop;
   uint16_t lc;
 
-  PRINTF("UPD message: ");
+  PRINTF("Received UPD ");
   PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
   PRINTF(" -> ");
   PRINT6ADDR(&UIP_IP_BUF->destipaddr);
-  PRINTF(" tree_seqno=%d", uip_ntohs(upd->tree_seqno));
   PRINTF(" repair_seqno=%d", uip_ntohs(upd->repair_seqno));
-  PRINTF(" metric type/value=%x/%u", upd->metric_type, upd->metric_value);
+  PRINTF(" seqno/type/value=%d/%x/%u", uip_ntohs(upd->tree_seqno), upd->metric_type, upd->metric_value);
   PRINTF(" lost_node=");
   PRINT6ADDR(&upd->lost_node);
   PRINTF("\n");
