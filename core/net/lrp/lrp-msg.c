@@ -64,7 +64,7 @@ lrp_send_rreq(const uip_ipaddr_t *searched_addr,
 
   PRINTF("Send RREQ (broadcast) for ");
   PRINT6ADDR(searched_addr);
-  PRINTF(" metric t/v=%x/%u\n", metric_type, metric_value);
+  PRINTF(" seqno/metric/value=%u/0x%x/%u\n", source_seqno, metric_type, metric_value);
 
   /* Fill message */
   rm.type = (LRP_RREQ_TYPE << 4) | 0x0;
@@ -139,8 +139,7 @@ lrp_send_rrep(const uip_ipaddr_t *dest_addr,
   PRINT6ADDR(source_addr);
   PRINTF(" dest=");
   PRINT6ADDR(dest_addr);
-  PRINTF(" source_seqno=%u", source_seqno);
-  PRINTF(" metric type/value=%x/%u\n", metric_type, metric_value);
+  PRINTF(" seqno/metric/value=%u/0x%x/%u\n", source_seqno, metric_type, metric_value);
 
   rm.type = (LRP_RREP_TYPE << 4) | 0x0;
   rm.addr_len = (0x0 << 4) | LRP_ADDR_LEN_IPV6;
@@ -221,7 +220,7 @@ lrp_send_dio(uip_ipaddr_t *destination)
     PRINT6ADDR(destination);
   }
   if(lrp_state.tree_seqno == 0) {
-    PRINTF( "infinite\n");
+    PRINTF(" infinite\n");
   } else {
     PRINTF(" seqno/metric/value = %d/0x%x/%d\n",
            lrp_state.tree_seqno, lrp_state.metric_type, lrp_state.metric_value);

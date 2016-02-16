@@ -268,10 +268,9 @@ lrp_handle_incoming_dio(void)
   PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
   PRINTF(" -> ");
   PRINT6ADDR(&UIP_IP_BUF->destipaddr);
-  PRINTF(" sink_addr=");
+  PRINTF(" sink=");
   PRINT6ADDR(&dio->sink_addr);
-  PRINTF(" tree_seqno=%d", uip_ntohs(dio->tree_seqno));
-  PRINTF(" metric type/value=%x/%u\n", dio->metric_type, dio->metric_value);
+  PRINTF(" seqno/metric/value=%u/0x%x/%u\n", uip_ntohs(dio->tree_seqno), dio->metric_type, dio->metric_value);
 
   dio->tree_seqno = uip_ntohs(dio->tree_seqno);
 
@@ -334,7 +333,7 @@ lrp_handle_incoming_brk()
   PRINTF(" -> ");
   PRINT6ADDR(&UIP_IP_BUF->destipaddr);
   PRINTF(" ring=%d", brk->ring_size);
-  PRINTF(" seqno/type/value=%d/%x/%u", uip_ntohs(brk->node_seqno), brk->metric_type, brk->metric_value);
+  PRINTF(" seqno/metric/value=%u/0x%x/%u", uip_ntohs(brk->node_seqno), brk->metric_type, brk->metric_value);
   PRINTF(" initial=");
   PRINT6ADDR(&brk->initial_sender);
   PRINTF("\n");
@@ -405,7 +404,7 @@ lrp_handle_incoming_upd()
   PRINTF(" -> ");
   PRINT6ADDR(&UIP_IP_BUF->destipaddr);
   PRINTF(" repair_seqno=%d", uip_ntohs(upd->repair_seqno));
-  PRINTF(" seqno/type/value=%d/%x/%u", uip_ntohs(upd->tree_seqno), upd->metric_type, upd->metric_value);
+  PRINTF(" seqno/metric/value=%u/0x%x/%u", uip_ntohs(upd->tree_seqno), upd->metric_type, upd->metric_value);
   PRINTF(" lost_node=");
   PRINT6ADDR(&upd->lost_node);
   PRINTF("\n");
