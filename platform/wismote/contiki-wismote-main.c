@@ -91,6 +91,10 @@ static uint8_t is_gateway;
 #include "experiment-setup.h"
 #endif
 
+#if UIP_CONF_IPV6_LRP
+#include "net/lrp/lrp.h"
+#endif
+
 void init_platform(void);
 
 /*---------------------------------------------------------------------------*/
@@ -320,6 +324,10 @@ main(int argc, char **argv)
     }
     printf("%02x%02x\n", lladdr->ipaddr.u8[14], lladdr->ipaddr.u8[15]);
   }
+
+#if UIP_CONF_IPV6_LRP
+  process_start(&lrp_process, NULL);
+#endif
 
   if(!UIP_CONF_IPV6_RPL) {
     uip_ipaddr_t ipaddr;
