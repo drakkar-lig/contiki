@@ -74,6 +74,7 @@ static struct {
   uip_ipaddr_t forwarded_to;
 } brcache[BRCACHESIZE];
 
+#if !LRP_IS_SINK
 /* Look for an entry into the cache */
 static uip_ipaddr_t *
 brc_lookup(const uip_ipaddr_t *brk_sender)
@@ -85,6 +86,7 @@ brc_lookup(const uip_ipaddr_t *brk_sender)
   }
   return NULL;
 }
+#endif /* !LRP_IS_SINK */
 /* Force insertion of the BRK offer, without considering cached values. */
 static void
 brc_force_add(const uip_ipaddr_t *brk_sender, const uint16_t seqno,
@@ -222,13 +224,21 @@ reconnect_callback()
   /* Send infinite-rank DIO/BRK message. */
 #if !LRP_IS_COORDINATOR
   /* Is a leaf: only use DR. */
-  lrp_send_dio(NULL);
+  lrp_send_dio(NULL, LRP_DIO_OPTION_DETECT_ALL_SUCCESSORS);
 #else /* !LRP_IS_COORDINATOR */
   /* Not a leaf. Should one use LR or DR? */
   if(reconnect_nb_sent < LRP_LR_SEND_DIO_NB ||
      lrp_ipaddr_is_empty(&lrp_state.sink_addr)) {
     /* Use DR */
-    lrp_send_dio(NULL);
+    if(uip_ds6_defrt_choose() == NULL) {
+      /* Node is not connected. Nodes that have the same rank than its previous
+       * successor must answer. */
+      lrp_send_dio(NULL, LRP_DIO_OPTION_DETECT_ALL_SUCCESSORS);
+    } else {
+      /* Node is connected. Nodes that have the same rank than its previous
+       * successor may not answer. */
+      lrp_send_dio(NULL, 0);
+    }
   } else {
     /* Use LR */
     SEQNO_INCREASE(lrp_state.node_seqno);
@@ -270,44 +280,50 @@ lrp_handle_incoming_dio(void)
   PRINT6ADDR(&UIP_IP_BUF->destipaddr);
   PRINTF(" sink=");
   PRINT6ADDR(&dio->sink_addr);
-  PRINTF(" seqno/metric/value=%u/0x%x/%u\n", uip_ntohs(dio->tree_seqno), dio->metric_type, dio->metric_value);
+  PRINTF(" seqno/metric/value=%u/0x%x/%u", uip_ntohs(dio->tree_seqno), dio->metric_type, dio->metric_value);
+  PRINTF(" options=%02x\n", dio->options);
 
   dio->tree_seqno = uip_ntohs(dio->tree_seqno);
 
 #if !LRP_IS_SINK
   /* Check if this route is interesting or not. If so, select it as
    * successor. */
-  offer_default_route(&dio->sink_addr, &UIP_IP_BUF->srcipaddr,
-                      dio->metric_type, dio->metric_value,
-                      dio->tree_seqno, dio->tree_seqno);
+  if(!lrp_ipaddr_is_empty(&dio->sink_addr)) {
+    offer_default_route(&dio->sink_addr, &UIP_IP_BUF->srcipaddr,
+                        dio->metric_type, dio->metric_value,
+                        dio->tree_seqno, dio->tree_seqno);
+  }
 #endif /* !LRP_IS_SINK */
 
-#if !LRP_IS_SINK && LRP_IS_COORDINATOR
-  /* Ensure we have a default route, before sending any DIO */
-  if(uip_ds6_defrt_choose() == NULL) {
-    return;
-  }
-
+#if LRP_IS_COORDINATOR
+  /* Check if the sender needs a DIO back */
+#if !LRP_IS_SINK
   /* Check if state has changed */
   if(old_seqno != lrp_state.tree_seqno ||
      old_metric_type != lrp_state.metric_type ||
      old_metric_value != lrp_state.metric_value) {
     PRINTF("Position has changed. Will broadcast a DIO message\n");
-    lrp_delayed_dio(NULL);
+    lrp_delayed_dio(NULL, 0);
     return;
   }
-#endif /* !LRP_IS_SINK && LRP_IS_COORDINATOR */
 
-#if LRP_IS_COORDINATOR
+  /* Ensure we have a default route, before sending any DIO */
+  if(uip_ds6_defrt_choose() == NULL) {
+    PRINTF("No default route. Won't send DIO back\n");
+    return;
+  }
+#endif /* !LRP_IS_SINK */
+
   /* Check if other node needs a DIO */
+  uint16_t its_mertic_with_our_dio = lrp_state.metric_value + lrp_link_cost(&UIP_IP_BUF->srcipaddr, dio->metric_type);
   if(SEQNO_GREATER_THAN(lrp_state.tree_seqno, dio->tree_seqno) ||
-     (lrp_state.tree_seqno == dio->tree_seqno &&
-      (lrp_state.metric_type == dio->metric_type &&
-       lrp_state.metric_value + lrp_link_cost(&UIP_IP_BUF->srcipaddr, dio->metric_type) < dio->metric_value))) {
+     (lrp_state.tree_seqno == dio->tree_seqno && lrp_state.metric_type == dio->metric_type &&
+      (its_mertic_with_our_dio < dio->metric_value ||
+       dio->options & LRP_DIO_OPTION_DETECT_ALL_SUCCESSORS && its_mertic_with_our_dio == dio->metric_value))) {
     /* Assume symmetric costs */
-    PRINTF("Sender node may be interested by our DIO => will send one to it\n");
+    PRINTF("Sender node may be interested by our DIO => will send one back\n");
     lrp_nbr_add(&UIP_IP_BUF->srcipaddr);
-    lrp_delayed_dio(&UIP_IP_BUF->srcipaddr);
+    lrp_delayed_dio(&UIP_IP_BUF->srcipaddr, 0);
   }
 #endif /* LRP_IS_COORDINATOR */
 }
@@ -417,7 +433,6 @@ lrp_handle_incoming_upd()
                          upd->metric_type, upd->metric_value,
                          upd->tree_seqno, upd->repair_seqno)
      == NULL) {
-    PRINTF("Skipping: not a better route\n");
     return;
   }
 
@@ -465,7 +480,7 @@ lrp_no_more_default_route(void)
 
 /*---------------------------------------------------------------------------*/
 /* Initiate a global repair. Launch it once at start; then, it will be
- * automatically called again aftr LRP_MAX_DODAG_LIFETIME time. Or, it may be
+ * automatically called again after LRP_MAX_DODAG_LIFETIME time. Or, it may be
  * called to force the global repair. */
 #if LRP_IS_SINK
 void
@@ -474,7 +489,7 @@ global_repair()
 #if !LRP_MAX_DODAG_LIFETIME
   lrp_state.tree_seqno = SEQNO_INCREASE(lrp_state.repair_seqno);
   lrp_state_save();
-  lrp_send_dio(NULL);
+  lrp_send_dio(NULL, 0);
 #else /* !LRP_MAX_DODAG_LIFETIME */
   static uint32_t gr_32bits_timer = 0;
   static struct ctimer gr_timer = { 0 };
@@ -484,7 +499,7 @@ global_repair()
     PRINTF("Initiating global repair\n");
     lrp_state.tree_seqno = SEQNO_INCREASE(lrp_state.repair_seqno);
     lrp_state_save();
-    lrp_send_dio(NULL);
+    lrp_send_dio(NULL, 0);
     gr_32bits_timer = LRP_MAX_DODAG_LIFETIME;
   }
 

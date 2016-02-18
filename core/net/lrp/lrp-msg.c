@@ -208,7 +208,7 @@ lrp_send_rerr(const uip_ipaddr_t *dest_addr,
  * `destination` is NULL */
 #if LRP_IS_COORDINATOR
 void
-lrp_send_dio(uip_ipaddr_t *destination)
+lrp_send_dio(uip_ipaddr_t *destination, uint8_t options)
 {
   struct lrp_msg_dio_t rm;
 
@@ -220,17 +220,19 @@ lrp_send_dio(uip_ipaddr_t *destination)
     PRINT6ADDR(destination);
   }
   if(lrp_state.tree_seqno == 0) {
-    PRINTF(" infinite\n");
+    PRINTF(" infinite");
   } else {
-    PRINTF(" seqno/metric/value = %d/0x%x/%d\n",
+    PRINTF(" seqno/metric/value = %d/0x%x/%d",
            lrp_state.tree_seqno, lrp_state.metric_type, lrp_state.metric_value);
   }
+  PRINTF(" options=%02x\n", options);
 
   rm.type = (LRP_DIO_TYPE << 4) | 0x0;
   rm.addr_len = (0x0 << 4) | LRP_ADDR_LEN_IPV6;
   rm.tree_seqno = uip_htons(lrp_state.tree_seqno);
   rm.metric_type = lrp_state.metric_type;
   rm.metric_value = lrp_state.metric_value;
+  rm.options = options;
   uip_ipaddr_copy(&rm.sink_addr, &lrp_state.sink_addr);
 
   if(destination == NULL) {
@@ -241,21 +243,30 @@ lrp_send_dio(uip_ipaddr_t *destination)
   uip_udp_packet_send(lrp_udpconn, &rm, sizeof(struct lrp_msg_dio_t));
   memset(&lrp_udpconn->ripaddr, 0, sizeof(lrp_udpconn->ripaddr));
 }
-/* Schedule a DIO message broadcasting later. Useful to avoid collisions */
+struct send_dio_params_t {
+  uip_ipaddr_t destination;
+  uint8_t options;
+};
+
+static void
+wrap_send_dio(struct send_dio_params_t *params)
+{
+  lrp_send_dio(&params->destination, params->options);
+}
 void
-lrp_delayed_dio(uip_ipaddr_t *destination)
+lrp_delayed_dio(uip_ipaddr_t *destination, uint8_t options)
 {
   static struct ctimer delayed_dio_timer = { 0 };
-  static uip_ipaddr_t params;
+  static struct send_dio_params_t params;
   if(ctimer_expired(&delayed_dio_timer)) {
     if(destination == NULL) {
-      ctimer_set(&delayed_dio_timer, rand_wait_duration_before_broadcast(),
-                 (void (*)(void *)) &lrp_send_dio, NULL);
+      uip_create_linklocal_lln_routers_mcast(&params.destination);
     } else {
-      uip_ipaddr_copy(&params, destination);
-      ctimer_set(&delayed_dio_timer, rand_wait_duration_before_broadcast(),
-                 (void (*)(void *)) &lrp_send_dio, &params);
+      uip_ipaddr_copy(&params.destination, destination);
     }
+    params.options = options;
+    ctimer_set(&delayed_dio_timer, rand_wait_duration_before_broadcast(),
+               (void (*)(void *)) &wrap_send_dio, &params);
   } else {
     PRINTF("WARN: dropping DIO ");
     if(destination != NULL) {

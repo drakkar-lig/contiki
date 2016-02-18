@@ -138,13 +138,18 @@ struct lrp_msg_dio_t {
   uint8_t type;
   uint8_t addr_len;
   uint16_t tree_seqno;
+  uint8_t options;
   uint8_t metric_type;
   uint16_t metric_value;
   uip_ipaddr_t sink_addr;
 };
+
+/* Options */
+#define LRP_DIO_OPTION_DETECT_ALL_SUCCESSORS 0x80
+
 #if LRP_IS_COORDINATOR
-void lrp_send_dio(uip_ipaddr_t *destination);
-void lrp_delayed_dio(uip_ipaddr_t *destination);
+void lrp_send_dio(uip_ipaddr_t *destination, uint8_t options);
+void lrp_delayed_dio(uip_ipaddr_t *destination, uint8_t options);
 #endif /* LRP_IS_COORDINATOR */
 
 /*-------------------------------------------------------------------*/
