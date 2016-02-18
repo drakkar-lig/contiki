@@ -59,11 +59,12 @@ void lrp_handle_incoming_msg(void);
 struct lrp_msg_rreq_t {
   uint8_t type;
   uint8_t addr_len;
-  uip_ipaddr_t searched_addr;
-  uip_ipaddr_t source_addr;
   uint16_t source_seqno;
+  uint8_t _padding;
   uint8_t metric_type;
   uint16_t metric_value;
+  uip_ipaddr_t searched_addr;
+  uip_ipaddr_t source_addr;
 };
 #if LRP_IS_COORDINATOR
 void lrp_send_rreq(const uip_ipaddr_t *dest,
@@ -84,11 +85,12 @@ void lrp_delayed_rreq(const uip_ipaddr_t *dest,
 struct lrp_msg_rrep_t {
   uint8_t type;
   uint8_t addr_len;
-  uip_ipaddr_t dest_addr;
-  uip_ipaddr_t source_addr;
   uint16_t source_seqno;
+  uint8_t _padding;
   uint8_t metric_type;
   uint16_t metric_value;
+  uip_ipaddr_t dest_addr;
+  uip_ipaddr_t source_addr;
 };
 #if !LRP_IS_SINK
 void lrp_send_rrep(const uip_ipaddr_t *dest,
@@ -107,8 +109,8 @@ void lrp_delayed_rrep();
 struct lrp_msg_rack_t {
   uint8_t type;
   uint8_t addr_len;
-  uip_ipaddr_t src_addr;
   uint16_t node_seqno;
+  uip_ipaddr_t src_addr;
 };
 #endif /* LRP_RREP_ACK */
 
@@ -159,9 +161,9 @@ struct lrp_msg_brk_t {
   uint8_t type;
   uint8_t addr_len;
   uint16_t node_seqno;
+  uint8_t ring_size;
   uint8_t metric_type;
   uint16_t metric_value;
-  uint8_t ring_size;
   uip_ipaddr_t initial_sender;
 };
 #if LRP_IS_COORDINATOR && !LRP_IS_SINK
@@ -186,9 +188,11 @@ struct lrp_msg_upd_t {
   uint8_t type;
   uint8_t addr_len;
   uint16_t tree_seqno;
-  uint16_t repair_seqno;
+  uint8_t _padding1;
   uint8_t metric_type;
   uint16_t metric_value;
+  uint16_t repair_seqno;
+  uint16_t _padding2;
   uip_ipaddr_t sink_addr;
   uip_ipaddr_t lost_node;
 };
