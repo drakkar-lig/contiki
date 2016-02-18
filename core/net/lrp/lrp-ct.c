@@ -257,7 +257,7 @@ reconnect_callback()
   /* Configure the callback timer */
   ctimer_set(&reconnect_timer, LRP_SEND_DIO_INTERVAL - exp_residuum,
              (void (*)(void *)) &reconnect_callback, NULL);
-  PRINTF("Local-repair timer reset (%" PRIu16 "ms)\n",
+  PRINTF("Local-repair timer reset (%" PRIu32 "ms)\n",
          (LRP_SEND_DIO_INTERVAL - exp_residuum) * 1000 / CLOCK_SECOND);
 }
 #endif /* !LRP_IS_SINK */

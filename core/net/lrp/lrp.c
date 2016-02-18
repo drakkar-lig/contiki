@@ -141,7 +141,9 @@ void
 lrp_link_next_hop_callback(const linkaddr_t *addr, int status, int mutx)
 {
 #if !UIP_ND6_SEND_NA
+#if !LRP_IS_SINK
   uip_ds6_defrt_t *locdefrt;
+#endif /* !LRP_IS_SINK */
   lrp_next_hop_t *nh = (lrp_next_hop_t *)nbr_table_get_from_lladdr(lrp_next_hops, addr);
   uip_ds6_nbr_t *nb = uip_ds6_nbr_ll_lookup((uip_lladdr_t *)addr);
 

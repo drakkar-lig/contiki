@@ -48,7 +48,7 @@
 #define LRP_NET_TRAVERSAL_TIME 10 * CLOCK_SECOND
 
 /* Frequency of DIO broadcasting (ticks) */
-#define LRP_SEND_DIO_INTERVAL  480 * CLOCK_SECOND
+#define LRP_SEND_DIO_INTERVAL  ((uint32_t)(480 * CLOCK_SECOND))
 
 /* Maximum time between two global repairs (ticks, on 32 bits). 0 to perform
  * no automatic global repair */

@@ -206,25 +206,19 @@ lrp_nbr_add(uip_ipaddr_t *next_hop)
     PRINTF(" (waiting for a NA)\n");
     uip_ds6_nbr_add(next_hop, NULL, 0, NBR_INCOMPLETE);
 #endif /* !UIP_ND6_SEND_NA */
-  } else {
-    PRINTF("Neighbor ");
-    PRINT6ADDR(next_hop);
-    PRINTF(" is already known (as ");
-    PRINTLLADDR(uip_ds6_nbr_get_ll(nbr));
-    PRINTF(")\n");
   }
 #if !UIP_ND6_SEND_NA
   /* Put back default route neighbor in table if it was discarded: we have to
    * keep it. */
   def_nexthop = uip_ds6_defrt_choose();
-  if(def_nexthop) {
+  if(def_nexthop != NULL) {
     if(uip_ds6_nbr_lladdr_from_ipaddr(def_nexthop) == NULL) {
       /* Put it back in the table */
+      PRINTF("Re-installing default route next-hop in neighbor table\n");
       memcpy(&nbr_lladdr, &def_nexthop->u8[8],
              UIP_LLADDR_LEN);
       nbr_lladdr.addr[0] ^= 2;
       uip_ds6_nbr_add(def_nexthop, &nbr_lladdr, 0, NBR_REACHABLE);
-      PRINTF("def route neighbor re-installed in neighbor table\n");
     }
   }
 #endif /* !UIP_ND6_SEND_NA */
