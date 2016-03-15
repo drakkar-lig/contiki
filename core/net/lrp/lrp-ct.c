@@ -319,7 +319,7 @@ lrp_handle_incoming_dio(void)
   if(SEQNO_GREATER_THAN(lrp_state.tree_seqno, dio->tree_seqno) ||
      (lrp_state.tree_seqno == dio->tree_seqno && lrp_state.metric_type == dio->metric_type &&
       (its_mertic_with_our_dio < dio->metric_value ||
-       dio->options & LRP_DIO_OPTION_DETECT_ALL_SUCCESSORS && its_mertic_with_our_dio == dio->metric_value))) {
+       (dio->options & LRP_DIO_OPTION_DETECT_ALL_SUCCESSORS && its_mertic_with_our_dio == dio->metric_value)))) {
     /* Assume symmetric costs */
     PRINTF("Sender node may be interested by our DIO => will send one back\n");
     lrp_nbr_add(&UIP_IP_BUF->srcipaddr);

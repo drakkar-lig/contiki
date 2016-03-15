@@ -141,6 +141,7 @@ void
 lrp_link_next_hop_callback(const linkaddr_t *addr, int status, int mutx)
 {
 #if !UIP_ND6_SEND_NA
+  uip_ipaddr_t *nb_ip;
 #if !LRP_IS_SINK
   uip_ds6_defrt_t *locdefrt;
 #endif /* !LRP_IS_SINK */
@@ -153,6 +154,11 @@ lrp_link_next_hop_callback(const linkaddr_t *addr, int status, int mutx)
   if(nh == NULL) {
     nh = nbr_table_add_lladdr(lrp_next_hops, addr);
     nh->nb_consecutive_noack_msg = 0;
+  }
+  nb_ip = uip_ds6_nbr_ipaddr_from_lladdr((uip_lladdr_t *)addr);
+  if(nb_ip == NULL) {
+    PRINTF("WARN: neighbour is known, but not its IP...\n");
+    return;
   }
 
   if(status == MAC_TX_NOACK) {
@@ -169,7 +175,7 @@ lrp_link_next_hop_callback(const linkaddr_t *addr, int status, int mutx)
       PRINT6ADDR(uip_ds6_nbr_get_ipaddr(nb));
       PRINTF(": unreachability detected.\n");
 #if !LRP_IS_SINK
-      if((locdefrt = uip_ds6_defrt_lookup(uip_ds6_nbr_get_ipaddr(nb)))
+      if((locdefrt = uip_ds6_defrt_lookup(nb_ip))
          != NULL) {
         uip_ds6_defrt_rm(locdefrt);
         PRINTF("This was the default route. Launching LR algorithm\n");
@@ -178,7 +184,7 @@ lrp_link_next_hop_callback(const linkaddr_t *addr, int status, int mutx)
         PROCESS_CONTEXT_END();
       }
 #endif /* !LRP_IS_SINK */
-      uip_ds6_route_rm_by_nexthop(uip_ds6_nbr_get_ipaddr(nb));
+      uip_ds6_route_rm_by_nexthop(nb_ip);
       uip_ds6_nbr_rm(nb);
       nbr_table_remove(lrp_next_hops, nh);
     }
