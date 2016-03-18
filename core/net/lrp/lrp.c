@@ -71,6 +71,10 @@ static uip_ipaddr_t mcastipaddr;
 
 #if !UIP_ND6_SEND_NA
 typedef struct {
+  enum {
+    UNKNOWN,
+    REACHABLE
+  } reachability;
   uint8_t nb_consecutive_noack_msg;
 } lrp_next_hop_t;
 NBR_TABLE(lrp_next_hop_t, lrp_next_hops);
@@ -141,12 +145,12 @@ void
 lrp_link_next_hop_callback(const linkaddr_t *addr, int status, int mutx)
 {
 #if !UIP_ND6_SEND_NA
+  lrp_next_hop_t *nh = (lrp_next_hop_t *)nbr_table_get_from_lladdr(lrp_next_hops, addr);
+  uip_ds6_nbr_t *nb = uip_ds6_nbr_ll_lookup((uip_lladdr_t *)addr);
   uip_ipaddr_t *nb_ip;
 #if !LRP_IS_SINK
   uip_ds6_defrt_t *locdefrt;
 #endif /* !LRP_IS_SINK */
-  lrp_next_hop_t *nh = (lrp_next_hop_t *)nbr_table_get_from_lladdr(lrp_next_hops, addr);
-  uip_ds6_nbr_t *nb = uip_ds6_nbr_ll_lookup((uip_lladdr_t *)addr);
 
   if(nb == NULL) {
     return;              /* Unknown neighbor */
@@ -154,31 +158,40 @@ lrp_link_next_hop_callback(const linkaddr_t *addr, int status, int mutx)
   if(nh == NULL) {
     nh = nbr_table_add_lladdr(lrp_next_hops, addr);
     nh->nb_consecutive_noack_msg = 0;
+    nh->reachability = UNKNOWN;
   }
   nb_ip = uip_ds6_nbr_ipaddr_from_lladdr((uip_lladdr_t *)addr);
   if(nb_ip == NULL) {
     PRINTF("WARN: neighbour is known, but not its IP...\n");
     return;
   }
+#if !LRP_IS_SINK
+  locdefrt = uip_ds6_defrt_lookup(nb_ip);
+#endif /* !LRP_IS_SINK */
 
   if(status == MAC_TX_NOACK) {
-    /* Count unacked messages */
+    /* Message is not received by neighbor. Count unacked messages */
     nh->nb_consecutive_noack_msg += 1;
     PRINTF("No ack received from next hop ");
     PRINTLLADDR((uip_lladdr_t *)addr);
     PRINTF(" (counter is %d/%d)\n",
            nh->nb_consecutive_noack_msg, LRP_MAX_CONSECUTIVE_NOACKED_MESSAGES);
 
-    /* Conditionally remove entry */
-    if(nh->nb_consecutive_noack_msg >= LRP_MAX_CONSECUTIVE_NOACKED_MESSAGES) {
+    if(nh->nb_consecutive_noack_msg >= LRP_MAX_CONSECUTIVE_NOACKED_MESSAGES ||
+       nh->reachability == UNKNOWN) {
+      /* Neighbor seems to be unreachable. Delete it from neighbor list */
       PRINTF("Deleting next hop ");
       PRINT6ADDR(uip_ds6_nbr_get_ipaddr(nb));
-      PRINTF(": unreachability detected.\n");
+      PRINTF(": unreachability detected: ");
+      if(nh->reachability == UNKNOWN) {
+        PRINTF("first message is not acked\n");
+      } else {
+        PRINTF("%d consecutive unacked messages\n", nh->nb_consecutive_noack_msg);
+      }
 #if !LRP_IS_SINK
-      if((locdefrt = uip_ds6_defrt_lookup(nb_ip))
-         != NULL) {
-        uip_ds6_defrt_rm(locdefrt);
+      if(locdefrt != NULL) {
         PRINTF("This was the default route. Launching LR algorithm\n");
+        uip_ds6_defrt_rm(locdefrt);
         PROCESS_CONTEXT_BEGIN(&lrp_process);
         lrp_no_more_default_route();
         PROCESS_CONTEXT_END();
@@ -190,11 +203,25 @@ lrp_link_next_hop_callback(const linkaddr_t *addr, int status, int mutx)
     }
   } else if(status == MAC_TX_OK) {
     /* Resetting counter */
-    lrp_next_hop_t *nh =
-      (lrp_next_hop_t *)nbr_table_get_from_lladdr(lrp_next_hops, addr);
-    if(nh != NULL && nh->nb_consecutive_noack_msg != 0) {
-      PRINTF("Received ack; resetting noack counter for next hop ");
+    if(nh->reachability == UNKNOWN) {
+      /* Connectivity to this node is confirmed : the link to it is not
+       * assymetric. */
+      PRINTF("Received a ack from ");
       PRINTLLADDR((uip_lladdr_t *)addr);
+#if !LRP_IS_SINK
+      if(locdefrt != NULL) {
+        PRINTF(" (default route)");
+      }
+#endif /* !LRP_IS_SINK */
+      PRINTF(": neighbor reachability is confirmed\n");
+      nh->reachability = REACHABLE;
+    }
+    if(nh->nb_consecutive_noack_msg != 0) {
+      /* The neighbor has not received our last message, but has received this
+       * one. It is now reachable */
+      PRINTF("Received ack from ");
+      PRINTLLADDR((uip_lladdr_t *)addr);
+      PRINTF(": resetting noack counter");
       PRINTF("\n");
       nh->nb_consecutive_noack_msg = 0;
     }
