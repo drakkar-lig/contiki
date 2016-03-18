@@ -43,6 +43,7 @@
 
 #include "contiki-net.h"
 #include "net/lrp/lrp-def.h"
+#include "net/lrp/lrp-msg.h"
 
 /*---------------------------------------------------------------------------*/
 /* Global variables */
@@ -74,13 +75,26 @@ typedef uint16_t seqno_t;
 /* Node state managment */
 #define STATE_SVFILE            "lrp/state"
 struct {
-  uip_ipaddr_t sink_addr;
-  seqno_t tree_seqno;
-  seqno_t repair_seqno;
-  uint8_t metric_type;
-  uint16_t metric_value;
-  seqno_t node_seqno;
+  uip_ipaddr_t sink_addr; /* Address of the sink we are connected to */
+  seqno_t tree_seqno;     /* Sequence number of the tree */
+  seqno_t repair_seqno;   /* Repair sequence number */
+  seqno_t node_seqno;     /* Sequence number of this node */
+  uint16_t metric_value;  /* Distance from this node to the sink */
+  uint8_t metric_type;    /* Type of metric used for this network */
+  uint8_t succ_reachable; /* Is the selected successor reachable */
 } lrp_state;
+/* Temporary state. Never exported on the network. It is used to handle soft
+ * handover: the connection to the new successor is checked before it is
+ * really selected as successor. */
+struct {
+  uip_ipaddr_t unconfirmed_successor; /* IP address of unconfirmed successor */
+  union {
+    struct lrp_msg       msg;
+    struct lrp_msg_dio_t dio;
+    struct lrp_msg_upd_t upd;
+  } msg;                              /* Message that have make we know this
+                                       * successor. May be a DIO or a UPD. */
+} lrp_tmp_state;
 
 struct {
   uint8_t len;

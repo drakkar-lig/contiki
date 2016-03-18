@@ -125,12 +125,29 @@ brc_add(const uip_ipaddr_t *brk_sender, const uint16_t seqno,
  * is broadcast through DIOs. */
 #if !LRP_IS_SINK
 static uip_ds6_defrt_t *
-offer_default_route(const uip_ipaddr_t *sink_addr, uip_ipaddr_t *next_hop,
-                    const uint8_t metric_type, const uint16_t metric_value,
-                    const uint16_t tree_seqno, const uint16_t repair_seqno)
+offer_default_route(uip_ipaddr_t *next_hop, struct lrp_msg *msg)
 {
+  uip_ipaddr_t *sink_addr;
+  seqno_t repair_seqno;
+  uint8_t metric_type;
+  uint16_t metric_value;
   uip_ds6_defrt_t *defrt = NULL;
   uint16_t lc;
+
+  if(msg->type == LRP_DIO_TYPE) {
+    sink_addr    = &((struct lrp_msg_dio_t*)msg)->sink_addr;
+    repair_seqno = ((struct lrp_msg_dio_t*)msg)->tree_seqno;
+    metric_type  = ((struct lrp_msg_dio_t*)msg)->metric_type;
+    metric_value = ((struct lrp_msg_dio_t*)msg)->metric_value;
+  } else if(msg->type == LRP_UPD_TYPE) {
+    sink_addr    = &((struct lrp_msg_upd_t*)msg)->sink_addr;
+    repair_seqno = ((struct lrp_msg_upd_t*)msg)->repair_seqno;
+    metric_type  = ((struct lrp_msg_upd_t*)msg)->metric_type;
+    metric_value = ((struct lrp_msg_upd_t*)msg)->metric_value;
+  } else {
+    PRINTF("WARNING: unknown message type %x when offering default route\n", msg->type);
+    return NULL;
+  }
 
   if(!lrp_ipaddr_is_empty(&lrp_state.sink_addr) &&
      !uip_ipaddr_cmp(sink_addr, &lrp_state.sink_addr)) {
@@ -146,34 +163,25 @@ offer_default_route(const uip_ipaddr_t *sink_addr, uip_ipaddr_t *next_hop,
         (metric_value + lc == lrp_state.metric_value &&
           uip_ds6_defrt_choose() == NULL))))) {
 
-    /* Offered route is accepted, changing the state */
-    uip_ipaddr_copy(&lrp_state.sink_addr, sink_addr);
-    lrp_state.tree_seqno = tree_seqno;
-    lrp_state.repair_seqno = repair_seqno;
-    lrp_state.metric_type = metric_type;
-    lrp_state.metric_value = metric_value + lc;
-    lrp_state_save();
+    /* Offered route is accepted. Store configuration in temporary space */
+    lrp_store_tmp_state(next_hop, msg);
 
-    /* Check if we are actually changing of next hop! */
+    /* Check if we are actually changing of next hop */
     defrt = uip_ds6_defrt_lookup(uip_ds6_defrt_choose());
     if(defrt == NULL || !uip_ip6addr_cmp(&defrt->ipaddr, next_hop)) {
-      /* New default route, remove previous one */
-      PRINTF("New default route. Successor is ");
+      PRINTF("Trying to send RREP to new successor ");
       PRINT6ADDR(next_hop);
-      PRINTF("\n");
-      uip_ds6_defrt_rm(defrt);
-      /* Flush routes through new default route */
-      uip_ds6_route_rm_by_nexthop(next_hop);
-      lrp_nbr_add(next_hop);
-      defrt = uip_ds6_defrt_add(next_hop, LRP_DEFRT_LIFETIME);
-#if LRP_SEND_SPONTANEOUS_RREP
-      PRINTF("Will send spontaneous RREP to new successor\n");
-      lrp_delayed_rrep();
-#endif /* LRP_SEND_SPONTANEOUS_RREP */
+      PRINTF(" before association: link test\n");
+      SEQNO_INCREASE(lrp_state.node_seqno);
+      lrp_state_save();
+      lrp_delayed_rrep(sink_addr, next_hop, &lrp_myipaddr,
+                       lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
     } else if(defrt != NULL) {
       /* We just need to refresh the route */
-      PRINTF("Refreshing default route\n");
-      stimer_set(&defrt->lifetime, LRP_DEFRT_LIFETIME);
+      PRINTF("Refreshing default route ");
+      PRINT6ADDR(next_hop);
+      PRINTF("\n");
+      lrp_confirm_tmp_state();
     }
     return defrt;
   } else {
@@ -268,11 +276,6 @@ void
 lrp_handle_incoming_dio(void)
 {
   struct lrp_msg_dio_t *dio = (struct lrp_msg_dio_t *)uip_appdata;
-#if !LRP_IS_SINK && LRP_IS_COORDINATOR
-  uint16_t old_seqno = lrp_state.tree_seqno;
-  uint8_t old_metric_type = lrp_state.metric_type;
-  uint16_t old_metric_value = lrp_state.metric_value;
-#endif /* !LRP_IS_SINK && LRP_IS_COORDINATOR */
 
   PRINTF("Received DIO ");
   PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
@@ -289,24 +292,13 @@ lrp_handle_incoming_dio(void)
   /* Check if this route is interesting or not. If so, select it as
    * successor. */
   if(!lrp_ipaddr_is_empty(&dio->sink_addr)) {
-    offer_default_route(&dio->sink_addr, &UIP_IP_BUF->srcipaddr,
-                        dio->metric_type, dio->metric_value,
-                        dio->tree_seqno, dio->tree_seqno);
+    offer_default_route(&UIP_IP_BUF->srcipaddr, (struct lrp_msg*)dio);
   }
 #endif /* !LRP_IS_SINK */
 
 #if LRP_IS_COORDINATOR
   /* Check if the sender needs a DIO back */
 #if !LRP_IS_SINK
-  /* Check if state has changed */
-  if(old_seqno != lrp_state.tree_seqno ||
-     old_metric_type != lrp_state.metric_type ||
-     old_metric_value != lrp_state.metric_value) {
-    PRINTF("Position has changed. Will broadcast a DIO message\n");
-    lrp_delayed_dio(NULL, 0);
-    return;
-  }
-
   /* Ensure we have a default route, before sending any DIO */
   if(uip_ds6_defrt_choose() == NULL) {
     PRINTF("No default route. Won't send DIO back\n");
@@ -412,9 +404,8 @@ lrp_handle_incoming_upd()
 {
 #if LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK
   struct lrp_msg_upd_t *upd = (struct lrp_msg_upd_t *)uip_appdata;
-  uip_ipaddr_t *nexthop;
-  uint16_t lc;
 
+  /* Log */
   PRINTF("Received UPD ");
   PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
   PRINTF(" -> ");
@@ -425,16 +416,28 @@ lrp_handle_incoming_upd()
   PRINT6ADDR(&upd->lost_node);
   PRINTF("\n");
 
+  /* Network to host */
   upd->tree_seqno = uip_ntohs(upd->tree_seqno);
   upd->repair_seqno = uip_ntohs(upd->repair_seqno);
 
   /* Try to use this UPD as default route */
-  if(offer_default_route(&upd->sink_addr, &UIP_IP_BUF->srcipaddr,
-                         upd->metric_type, upd->metric_value,
-                         upd->tree_seqno, upd->repair_seqno)
+  if(offer_default_route(&UIP_IP_BUF->srcipaddr, (struct lrp_msg*)upd)
      == NULL) {
+    /* UPD is not accepted => do nothing. */
     return;
   }
+#endif /* LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK */
+  /* UPD message will be forwarded when the state will be confirmed */
+}
+/*---------------------------------------------------------------------------*/
+/**
+ * Forward a UPD message to its destination.
+ */
+#if LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK
+void
+lrp_forward_upd(struct lrp_msg_upd_t* upd) {
+  uip_ipaddr_t* nexthop;
+  uint16_t lc;
 
   if(lrp_is_my_global_address(&upd->lost_node)) {
     /* We are BRK originator. UPD has reach its final destination */
@@ -449,19 +452,20 @@ lrp_handle_incoming_upd()
     return;
   }
 
-  /* Computing link cost */
-  lc = lrp_link_cost(&UIP_IP_BUF->srcipaddr, upd->metric_type);
+  /* Compute link cost */
+  lc = lrp_link_cost(nexthop, upd->metric_type);
   if(lc == 0) {
     PRINTF("Unable to determine the cost of the link to ");
-    PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
+    PRINT6ADDR(nexthop);
     PRINTF("\n");
     return;
   }
 
+  /* Send message */
   lrp_send_upd(&upd->lost_node, &upd->sink_addr, nexthop, upd->tree_seqno,
                upd->repair_seqno, upd->metric_type, upd->metric_value + lc);
-#endif /* LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK */
 }
+#endif /* LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK */
 /*---------------------------------------------------------------------------*/
 /**
  * Activate a (re-)association to the collection tree

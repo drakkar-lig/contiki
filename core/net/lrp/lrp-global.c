@@ -43,6 +43,7 @@
 
 #include "net/lrp/lrp.h"
 #include "net/lrp/lrp-global.h"
+#include "net/lrp/lrp-ct.h"
 #include "net/lrp/lrp-def.h"
 #include "net/ip/uip-debug.h"
 #include "contiki-net.h"
@@ -114,6 +115,76 @@ lrp_state_restore(void)
   lrp_state_new();
 }
 #endif /* LRP_USE_CFS */
+
+/*---------------------------------------------------------------------------*/
+#if !LRP_IS_SINK && LRP_IS_COORDINATOR
+void
+lrp_store_tmp_state(uip_ipaddr_t* unconfirmed_successor, struct lrp_msg* msg)
+{
+  /* Save state in lrp_tmp_state */
+  if(msg->type == LRP_DIO_TYPE) {
+    PRINTF("Saving temporary state from DIO\n");
+    memcpy(&lrp_tmp_state.msg, msg, sizeof(struct lrp_msg_dio_t));
+  } else if(msg->type == LRP_UPD_TYPE) {
+    PRINTF("Saving temporary state from UPD\n");
+    memcpy(&lrp_tmp_state.msg, msg, sizeof(struct lrp_msg_upd_t));
+  } else {
+    PRINTF("WARNING: Unexpected message type %x when saving temporary state\n", msg->type);
+    return;
+  }
+  uip_ipaddr_copy(&lrp_tmp_state.unconfirmed_successor, unconfirmed_successor);
+}
+void
+lrp_confirm_tmp_state(uip_ipaddr_t *nexthop)
+{
+  uip_ds6_defrt_t* defrt;
+
+  /* Change state */
+  PRINTF("Updating LRP state\n");
+  if(lrp_tmp_state.msg.msg.type == LRP_DIO_TYPE) {
+    uip_ipaddr_copy(&lrp_state.sink_addr, &lrp_tmp_state.msg.dio.sink_addr);
+    lrp_state.tree_seqno   = lrp_tmp_state.msg.dio.tree_seqno;
+    lrp_state.repair_seqno = lrp_tmp_state.msg.dio.tree_seqno;
+    lrp_state.metric_type  = lrp_tmp_state.msg.dio.metric_type;
+    lrp_state.metric_value = lrp_tmp_state.msg.dio.metric_value + lrp_link_cost(&lrp_tmp_state.unconfirmed_successor, lrp_tmp_state.msg.dio.metric_type);
+  } else if(lrp_tmp_state.msg.msg.type == LRP_UPD_TYPE) {
+    uip_ipaddr_copy(&lrp_state.sink_addr, &lrp_tmp_state.msg.upd.sink_addr);
+    lrp_state.tree_seqno   = lrp_tmp_state.msg.upd.tree_seqno;
+    lrp_state.repair_seqno = lrp_tmp_state.msg.upd.repair_seqno;
+    lrp_state.metric_type  = lrp_tmp_state.msg.upd.metric_type;
+    lrp_state.metric_value = lrp_tmp_state.msg.upd.metric_value + lrp_link_cost(&lrp_tmp_state.unconfirmed_successor, lrp_tmp_state.msg.upd.metric_type);
+  }
+  lrp_state_save();
+
+  /* Remove previous default route */
+  defrt = uip_ds6_defrt_lookup(uip_ds6_defrt_choose());
+  if(defrt != NULL) {
+    uip_ds6_defrt_rm(defrt);
+  }
+
+  /* Flush routes through new default route */
+  uip_ds6_route_rm_by_nexthop(&lrp_tmp_state.unconfirmed_successor);
+
+  /* Record new default route */
+  PRINTF("New default route. Successor is ");
+  PRINT6ADDR(&lrp_tmp_state.unconfirmed_successor);
+  PRINTF("\n");
+  lrp_nbr_add(&lrp_tmp_state.unconfirmed_successor);
+  defrt = uip_ds6_defrt_add(&lrp_tmp_state.unconfirmed_successor, LRP_DEFRT_LIFETIME);
+  stimer_set(&defrt->lifetime, LRP_DEFRT_LIFETIME);
+
+  /* Broadcast the current state */
+  lrp_delayed_dio(NULL, 0);
+
+  /* Forward UPD further */
+  if(lrp_tmp_state.msg.msg.type == LRP_UPD_TYPE) {
+    lrp_forward_upd(&lrp_tmp_state.msg.upd);
+  }
+
+  /* Flush lrp_tmp_state */
+  memset(&lrp_tmp_state.unconfirmed_successor, 0, sizeof(uip_ipaddr_t));
+}
+#endif /* !LRP_IS_SINK && LRP_IS_COORDINATOR */
 
 /*---------------------------------------------------------------------------*/
 uint8_t

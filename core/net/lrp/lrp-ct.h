@@ -41,6 +41,8 @@
 #define __LRP_CT_H__
 #if UIP_CONF_IPV6_LRP
 
+#include "net/lrp/lrp-msg.h"
+
 /* Handle incoming tree maintenance messages */
 void lrp_handle_incoming_dio(void);
 void lrp_handle_incoming_brk(void);
@@ -50,6 +52,10 @@ void lrp_handle_incoming_upd(void);
 #if !LRP_IS_SINK
 void lrp_no_more_default_route(void);
 #endif /* !LRP_IS_SINK */
+
+#if LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK
+void lrp_forward_upd(struct lrp_msg_upd_t* msg);
+#endif /* LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK */
 
 /* Rebuild the tree with a new sequence number */
 #if LRP_IS_SINK

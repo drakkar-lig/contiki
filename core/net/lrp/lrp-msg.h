@@ -99,7 +99,12 @@ void lrp_send_rrep(const uip_ipaddr_t *dest,
                    const uint16_t source_seqno,
                    const uint8_t metric_type,
                    const uint16_t metric_value);
-void lrp_delayed_rrep();
+void lrp_delayed_rrep(const uip_ipaddr_t *dest_addr,
+                      const uip_ipaddr_t *nexthop,
+                      const uip_ipaddr_t *source_addr,
+                      uint16_t source_seqno,
+                      uint8_t metric_type,
+                      uint16_t metric_value);
 #endif /* !LRP_IS_SINK */
 
 /*-------------------------------------------------------------------*/
@@ -207,6 +212,11 @@ void lrp_send_upd(const uip_ipaddr_t *lost_node,
 #endif /* LRP_IS_COORDINATOR */
 
 #endif /* LRP_USE_DIO */
+
+#if !LRP_IS_SINK && LRP_IS_COORDINATOR
+void lrp_store_tmp_state(uip_ipaddr_t* unconfirmed_successor, struct lrp_msg* msg);
+void lrp_confirm_tmp_state();
+#endif /* !LRP_IS_SINK && LRP_IS_COORDINATOR */
 
 #endif /* UIP_CONF_IPV6_LRP */
 #endif /* __LRP_MSG_H__ */

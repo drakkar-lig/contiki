@@ -153,23 +153,45 @@ lrp_send_rrep(const uip_ipaddr_t *dest_addr,
   uip_udp_packet_send(lrp_udpconn, &rm, sizeof(struct lrp_msg_rrep_t));
   memset(&lrp_udpconn->ripaddr, 0, sizeof(lrp_udpconn->ripaddr));
 }
+struct send_rrep_params_t {
+  uip_ipaddr_t dest_addr;
+  uip_ipaddr_t nexthop;
+  uip_ipaddr_t source_addr;
+  uint16_t source_seqno;
+  uint8_t metric_type;
+  uint16_t metric_value;
+};
 /* Wrapper to use `lrp_send_rrep` as a ctimer callback function */
 static void
-wrap_send_rrep(void *_)
+wrap_send_rrep(struct send_rrep_params_t *args)
 {
   SEQNO_INCREASE(lrp_state.node_seqno);
   lrp_state_save();
-  lrp_send_rrep(&lrp_state.sink_addr, uip_ds6_defrt_choose(), &lrp_myipaddr,
-                lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
+  lrp_send_rrep(&args->dest_addr, &args->nexthop, &args->source_addr,
+                args->source_seqno, args->metric_type, args->metric_value);
 }
 /* Schedule a RREP message sending later. */
 void
-lrp_delayed_rrep()
+lrp_delayed_rrep(const uip_ipaddr_t *dest_addr,
+                 const uip_ipaddr_t *nexthop,
+                 const uip_ipaddr_t *source_addr,
+                 uint16_t source_seqno,
+                 uint8_t metric_type,
+                 uint16_t metric_value)
 {
   static struct ctimer delayed_rrep_timer = { 0 };
+  static struct send_rrep_params_t args;
   if(ctimer_expired(&delayed_rrep_timer)) {
+    /* Fill lrp_send_rrep parameters */
+    uip_ipaddr_copy(&args.dest_addr, dest_addr);
+    uip_ipaddr_copy(&args.nexthop, nexthop);
+    uip_ipaddr_copy(&args.source_addr, source_addr);
+    args.source_seqno = source_seqno;
+    args.metric_type = metric_type;
+    args.metric_value = metric_value;
+    /* Configure timer */
     ctimer_set(&delayed_rrep_timer, rand_wait_duration_before_broadcast(),
-               &wrap_send_rrep, NULL);
+               (void (*)(void *))&wrap_send_rrep, &args);
   } else {
     PRINTF("WARN: RREP dropped: another one is pending\n");
   }
@@ -212,6 +234,7 @@ lrp_send_dio(uip_ipaddr_t *destination, uint8_t options)
 {
   struct lrp_msg_dio_t rm;
 
+  /* Logs */
   PRINTF("Send DIO");
   if(destination == NULL || destination->u8[0] == 0xFF) {
     PRINTF(" (broadcast)");
@@ -227,6 +250,7 @@ lrp_send_dio(uip_ipaddr_t *destination, uint8_t options)
   }
   PRINTF(" options=%02x\n", options);
 
+  /* Create message's content */
   rm.type = (LRP_DIO_TYPE << 4) | 0x0;
   rm.addr_len = (0x0 << 4) | LRP_ADDR_LEN_IPV6;
   rm.tree_seqno = uip_htons(lrp_state.tree_seqno);
@@ -235,6 +259,7 @@ lrp_send_dio(uip_ipaddr_t *destination, uint8_t options)
   rm.options = options;
   uip_ipaddr_copy(&rm.sink_addr, &lrp_state.sink_addr);
 
+  /* Compute destination and send packet */
   if(destination == NULL) {
     uip_create_linklocal_lln_routers_mcast(&lrp_udpconn->ripaddr);
   } else {
@@ -405,8 +430,12 @@ lrp_send_upd(const uip_ipaddr_t *lost_node,
 void
 lrp_handle_incoming_msg(void)
 {
-  uint8_t type = ((struct lrp_msg *)uip_appdata)->type >> 4;
-  switch(type) {
+  /* Record neighbor */
+  lrp_nbr_add(&((struct uip_udpip_hdr *)&uip_buf[UIP_LLH_LEN])->srcipaddr);
+  /* Make type readable */
+  ((struct lrp_msg *)uip_appdata)->type >>= 4;
+  /* Check message type */
+  switch(((struct lrp_msg *)uip_appdata)->type) {
   case LRP_RREQ_TYPE:
     lrp_handle_incoming_rreq();
     break;

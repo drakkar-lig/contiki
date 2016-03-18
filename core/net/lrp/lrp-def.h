@@ -76,9 +76,6 @@
 /* RREQ retransmission interval (ticks) */
 #define LRP_RETRY_RREQ_INTERVAL 5 * CLOCK_SECOND / 1000
 
-/* Spontaneously send a RREP message, when selecting a new successor */
-#define LRP_SEND_SPONTANEOUS_RREP 1
-
 /* Ack routes replies */
 #define LRP_RREP_ACK           0 /* TODO Manage RREP acks */
 
