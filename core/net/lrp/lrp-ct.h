@@ -56,10 +56,6 @@ void lrp_handle_incoming_upd(void);
 void lrp_no_more_default_route(void);
 #endif /* !LRP_IS_SINK */
 
-#if LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK
-void lrp_forward_upd(struct lrp_msg_upd_t* msg);
-#endif /* LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK */
-
 /* Rebuild the tree with a new sequence number */
 #if LRP_IS_SINK
 void global_repair(void);

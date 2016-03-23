@@ -81,19 +81,19 @@ struct {
   seqno_t node_seqno;     /* Sequence number of this node */
   uint16_t metric_value;  /* Distance from this node to the sink */
   uint8_t metric_type;    /* Type of metric used for this network */
-  uint8_t succ_reachable; /* Is the selected successor reachable */
 } lrp_state;
 /* Temporary state. Never exported on the network. It is used to handle soft
  * handover: the connection to the new successor is checked before it is
  * really selected as successor. */
 struct {
   uip_ipaddr_t unconfirmed_successor; /* IP address of unconfirmed successor */
-  union {
-    struct lrp_msg       msg;
-    struct lrp_msg_dio_t dio;
-    struct lrp_msg_upd_t upd;
-  } msg;                              /* Message that have make we know this
-                                       * successor. May be a DIO or a UPD. */
+  uip_ipaddr_t sink_addr; /* Address of the sink we are connected to */
+  seqno_t tree_seqno;     /* Sequence number of the tree */
+  seqno_t repair_seqno;   /* Repair sequence number */
+  uint16_t metric_value;  /* Distance from this node to the sink */
+  uint8_t metric_type;    /* Type of metric used for this network */
+  uint8_t msg_type;       /* Type of the message that we'll try to accept */
+  uip_ipaddr_t upd_destination; /* Destination of the UPD message. Available only if msg_type is LRP_UPD_TYPE */
 } lrp_tmp_state;
 
 struct {
@@ -110,6 +110,11 @@ void lrp_state_restore(void);
 #define lrp_state_save()
 #define lrp_state_restore() lrp_state_new()
 #endif /* LRP_USE_CFS */
+
+#if !LRP_IS_SINK && LRP_IS_COORDINATOR
+void lrp_store_tmp_state(uip_ipaddr_t* unconfirmed_successor, struct lrp_msg* msg);
+void lrp_confirm_tmp_state();
+#endif /* !LRP_IS_SINK && LRP_IS_COORDINATOR */
 
 uint8_t lrp_ipaddr_is_empty(uip_ipaddr_t *);
 uint16_t lrp_link_cost(uip_ipaddr_t *link, uint8_t metric_type);

@@ -430,43 +430,6 @@ lrp_handle_incoming_upd()
 }
 /*---------------------------------------------------------------------------*/
 /**
- * Forward a UPD message to its destination.
- */
-#if LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK
-void
-lrp_forward_upd(struct lrp_msg_upd_t* upd) {
-  uip_ipaddr_t* nexthop;
-  uint16_t lc;
-
-  if(lrp_is_my_global_address(&upd->lost_node)) {
-    /* We are BRK originator. UPD has reach its final destination */
-    PRINTF("Route successfully repaired\n");
-    return;
-  }
-
-  /* Find route to lost node */
-  nexthop = brc_lookup(&upd->lost_node);
-  if(nexthop == NULL) {
-    PRINTF("Skipping: No route to transmit UPD\n");
-    return;
-  }
-
-  /* Compute link cost */
-  lc = lrp_link_cost(nexthop, upd->metric_type);
-  if(lc == 0) {
-    PRINTF("Unable to determine the cost of the link to ");
-    PRINT6ADDR(nexthop);
-    PRINTF("\n");
-    return;
-  }
-
-  /* Send message */
-  lrp_send_upd(&upd->lost_node, &upd->sink_addr, nexthop, upd->tree_seqno,
-               upd->repair_seqno, upd->metric_type, upd->metric_value + lc);
-}
-#endif /* LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK */
-/*---------------------------------------------------------------------------*/
-/**
  * Activate a (re-)association to the collection tree
  */
 #if !LRP_IS_SINK

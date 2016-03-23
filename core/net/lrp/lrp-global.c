@@ -121,39 +121,72 @@ lrp_state_restore(void)
 void
 lrp_store_tmp_state(uip_ipaddr_t* unconfirmed_successor, struct lrp_msg* msg)
 {
-  /* Save state in lrp_tmp_state */
+  seqno_t new_seqno;
+  uint8_t new_metric_type;
+  uint16_t new_metric_value;
+
   if(msg->type == LRP_DIO_TYPE) {
-    PRINTF("Saving temporary state from DIO\n");
-    memcpy(&lrp_tmp_state.msg, msg, sizeof(struct lrp_msg_dio_t));
+    new_seqno        = ((struct lrp_msg_dio_t *)msg)->tree_seqno;
+    new_metric_type  = ((struct lrp_msg_dio_t *)msg)->metric_type;
+    new_metric_value = ((struct lrp_msg_dio_t *)msg)->metric_value;
   } else if(msg->type == LRP_UPD_TYPE) {
-    PRINTF("Saving temporary state from UPD\n");
-    memcpy(&lrp_tmp_state.msg, msg, sizeof(struct lrp_msg_upd_t));
+    new_seqno        = ((struct lrp_msg_upd_t *)msg)->repair_seqno;
+    new_metric_type  = ((struct lrp_msg_upd_t *)msg)->metric_type;
+    new_metric_value = ((struct lrp_msg_upd_t *)msg)->metric_value;
   } else {
     PRINTF("WARNING: Unexpected message type %x when saving temporary state\n", msg->type);
     return;
   }
+
+  /* Ensure that stored route is better than the previous one */
+  if(!lrp_ipaddr_is_empty(&lrp_tmp_state.unconfirmed_successor)) {
+    if(SEQNO_GREATER_THAN(lrp_tmp_state.repair_seqno, new_seqno) ||
+       (lrp_tmp_state.repair_seqno == new_seqno &&
+        lrp_tmp_state.metric_type == new_metric_type &&
+        (lrp_tmp_state.metric_value + lrp_link_cost(&lrp_tmp_state.unconfirmed_successor, new_metric_type) <
+         new_metric_value + lrp_link_cost(unconfirmed_successor, new_metric_type)))) {
+      PRINTF("Dropping new temporary state: the previously recorded one is better\n");
+      return;
+    }
+  }
+
+  /* Save state in lrp_tmp_state */
+  if(msg->type == LRP_DIO_TYPE) {
+    PRINTF("Saving temporary state from DIO\n");
+    uip_ipaddr_copy(&lrp_tmp_state.sink_addr, &((struct lrp_msg_dio_t *)msg)->sink_addr);
+    lrp_tmp_state.tree_seqno = ((struct lrp_msg_dio_t *)msg)->tree_seqno;
+    lrp_tmp_state.repair_seqno = ((struct lrp_msg_dio_t *)msg)->tree_seqno;
+  } else if(msg->type == LRP_UPD_TYPE) {
+    PRINTF("Saving temporary state from UPD\n");
+    uip_ipaddr_copy(&lrp_tmp_state.sink_addr, &((struct lrp_msg_upd_t *)msg)->sink_addr);
+    lrp_tmp_state.tree_seqno = ((struct lrp_msg_upd_t *)msg)->tree_seqno;
+    lrp_tmp_state.repair_seqno = ((struct lrp_msg_upd_t *)msg)->repair_seqno;
+    uip_ipaddr_copy(&lrp_tmp_state.upd_destination, &((struct lrp_msg_upd_t *)msg)->lost_node);
+  }
   uip_ipaddr_copy(&lrp_tmp_state.unconfirmed_successor, unconfirmed_successor);
+  lrp_tmp_state.msg_type = msg->type;
+  lrp_tmp_state.metric_type = new_metric_type;
+  lrp_tmp_state.metric_value = new_metric_value;
 }
 void
-lrp_confirm_tmp_state(uip_ipaddr_t *nexthop)
+lrp_confirm_tmp_state()
 {
+  uip_ipaddr_t* nexthop;
   uip_ds6_defrt_t* defrt;
 
-  /* Change state */
-  PRINTF("Updating LRP state\n");
-  if(lrp_tmp_state.msg.msg.type == LRP_DIO_TYPE) {
-    uip_ipaddr_copy(&lrp_state.sink_addr, &lrp_tmp_state.msg.dio.sink_addr);
-    lrp_state.tree_seqno   = lrp_tmp_state.msg.dio.tree_seqno;
-    lrp_state.repair_seqno = lrp_tmp_state.msg.dio.tree_seqno;
-    lrp_state.metric_type  = lrp_tmp_state.msg.dio.metric_type;
-    lrp_state.metric_value = lrp_tmp_state.msg.dio.metric_value + lrp_link_cost(&lrp_tmp_state.unconfirmed_successor, lrp_tmp_state.msg.dio.metric_type);
-  } else if(lrp_tmp_state.msg.msg.type == LRP_UPD_TYPE) {
-    uip_ipaddr_copy(&lrp_state.sink_addr, &lrp_tmp_state.msg.upd.sink_addr);
-    lrp_state.tree_seqno   = lrp_tmp_state.msg.upd.tree_seqno;
-    lrp_state.repair_seqno = lrp_tmp_state.msg.upd.repair_seqno;
-    lrp_state.metric_type  = lrp_tmp_state.msg.upd.metric_type;
-    lrp_state.metric_value = lrp_tmp_state.msg.upd.metric_value + lrp_link_cost(&lrp_tmp_state.unconfirmed_successor, lrp_tmp_state.msg.upd.metric_type);
+  /* Ensure temporary state is defined */
+  if(lrp_ipaddr_is_empty(&lrp_tmp_state.unconfirmed_successor)) {
+    PRINTF("Do not confirm temporary state: it is not defined\n");
+    return;
   }
+
+  /* Change state */
+  PRINTF("Updating LRP state from temporary state\n");
+  uip_ipaddr_copy(&lrp_state.sink_addr, &lrp_tmp_state.sink_addr);
+  lrp_state.tree_seqno   = lrp_tmp_state.tree_seqno;
+  lrp_state.repair_seqno = lrp_tmp_state.repair_seqno;
+  lrp_state.metric_type  = lrp_tmp_state.metric_type;
+  lrp_state.metric_value = lrp_tmp_state.metric_value + lrp_link_cost(&lrp_tmp_state.unconfirmed_successor, lrp_tmp_state.metric_type);
   lrp_state_save();
 
   /* Remove previous default route */
@@ -177,8 +210,28 @@ lrp_confirm_tmp_state(uip_ipaddr_t *nexthop)
   lrp_delayed_dio(NULL, 0);
 
   /* Forward UPD further */
-  if(lrp_tmp_state.msg.msg.type == LRP_UPD_TYPE) {
-    lrp_forward_upd(&lrp_tmp_state.msg.upd);
+  if(lrp_tmp_state.msg_type == LRP_UPD_TYPE) {
+    nexthop = lrp_brc_lookup(&lrp_tmp_state.upd_destination);
+    if(lrp_is_my_global_address(&lrp_tmp_state.upd_destination)) {
+      /* We are BRK originator. UPD has reach its final destination */
+      PRINTF("Route successfully repaired\n");
+
+    } else if(nexthop == NULL) {
+      /* No route to the upd destination */
+      PRINTF("Skipping: No route to transmit UPD towards");
+      PRINT6ADDR(&lrp_tmp_state.upd_destination);
+      PRINTF("\n");
+
+    } else {
+      /* Send message */
+      lrp_send_upd(&lrp_tmp_state.upd_destination,
+                   &lrp_tmp_state.sink_addr,
+                   nexthop,
+                   lrp_tmp_state.tree_seqno,
+                   lrp_tmp_state.repair_seqno,
+                   lrp_tmp_state.metric_type,
+                   lrp_tmp_state.metric_value + lrp_link_cost(nexthop, lrp_tmp_state.metric_type));
+    }
   }
 
   /* Flush lrp_tmp_state */

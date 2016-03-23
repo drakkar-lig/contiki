@@ -189,12 +189,18 @@ lrp_link_next_hop_callback(const linkaddr_t *addr, int status, int mutx)
         PRINTF("%d consecutive unacked messages\n", nh->nb_consecutive_noack_msg);
       }
 #if !LRP_IS_SINK
+      /* Was this nexthop the default route ? */
       if(locdefrt != NULL) {
         PRINTF("This was the default route. Launching LR algorithm\n");
         uip_ds6_defrt_rm(locdefrt);
         PROCESS_CONTEXT_BEGIN(&lrp_process);
         lrp_no_more_default_route();
         PROCESS_CONTEXT_END();
+      }
+      /* Is this nexthop the temporary state's unconfirmed successor ? */
+      if(uip_ipaddr_cmp(&lrp_tmp_state.unconfirmed_successor, nb_ip)) {
+        PRINTF("The temporary route is not available. Dropping the temporary state\n");
+        memset(&lrp_tmp_state.unconfirmed_successor, 0, sizeof(uip_ipaddr_t));
       }
 #endif /* !LRP_IS_SINK */
       uip_ds6_route_rm_by_nexthop(nb_ip);
@@ -230,7 +236,7 @@ lrp_link_next_hop_callback(const linkaddr_t *addr, int status, int mutx)
      * If so, the connectivity to this node is confirmed => we confirm the
      * temporary state. */
     if(uip_ipaddr_cmp(nb_ip, &lrp_tmp_state.unconfirmed_successor)) {
-      lrp_confirm_tmp_state(nb_ip);
+      lrp_confirm_tmp_state();
     }
 #endif /* !LRP_IS_SINK */
   }

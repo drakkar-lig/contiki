@@ -213,10 +213,5 @@ void lrp_send_upd(const uip_ipaddr_t *lost_node,
 
 #endif /* LRP_USE_DIO */
 
-#if !LRP_IS_SINK && LRP_IS_COORDINATOR
-void lrp_store_tmp_state(uip_ipaddr_t* unconfirmed_successor, struct lrp_msg* msg);
-void lrp_confirm_tmp_state();
-#endif /* !LRP_IS_SINK && LRP_IS_COORDINATOR */
-
 #endif /* UIP_CONF_IPV6_LRP */
 #endif /* __LRP_MSG_H__ */
