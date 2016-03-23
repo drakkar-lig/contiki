@@ -43,6 +43,9 @@
 
 #include "net/lrp/lrp-msg.h"
 
+/* Look for an entry into the cache */
+uip_ipaddr_t * lrp_brc_lookup(const uip_ipaddr_t *brk_sender);
+
 /* Handle incoming tree maintenance messages */
 void lrp_handle_incoming_dio(void);
 void lrp_handle_incoming_brk(void);

@@ -76,8 +76,8 @@ static struct {
 
 #if !LRP_IS_SINK
 /* Look for an entry into the cache */
-static uip_ipaddr_t *
-brc_lookup(const uip_ipaddr_t *brk_sender)
+uip_ipaddr_t *
+lrp_brc_lookup(const uip_ipaddr_t *brk_sender)
 {
   unsigned n = (((uint8_t *)brk_sender)[0] +
                 ((uint8_t *)brk_sender)[15]) % BRCACHESIZE;
@@ -88,8 +88,8 @@ brc_lookup(const uip_ipaddr_t *brk_sender)
 }
 #endif /* !LRP_IS_SINK */
 /* Force insertion of the BRK offer, without considering cached values. */
-static void
-brc_force_add(const uip_ipaddr_t *brk_sender, const uint16_t seqno,
+void
+lrp_brc_force_add(const uip_ipaddr_t *brk_sender, const uint16_t seqno,
               uip_ipaddr_t *forwarded_to)
 {
   lrp_nbr_add(forwarded_to);
@@ -99,9 +99,9 @@ brc_force_add(const uip_ipaddr_t *brk_sender, const uint16_t seqno,
   uip_ipaddr_copy(&brcache[n].forwarded_to, forwarded_to);
   uip_ipaddr_copy(&brcache[n].brk_sender, brk_sender);
 }
-/* Consider the BRK offer. If it is interesting, insert it into cache. */
-static uint8_t
-brc_add(const uip_ipaddr_t *brk_sender, const uint16_t seqno,
+/* Consider the BRK offer. If it is interesting, insert it into cache and true is returned. */
+uint8_t
+lrp_brc_add(const uip_ipaddr_t *brk_sender, const uint16_t seqno,
         uip_ipaddr_t *forwarded_to)
 {
   lrp_nbr_add(forwarded_to);
@@ -109,7 +109,7 @@ brc_add(const uip_ipaddr_t *brk_sender, const uint16_t seqno,
                 ((uint8_t *)brk_sender)[15]) % BRCACHESIZE;
   if(SEQNO_GREATER_THAN(seqno, brcache[n].seqno) ||
      !uip_ipaddr_cmp(&brcache[n].brk_sender, brk_sender)) {
-    brc_force_add(brk_sender, seqno, forwarded_to);
+    lrp_brc_force_add(brk_sender, seqno, forwarded_to);
     return 1 == 1;
   } else {
     return 0 == 1;
@@ -314,7 +314,6 @@ lrp_handle_incoming_dio(void)
        (dio->options & LRP_DIO_OPTION_DETECT_ALL_SUCCESSORS && its_mertic_with_our_dio == dio->metric_value)))) {
     /* Assume symmetric costs */
     PRINTF("Sender node may be interested by our DIO => will send one back\n");
-    lrp_nbr_add(&UIP_IP_BUF->srcipaddr);
     lrp_delayed_dio(&UIP_IP_BUF->srcipaddr, 0);
   }
 #endif /* LRP_IS_COORDINATOR */
@@ -350,7 +349,7 @@ lrp_handle_incoming_brk()
 
 #if LRP_IS_SINK
   /* Send UPD on the reversed route and exits */
-  if(!brc_add(&brk->initial_sender, brk->node_seqno, &UIP_IP_BUF->srcipaddr)) {
+  if(!lrp_brc_add(&brk->initial_sender, brk->node_seqno, &UIP_IP_BUF->srcipaddr)) {
     PRINTF("Skipping: BRK is worst than a former\n");
     return;
   }
@@ -382,12 +381,12 @@ lrp_handle_incoming_brk()
     if(brk->ring_size != LRP_LR_RING_INFINITE_SIZE) {
       brk->ring_size--;
     }
-    brc_force_add(&brk->initial_sender, brk->node_seqno, &UIP_IP_BUF->srcipaddr);
+    lrp_brc_force_add(&brk->initial_sender, brk->node_seqno, &UIP_IP_BUF->srcipaddr);
     lrp_delayed_brk(&brk->initial_sender, NULL, brk->node_seqno,
                     brk->metric_type, brk->metric_value + lc, brk->ring_size);
   } else {
     /* BRK comes from a neighbor broken branch. Forwarding BRK to sink */
-    if(!brc_add(&brk->initial_sender, brk->node_seqno, &UIP_IP_BUF->srcipaddr)) {
+    if(!lrp_brc_add(&brk->initial_sender, brk->node_seqno, &UIP_IP_BUF->srcipaddr)) {
       PRINTF("Skipping: BRK is worst than a former\n");
       return;
     }
