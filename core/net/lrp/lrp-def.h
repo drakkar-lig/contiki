@@ -99,6 +99,13 @@
  * when the number of consecutive noacked messages reach this constant. */
 #define LRP_MAX_CONSECUTIVE_NOACKED_MESSAGES  3
 
+/* Maximum number of delayed RREP messages stored */
+#define LRP_DELAYED_RREP_BUFFER_SIZE 3
+
+/* Maximum number of unicast delayed DIO messages stored. If one more should
+ * be sent, all will be deleted and replaced by a broadcast one */
+#define LRP_DELAYED_DIO_BUFFER_SIZE 2
+
 /* Use contiki filesystem to save state, or do not save state. */
 #define LRP_USE_CFS            0
 

@@ -113,7 +113,7 @@ lrp_delayed_rreq(const uip_ipaddr_t *searched_addr,
     ctimer_set(&delayed_rreq_timer, rand_wait_duration_before_broadcast(),
                (void (*)(void *)) &wrap_send_rreq, &params);
   } else {
-    PRINTF("WARN: RREQ to ");
+    PRINTF("RREQ to ");
     PRINT6ADDR(searched_addr);
     PRINTF(" dropped: another one is pending\n");
   }
@@ -179,21 +179,32 @@ lrp_delayed_rrep(const uip_ipaddr_t *dest_addr,
                  uint8_t metric_type,
                  uint16_t metric_value)
 {
-  static struct ctimer delayed_rrep_timer = { 0 };
-  static struct send_rrep_params_t args;
-  if(ctimer_expired(&delayed_rrep_timer)) {
+  static struct {
+    struct ctimer timer;
+    struct send_rrep_params_t args;
+  } delayed_rrep_buffer[LRP_DELAYED_RREP_BUFFER_SIZE];
+  int position;
+
+  /* Find an available space into buffer */
+  for (position = 0; position < LRP_DELAYED_RREP_BUFFER_SIZE; position++) {
+    if(ctimer_expired(&delayed_rrep_buffer[position].timer)) break;
+  }
+
+  if(position != LRP_DELAYED_RREP_BUFFER_SIZE) {
     /* Fill lrp_send_rrep parameters */
-    uip_ipaddr_copy(&args.dest_addr, dest_addr);
-    uip_ipaddr_copy(&args.nexthop, nexthop);
-    uip_ipaddr_copy(&args.source_addr, source_addr);
-    args.source_seqno = source_seqno;
-    args.metric_type = metric_type;
-    args.metric_value = metric_value;
+    uip_ipaddr_copy(&delayed_rrep_buffer[position].args.dest_addr, dest_addr);
+    uip_ipaddr_copy(&delayed_rrep_buffer[position].args.nexthop, nexthop);
+    uip_ipaddr_copy(&delayed_rrep_buffer[position].args.source_addr, source_addr);
+    delayed_rrep_buffer[position].args.source_seqno = source_seqno;
+    delayed_rrep_buffer[position].args.metric_type = metric_type;
+    delayed_rrep_buffer[position].args.metric_value = metric_value;
     /* Configure timer */
-    ctimer_set(&delayed_rrep_timer, rand_wait_duration_before_broadcast(),
-               (void (*)(void *))&wrap_send_rrep, &args);
+    ctimer_set(&delayed_rrep_buffer[position].timer, rand_wait_duration_before_broadcast(),
+               (void (*)(void *))&wrap_send_rrep, &delayed_rrep_buffer[position].args);
   } else {
-    PRINTF("WARN: RREP dropped: another one is pending\n");
+    PRINTF("RREP from ");
+    PRINT6ADDR(source_addr);
+    PRINTF(" dropped: buffer is full\n");
   }
 }
 #endif /* !LRP_IS_SINK */
@@ -281,25 +292,58 @@ wrap_send_dio(struct send_dio_params_t *params)
 void
 lrp_delayed_dio(uip_ipaddr_t *destination, uint8_t options)
 {
-  static struct ctimer delayed_dio_timer = { 0 };
-  static struct send_dio_params_t params;
-  if(ctimer_expired(&delayed_dio_timer)) {
-    if(destination == NULL) {
-      uip_create_linklocal_lln_routers_mcast(&params.destination);
-    } else {
-      uip_ipaddr_copy(&params.destination, destination);
+  static struct {
+    struct ctimer timer;
+    struct send_dio_params_t params;
+  } delayed_dio_buffer[LRP_DELAYED_DIO_BUFFER_SIZE];
+  int position, free_space = -1;
+
+  /* Check if the DIO really needs to be sent, and find an available position */
+  for(position = 0; position < LRP_DELAYED_DIO_BUFFER_SIZE; position++) {
+    if(!ctimer_expired(&delayed_dio_buffer[position].timer)) {
+      if(delayed_dio_buffer[position].params.destination.u8[0] == 0xFF) {
+        /* This message will be broadcasted => we do not need to send one again. */
+        PRINTF("DIO won't be sent: another broadcasted one is pending\n");
+        return;
+      }
+      if(destination == NULL || destination->u8[0] == 0xFF) {
+        /* This buffered message is overridden by the new broadcast message */
+        PRINTF("Delayed DIO message to ");
+        PRINT6ADDR(&delayed_dio_buffer[position].params.destination);
+        PRINTF(" will be deleted: replaced by a broadcast one\n");
+        ctimer_stop(&delayed_dio_buffer[position].timer);
+        free_space = 0;
+      } else if(uip_ipaddr_cmp(&delayed_dio_buffer[position].params.destination, destination)) {
+        /* This destination is already recorded into buffer => we drop the new one */
+        PRINTF("DIO won't be sent: another one to this destination is pending\n");
+        return;
+      }
+    } else if(free_space == -1) {
+      /* This is a free space */
+      free_space = position;
     }
-    params.options = options;
-    ctimer_set(&delayed_dio_timer, rand_wait_duration_before_broadcast(),
-               (void (*)(void *)) &wrap_send_dio, &params);
-  } else {
-    PRINTF("WARN: dropping DIO ");
-    if(destination != NULL) {
-      PRINTF("to ");
-      PRINT6ADDR(destination);
-    }
-    PRINTF(": another one is pending\n");
   }
+
+  if(free_space == -1) {
+    /* No more space. Change all DIO unicast message to one unique DIO broadcasted message */
+    PRINTF("No more space in buffer. Deleting all unicast DIO, and creating one broadcast DIO\n");
+    for(position = 0; position < LRP_DELAYED_DIO_BUFFER_SIZE; position++) {
+      ctimer_stop(&delayed_dio_buffer[position].timer);
+    }
+    destination = NULL;
+    options = 0x0;
+    free_space = 0;  /* First place is empty => we've just drop its content */
+  }
+
+  /* Save args and start timer */
+  if(destination == NULL) {
+    uip_create_linklocal_lln_routers_mcast(&delayed_dio_buffer[free_space].params.destination);
+  } else {
+    uip_ipaddr_copy(&delayed_dio_buffer[free_space].params.destination, destination);
+  }
+  delayed_dio_buffer[free_space].params.options = options;
+  ctimer_set(&delayed_dio_buffer[free_space].timer, rand_wait_duration_before_broadcast(),
+             (void (*)(void *)) &wrap_send_dio, &delayed_dio_buffer[free_space].params);
 }
 #endif /* LRP_IS_COORDINATOR */
 
@@ -383,7 +427,7 @@ lrp_delayed_brk(const uip_ipaddr_t *initial_sender,
     ctimer_set(&delayed_brk_timer, rand_wait_duration_before_broadcast(),
                (void (*)(void *)) &wrap_send_brk, &params);
   } else {
-    PRINTF("WARN: dropping BRK from ");
+    PRINTF("Dropping BRK from ");
     PRINT6ADDR(initial_sender);
     PRINTF(": another one is pending\n");
   }
