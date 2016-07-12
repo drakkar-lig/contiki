@@ -223,9 +223,6 @@ lrp_handle_incoming_rreq(void)
 #if !LRP_USE_DIO
   uip_ds6_route_t *rt;
 #endif
-#if LRP_IS_COORDINATOR
-  uint16_t lc;
-#endif /* LRP_IS_COORDINATOR */
 
   PRINTF("Received RREQ ");
   PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
@@ -240,6 +237,9 @@ lrp_handle_incoming_rreq(void)
 
   rreq->source_seqno = uip_ntohs(rreq->source_seqno);
 
+  /* Add local link to described metric */
+  rreq->metric_value += lrp_link_cost(&UIP_IP_BUF->srcipaddr, rreq->metric_type);
+
   /* Check if we do not have already received a better RREQ message */
 #if !LRP_USE_DIO
   /* LOADng's: try to add route to source */
@@ -251,14 +251,6 @@ lrp_handle_incoming_rreq(void)
       return;
     }
   }
-#else
-  /* LRP: consult cache */
-  if(fwc_lookup(&rreq->source_addr, &rreq->source_seqno)) {
-    PRINTF("Skipping: RREQ cached\n");
-    return;
-  }
-  fwc_add(&rreq->source_addr, &rreq->source_seqno);
-#endif /* !LRP_USE_DIO */
 
   /* Answer to RREQ if the searched address is our address */
   if(lrp_is_my_global_address(&rreq->searched_addr)) {
@@ -266,14 +258,28 @@ lrp_handle_incoming_rreq(void)
     lrp_state_save();
     lrp_send_rrep(&rreq->source_addr, &UIP_IP_BUF->srcipaddr, &rreq->searched_addr,
                   lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
+#else
+  /* LRP: consult cache */
+  if(fwc_lookup(&rreq->source_addr, &rreq->source_seqno)) {
+    PRINTF("Skipping: RREQ cached\n");
+    return;
+  }
+  fwc_add(&rreq->source_addr, &rreq->source_seqno);
+
+  /* Answer to RREQ if the searched address is our address */
+  if(lrp_is_my_global_address(&rreq->searched_addr)) {
+    SEQNO_INCREASE(lrp_state.node_seqno);
+    lrp_state_save();
+    lrp_send_rrep(&rreq->source_addr, uip_ds6_defrt_choose(), &rreq->searched_addr,
+                  lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
+#endif /* !LRP_USE_DIO */
 
 #if LRP_IS_COORDINATOR
     /* Only coordinator forward RREQ */
   } else {
     PRINTF("Forward RREQ\n");
-    lc = lrp_link_cost(&UIP_IP_BUF->srcipaddr, rreq->metric_type);
     lrp_delayed_rreq(&rreq->searched_addr, &rreq->source_addr, rreq->source_seqno,
-                     rreq->metric_type, rreq->metric_value + lc);
+                     rreq->metric_type, rreq->metric_value);
 #endif /* LRP_IS_COORDINATOR */
   }
 #endif /* !LRP_IS_SINK */
