@@ -288,7 +288,6 @@ lrp_handle_incoming_rrep(void)
   struct uip_ds6_route *rt;
 #if !LRP_IS_SINK
   uip_ipaddr_t *nexthop = NULL;
-  uint16_t lc;
 #endif
 
   PRINTF("Received RREP ");
@@ -311,6 +310,9 @@ lrp_handle_incoming_rrep(void)
     return;
   }
 #endif /* LRP_USE_DIO */
+
+  /* Add link cost to described metric */
+  rrep->metric_value += lrp_link_cost(&UIP_IP_BUF->srcipaddr, rrep->metric_type);
 
   /* Offer route to routing table */
   rt = offer_route(&rrep->source_addr, HOST_ROUTE_PREFIX_LEN,
@@ -351,9 +353,8 @@ lrp_handle_incoming_rrep(void)
 #if !LRP_IS_SINK
   /* Forward RREP to nexthop */
   if(nexthop != NULL) {
-    lc = lrp_link_cost(&UIP_IP_BUF->srcipaddr, rrep->metric_type);
     lrp_send_rrep(&rrep->dest_addr, nexthop, &rrep->source_addr, rrep->source_seqno,
-                  rrep->metric_type, rrep->metric_value + lc);
+                  rrep->metric_type, rrep->metric_value);
   }
 #endif
 #endif /* LRP_IS_COORDINATOR */
