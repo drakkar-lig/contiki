@@ -175,7 +175,8 @@ lrp_link_next_hop_callback(const linkaddr_t *addr, int status, int mutx)
     PRINTF("No ack received from next hop ");
     PRINTLLADDR((uip_lladdr_t *)addr);
     PRINTF(" (counter is %d/%d)\n",
-           nh->nb_consecutive_noack_msg, LRP_MAX_CONSECUTIVE_NOACKED_MESSAGES);
+           nh->nb_consecutive_noack_msg,
+           nh->reachability == UNKNOWN ? 1 : LRP_MAX_CONSECUTIVE_NOACKED_MESSAGES);
 
     if(nh->nb_consecutive_noack_msg >= LRP_MAX_CONSECUTIVE_NOACKED_MESSAGES ||
        nh->reachability == UNKNOWN) {
