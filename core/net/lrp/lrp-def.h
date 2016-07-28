@@ -52,7 +52,7 @@
 
 /* Maximum time between two global repairs (ticks, on 32 bits). 0 to perform
  * no automatic global repair */
-#define LRP_MAX_DODAG_LIFETIME 1800 * CLOCK_SECOND
+#define LRP_MAX_DODAG_LIFETIME 0
 
 /* Number of times a DIO has to be sent, when starting a LR, before sending
  * BRK. 0 to not send any DIO, and start with BRK */
