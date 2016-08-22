@@ -41,9 +41,11 @@
 #define __LRP_ROUTES_H__
 #if UIP_CONF_IPV6_LRP
 
-void lrp_handle_incoming_rreq(void);
-void lrp_handle_incoming_rrep(void);
-void lrp_handle_incoming_rerr(void);
+#include "net/lrp/lrp-msg.h"
+
+void lrp_handle_incoming_rreq(uip_ipaddr_t* neighbor, struct lrp_msg_rreq_t* rreq);
+void lrp_handle_incoming_rrep(uip_ipaddr_t* neighbor, struct lrp_msg_rrep_t* rrep);
+void lrp_handle_incoming_rerr(uip_ipaddr_t* neighbor, struct lrp_msg_rerr_t* rerr);
 
 #if LRP_RREQ_RETRIES && (LRP_IS_SINK || !LRP_USE_DIO)
 void rrc_check_expired_rreq(void);

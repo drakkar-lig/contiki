@@ -273,17 +273,15 @@ reconnect_callback()
 /*---------------------------------------------------------------------------*/
 /* Handle an incoming DIO type message. */
 void
-lrp_handle_incoming_dio(void)
+lrp_handle_incoming_dio(uip_ipaddr_t* neighbor, struct lrp_msg_dio_t* dio)
 {
-  struct lrp_msg_dio_t *dio = (struct lrp_msg_dio_t *)uip_appdata;
-
   dio->tree_seqno = uip_ntohs(dio->tree_seqno);
 
 #if !LRP_IS_SINK
   /* Check if this route is interesting or not. If so, select it as
    * successor. */
   if(!lrp_ipaddr_is_empty(&dio->sink_addr)) {
-    offer_default_route(&UIP_IP_BUF->srcipaddr, (struct lrp_msg*)dio);
+    offer_default_route(neighbor, (struct lrp_msg*)dio);
   }
 #endif /* !LRP_IS_SINK */
 
@@ -298,24 +296,24 @@ lrp_handle_incoming_dio(void)
 #endif /* !LRP_IS_SINK */
 
   /* Check if other node needs a DIO */
-  uint16_t its_mertic_with_our_dio = lrp_state.metric_value + lrp_link_cost(&UIP_IP_BUF->srcipaddr, dio->metric_type);
+  uint16_t its_mertic_with_our_dio =
+      lrp_state.metric_value + lrp_link_cost(neighbor, dio->metric_type);
   if(SEQNO_GREATER_THAN(lrp_state.tree_seqno, dio->tree_seqno) ||
      (lrp_state.tree_seqno == dio->tree_seqno && lrp_state.metric_type == dio->metric_type &&
       (its_mertic_with_our_dio < dio->metric_value ||
        (dio->options & LRP_DIO_OPTION_DETECT_ALL_SUCCESSORS && its_mertic_with_our_dio == dio->metric_value)))) {
     /* Assume symmetric costs */
     PRINTF("Sender node may be interested by our DIO => will send one back\n");
-    lrp_delayed_dio(&UIP_IP_BUF->srcipaddr, 0);
+    lrp_delayed_dio(neighbor, 0);
   }
 #endif /* LRP_IS_COORDINATOR */
 }
 /*---------------------------------------------------------------------------*/
 /* Handle an incoming BRK type message. */
 void
-lrp_handle_incoming_brk()
+lrp_handle_incoming_brk(uip_ipaddr_t* neighbor, struct lrp_msg_brk_t* brk)
 {
 #if LRP_USE_DIO && LRP_IS_COORDINATOR
-  struct lrp_msg_brk_t *brk = (struct lrp_msg_brk_t *)uip_appdata;
 #if !LRP_IS_SINK
   uip_ds6_defrt_t *defrt;
   uint16_t lc;
@@ -330,28 +328,28 @@ lrp_handle_incoming_brk()
 
 #if LRP_IS_SINK
   /* Send UPD on the reversed route and exits */
-  if(!lrp_brc_add(&brk->initial_sender, brk->node_seqno, &UIP_IP_BUF->srcipaddr)) {
+  if(!lrp_brc_add(&brk->initial_sender, brk->node_seqno, neighbor)) {
     PRINTF("Skipping: BRK is worst than a former\n");
     return;
   }
   SEQNO_INCREASE(lrp_state.repair_seqno);
   lrp_state_save();
-  lrp_send_upd(&brk->initial_sender, &lrp_state.sink_addr, &UIP_IP_BUF->srcipaddr,
+  lrp_send_upd(&brk->initial_sender, &lrp_state.sink_addr, neighbor,
                lrp_state.tree_seqno, lrp_state.repair_seqno,
                lrp_state.metric_type, 0);
 
 #else /* LRP_IS_SINK */
 
   /* Computing link cost */
-  lc = lrp_link_cost(&UIP_IP_BUF->srcipaddr, brk->metric_type);
+  lc = lrp_link_cost(neighbor, brk->metric_type);
   if(lc == 0) {
     PRINTF("Unable to determine the cost of the link to ");
-    PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
+    PRINT6ADDR(neighbor);
     PRINTF("\n");
     return;
   }
 
-  defrt = uip_ds6_defrt_lookup(&UIP_IP_BUF->srcipaddr);
+  defrt = uip_ds6_defrt_lookup(neighbor);
   if(defrt != NULL) {
     /* BRK comes from our default next hop. Should be broadcast, but check the
      * ring size before. */
@@ -362,12 +360,12 @@ lrp_handle_incoming_brk()
     if(brk->ring_size != LRP_LR_RING_INFINITE_SIZE) {
       brk->ring_size--;
     }
-    lrp_brc_force_add(&brk->initial_sender, brk->node_seqno, &UIP_IP_BUF->srcipaddr);
+    lrp_brc_force_add(&brk->initial_sender, brk->node_seqno, neighbor);
     lrp_delayed_brk(&brk->initial_sender, NULL, brk->node_seqno,
                     brk->metric_type, brk->metric_value + lc, brk->ring_size);
   } else {
     /* BRK comes from a neighbor broken branch. Forwarding BRK to sink */
-    if(!lrp_brc_add(&brk->initial_sender, brk->node_seqno, &UIP_IP_BUF->srcipaddr)) {
+    if(!lrp_brc_add(&brk->initial_sender, brk->node_seqno, neighbor)) {
       PRINTF("Skipping: BRK is worst than a former\n");
       return;
     }
@@ -380,17 +378,15 @@ lrp_handle_incoming_brk()
 /*---------------------------------------------------------------------------*/
 /* Handle an incoming UPD type message. */
 void
-lrp_handle_incoming_upd()
+lrp_handle_incoming_upd(uip_ipaddr_t* neighbor, struct lrp_msg_upd_t* upd)
 {
 #if LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK
-  struct lrp_msg_upd_t *upd = (struct lrp_msg_upd_t *)uip_appdata;
-
   /* Network to host */
   upd->tree_seqno = uip_ntohs(upd->tree_seqno);
   upd->repair_seqno = uip_ntohs(upd->repair_seqno);
 
   /* Try to use this UPD as default route */
-  if(offer_default_route(&UIP_IP_BUF->srcipaddr, (struct lrp_msg*)upd)
+  if(offer_default_route(neighbor, (struct lrp_msg*)upd)
      == NULL) {
     /* UPD is not accepted => do nothing. */
     return;

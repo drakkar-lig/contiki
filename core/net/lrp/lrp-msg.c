@@ -493,7 +493,7 @@ lrp_handle_incoming_msg(void)
     PRINTF(" searched=");
     PRINT6ADDR(&rreq->searched_addr);
     PRINTF("\n");
-    lrp_handle_incoming_rreq();
+    lrp_handle_incoming_rreq(&UIP_IP_BUF->srcipaddr, rreq);
     break;
   case LRP_RREP_TYPE:
     PRINTF("Received RREP ");
@@ -508,7 +508,7 @@ lrp_handle_incoming_msg(void)
     PRINTF(" dest=");
     PRINT6ADDR(&rrep->dest_addr);
     PRINTF("\n");
-    lrp_handle_incoming_rrep();
+    lrp_handle_incoming_rrep(&UIP_IP_BUF->srcipaddr, rrep);
     break;
   case LRP_RERR_TYPE:
     PRINTF("Recieved RERR ");
@@ -521,7 +521,7 @@ lrp_handle_incoming_msg(void)
     PRINTF(" dest=");
     PRINT6ADDR(&rerr->dest_addr);
     PRINTF("\n");
-    lrp_handle_incoming_rerr();
+    lrp_handle_incoming_rerr(&UIP_IP_BUF->srcipaddr, rerr);
     break;
   case LRP_DIO_TYPE:
     PRINTF("Received DIO ");
@@ -534,7 +534,7 @@ lrp_handle_incoming_msg(void)
     PRINTF(" sink=");
     PRINT6ADDR(&dio->sink_addr);
     PRINTF(" options=%02x\n", dio->options);
-    lrp_handle_incoming_dio();
+    lrp_handle_incoming_dio(&UIP_IP_BUF->srcipaddr, dio);
     break;
   case LRP_BRK_TYPE:
     PRINTF("Received BRK ");
@@ -548,7 +548,7 @@ lrp_handle_incoming_msg(void)
         uip_ntohs(brk->node_seqno), brk->metric_type, brk->metric_value);
     PRINTF(" ring=%d", brk->ring_size);
     PRINTF("\n");
-    lrp_handle_incoming_brk();
+    lrp_handle_incoming_brk(&UIP_IP_BUF->srcipaddr, brk);
     break;
   case LRP_UPD_TYPE:
     PRINTF("Received UPD ");
@@ -564,7 +564,7 @@ lrp_handle_incoming_msg(void)
     PRINTF(" lost_node=");
     PRINT6ADDR(&upd->lost_node);
     PRINTF("\n");
-    lrp_handle_incoming_upd();
+    lrp_handle_incoming_upd(&UIP_IP_BUF->srcipaddr, upd);
     break;
   default:
     PRINTF("Unknown message type 0x%x\n", type);

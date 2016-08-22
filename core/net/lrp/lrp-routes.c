@@ -215,11 +215,9 @@ offer_route(uip_ipaddr_t *orig_addr, const uint8_t length,
 /*---------------------------------------------------------------------------*/
 /* Handle an incoming RREQ type message. */
 void
-lrp_handle_incoming_rreq(void)
+lrp_handle_incoming_rreq(uip_ipaddr_t* neighbor, struct lrp_msg_rreq_t* rreq)
 {
 #if !LRP_IS_SINK
-  struct lrp_msg_rreq_t *rreq = (struct lrp_msg_rreq_t *)uip_appdata;
-  /* uip_ipaddr_t dest_addr, orig_addr; // FIXME */
 #if !LRP_USE_DIO
   uip_ds6_route_t *rt;
 #endif
@@ -227,14 +225,14 @@ lrp_handle_incoming_rreq(void)
   rreq->source_seqno = uip_ntohs(rreq->source_seqno);
 
   /* Add local link to described metric */
-  rreq->metric_value += lrp_link_cost(&UIP_IP_BUF->srcipaddr, rreq->metric_type);
+  rreq->metric_value += lrp_link_cost(neighbor, rreq->metric_type);
 
   /* Check if we do not have already received a better RREQ message */
 #if !LRP_USE_DIO
   /* LOADng's: try to add route to source */
   if(!lrp_is_my_global_address(&rreq->orig_addr)) {
     if((rt = offer_route(&rreq->orig_addr, HOST_ROUTE_PREFIX_LEN,
-                         &UIP_IP_BUF->srcipaddr, rreq->metric_type,
+                         neighbor, rreq->metric_type,
                          metric_value, rreq->node_seqno)) == NULL) {
       PRINTF("Skipping: has a better RREQ to dest\n");
       return;
@@ -245,7 +243,7 @@ lrp_handle_incoming_rreq(void)
   if(lrp_is_my_global_address(&rreq->searched_addr)) {
     SEQNO_INCREASE(lrp_state.node_seqno);
     lrp_state_save();
-    lrp_send_rrep(&rreq->source_addr, &UIP_IP_BUF->srcipaddr, &rreq->searched_addr,
+    lrp_send_rrep(&rreq->source_addr, neighbor, &rreq->searched_addr,
                   lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
 #else
   /* LRP: consult cache */
@@ -276,10 +274,9 @@ lrp_handle_incoming_rreq(void)
 /*---------------------------------------------------------------------------*/
 /* Handle an incoming RREP type message. */
 void
-lrp_handle_incoming_rrep(void)
+lrp_handle_incoming_rrep(uip_ipaddr_t* neighbor, struct lrp_msg_rrep_t* rrep)
 {
 #if LRP_IS_COORDINATOR
-  struct lrp_msg_rrep_t *rrep = (struct lrp_msg_rrep_t *)uip_appdata;
   struct uip_ds6_route *rt;
 #if !LRP_IS_SINK
   uip_ipaddr_t *nexthop = NULL;
@@ -289,18 +286,18 @@ lrp_handle_incoming_rrep(void)
 
 #if LRP_USE_DIO
   /* LRP: Do not accept RREP from our default route */
-  if(uip_ds6_defrt_lookup(&UIP_IP_BUF->srcipaddr)) {
+  if(uip_ds6_defrt_lookup(neighbor) != NULL) {
     PRINTF("Do not allow RREP from default route\n");
     return;
   }
 #endif /* LRP_USE_DIO */
 
   /* Add link cost to described metric */
-  rrep->metric_value += lrp_link_cost(&UIP_IP_BUF->srcipaddr, rrep->metric_type);
+  rrep->metric_value += lrp_link_cost(neighbor, rrep->metric_type);
 
   /* Offer route to routing table */
   rt = offer_route(&rrep->source_addr, HOST_ROUTE_PREFIX_LEN,
-                   &UIP_IP_BUF->srcipaddr, rrep->metric_type,
+                   neighbor, rrep->metric_type,
                    rrep->metric_value, rrep->source_seqno);
   if(rt != NULL) {
     PRINTF("Route inserted from RREP\n");
@@ -346,9 +343,8 @@ lrp_handle_incoming_rrep(void)
 /*---------------------------------------------------------------------------*/
 /* Handle an incoming RERR type message. */
 void
-lrp_handle_incoming_rerr(void)
+lrp_handle_incoming_rerr(uip_ipaddr_t* neighbor, struct lrp_msg_rerr_t* rerr)
 {
-  struct lrp_msg_rerr_t *rerr = (struct lrp_msg_rerr_t *)uip_appdata;
 #if !LRP_USE_DIO
   struct uip_ds6_route *rt;
 #endif
@@ -370,11 +366,11 @@ lrp_handle_incoming_rerr(void)
 #else
   /* LRP */
 #if !LRP_IS_SINK
-  if(uip_ds6_defrt_lookup(&UIP_IP_BUF->srcipaddr) != NULL) {
+  if(uip_ds6_defrt_lookup(neighbor) != NULL) {
     PRINTF("Successor doesn't know us. Spontaneously send RREP\n");
     SEQNO_INCREASE(lrp_state.node_seqno);
     lrp_state_save();
-    lrp_send_rrep(&lrp_state.sink_addr, &UIP_IP_BUF->srcipaddr, &lrp_myipaddr,
+    lrp_send_rrep(&lrp_state.sink_addr, neighbor, &lrp_myipaddr,
                   lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
   } else {
     /* Forward the RERR higher */
@@ -389,7 +385,7 @@ lrp_handle_incoming_rerr(void)
   PRINTF("Successor doesn't know us. Spontaneously send RREP\n");
   SEQNO_INCREASE(lrp_state.node_seqno);
   lrp_state_save();
-  lrp_send_rrep(&lrp_state.sink_addr, &UIP_IP_BUF->srcipaddr, &lrp_myipaddr,
+  lrp_send_rrep(&lrp_state.sink_addr, neighbor, &lrp_myipaddr,
                 lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
 #endif /* LRP_IS_COORDINATOR */
 }
