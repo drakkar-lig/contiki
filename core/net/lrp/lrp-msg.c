@@ -50,6 +50,8 @@
 #include "net/ip/uip-debug.h"
 #include <string.h>
 
+#define UIP_IP_BUF ((struct uip_udpip_hdr *)&uip_buf[UIP_LLH_LEN])
+
 /*---------------------------------------------------------------------------*/
 /* Format and broadcast a RREQ type packet. */
 #if LRP_IS_COORDINATOR
@@ -481,21 +483,87 @@ lrp_handle_incoming_msg(void)
   /* Check message type */
   switch(((struct lrp_msg *)uip_appdata)->type) {
   case LRP_RREQ_TYPE:
+    PRINTF("Received RREQ ");
+    struct lrp_msg_rreq_t *rreq = (struct lrp_msg_rreq_t *)uip_appdata;
+    PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
+    PRINTF(" -> ");
+    PRINT6ADDR(&UIP_IP_BUF->destipaddr);
+    PRINTF(" orig=");
+    PRINT6ADDR(&rreq->source_addr);
+    PRINTF(" searched=");
+    PRINT6ADDR(&rreq->searched_addr);
+    PRINTF("\n");
     lrp_handle_incoming_rreq();
     break;
   case LRP_RREP_TYPE:
+    PRINTF("Received RREP ");
+    struct lrp_msg_rrep_t *rrep = (struct lrp_msg_rrep_t *)uip_appdata;
+    PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
+    PRINTF(" -> ");
+    PRINT6ADDR(&UIP_IP_BUF->destipaddr);
+    PRINTF(" source=");
+    PRINT6ADDR(&rrep->source_addr);
+    PRINTF(" seqno/metric/value=%u/0x%x/%u",
+        uip_ntohs(rrep->source_seqno), rrep->metric_type, rrep->metric_value);
+    PRINTF(" dest=");
+    PRINT6ADDR(&rrep->dest_addr);
+    PRINTF("\n");
     lrp_handle_incoming_rrep();
     break;
   case LRP_RERR_TYPE:
+    PRINTF("Recieved RERR ");
+    struct lrp_msg_rerr_t *rerr = (struct lrp_msg_rerr_t *)uip_appdata;
+    PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
+    PRINTF(" -> ");
+    PRINT6ADDR(&UIP_IP_BUF->destipaddr);
+    PRINTF(" addr_in_error=");
+    PRINT6ADDR(&rerr->addr_in_error);
+    PRINTF(" dest=");
+    PRINT6ADDR(&rerr->dest_addr);
+    PRINTF("\n");
     lrp_handle_incoming_rerr();
     break;
   case LRP_DIO_TYPE:
+    PRINTF("Received DIO ");
+    struct lrp_msg_dio_t* dio = (struct lrp_msg_dio_t*)uip_appdata;
+    PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
+    PRINTF(" -> ");
+    PRINT6ADDR(&UIP_IP_BUF->destipaddr);
+    PRINTF(" seqno/metric/value=%u/0x%x/%u",
+        uip_ntohs(dio->tree_seqno), dio->metric_type, dio->metric_value);
+    PRINTF(" sink=");
+    PRINT6ADDR(&dio->sink_addr);
+    PRINTF(" options=%02x\n", dio->options);
     lrp_handle_incoming_dio();
     break;
   case LRP_BRK_TYPE:
+    PRINTF("Received BRK ");
+    struct lrp_msg_brk_t* brk = (struct lrp_msg_brk_t*)uip_appdata;
+    PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
+    PRINTF(" -> ");
+    PRINT6ADDR(&UIP_IP_BUF->destipaddr);
+    PRINTF(" initial=");
+    PRINT6ADDR(&brk->initial_sender);
+    PRINTF(" seqno/metric/value=%u/0x%x/%u",
+        uip_ntohs(brk->node_seqno), brk->metric_type, brk->metric_value);
+    PRINTF(" ring=%d", brk->ring_size);
+    PRINTF("\n");
     lrp_handle_incoming_brk();
     break;
   case LRP_UPD_TYPE:
+    PRINTF("Received UPD ");
+    struct lrp_msg_upd_t* upd = (struct lrp_msg_upd_t*)uip_appdata;
+    PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
+    PRINTF(" -> ");
+    PRINT6ADDR(&UIP_IP_BUF->destipaddr);
+    PRINTF(" sink=");
+    PRINT6ADDR(&upd->sink_addr);
+    PRINTF(" seqno/metric/value=%u/0x%x/%u",
+        uip_ntohs(upd->tree_seqno), upd->metric_type, upd->metric_value);
+    PRINTF(" repair_seqno=%d", uip_ntohs(upd->repair_seqno));
+    PRINTF(" lost_node=");
+    PRINT6ADDR(&upd->lost_node);
+    PRINTF("\n");
     lrp_handle_incoming_upd();
     break;
   default:

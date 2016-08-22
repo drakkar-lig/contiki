@@ -224,17 +224,6 @@ lrp_handle_incoming_rreq(void)
   uip_ds6_route_t *rt;
 #endif
 
-  PRINTF("Received RREQ ");
-  PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
-  PRINTF(" -> ");
-  PRINT6ADDR(&UIP_IP_BUF->destipaddr);
-  PRINTF(" orig=");
-  PRINT6ADDR(&rreq->source_addr);
-  PRINTF(" searched=");
-  PRINT6ADDR(&rreq->searched_addr);
-  PRINTF(" seq=%u", uip_ntohs(rreq->source_seqno));
-  PRINTF(" metric t/v=%x/%u\n", rreq->metric_type, rreq->metric_value);
-
   rreq->source_seqno = uip_ntohs(rreq->source_seqno);
 
   /* Add local link to described metric */
@@ -295,17 +284,6 @@ lrp_handle_incoming_rrep(void)
 #if !LRP_IS_SINK
   uip_ipaddr_t *nexthop = NULL;
 #endif
-
-  PRINTF("Received RREP ");
-  PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
-  PRINTF(" -> ");
-  PRINT6ADDR(&UIP_IP_BUF->destipaddr);
-  PRINTF(" source=");
-  PRINT6ADDR(&rrep->source_addr);
-  PRINTF(" dest=");
-  PRINT6ADDR(&rrep->dest_addr);
-  PRINTF(" source_seqno=%u", uip_ntohs(rrep->source_seqno));
-  PRINTF(" metric t/v=%x/%u\n", rrep->metric_type, rrep->metric_value);
 
   rrep->source_seqno = uip_ntohs(rrep->source_seqno);
 
@@ -377,16 +355,6 @@ lrp_handle_incoming_rerr(void)
 #if LRP_IS_COORDINATOR && LRP_USE_DIO && !LRP_IS_SINK
   uip_ipaddr_t *defrt;
 #endif
-
-  PRINTF("Recieved RERR ");
-  PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
-  PRINTF(" -> ");
-  PRINT6ADDR(&UIP_IP_BUF->destipaddr);
-  PRINTF(" addr_in_error=");
-  PRINT6ADDR(&rerr->addr_in_error);
-  PRINTF(" dest=");
-  PRINT6ADDR(&rerr->dest_addr);
-  PRINTF("\n");
 
 #if LRP_IS_COORDINATOR
   /* Remove route */

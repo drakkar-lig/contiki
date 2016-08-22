@@ -277,15 +277,6 @@ lrp_handle_incoming_dio(void)
 {
   struct lrp_msg_dio_t *dio = (struct lrp_msg_dio_t *)uip_appdata;
 
-  PRINTF("Received DIO ");
-  PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
-  PRINTF(" -> ");
-  PRINT6ADDR(&UIP_IP_BUF->destipaddr);
-  PRINTF(" sink=");
-  PRINT6ADDR(&dio->sink_addr);
-  PRINTF(" seqno/metric/value=%u/0x%x/%u", uip_ntohs(dio->tree_seqno), dio->metric_type, dio->metric_value);
-  PRINTF(" options=%02x\n", dio->options);
-
   dio->tree_seqno = uip_ntohs(dio->tree_seqno);
 
 #if !LRP_IS_SINK
@@ -334,16 +325,6 @@ lrp_handle_incoming_brk()
     PRINTF("Skipping BRK: loops back\n");
     return;
   }
-
-  PRINTF("Received BRK ");
-  PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
-  PRINTF(" -> ");
-  PRINT6ADDR(&UIP_IP_BUF->destipaddr);
-  PRINTF(" ring=%d", brk->ring_size);
-  PRINTF(" seqno/metric/value=%u/0x%x/%u", uip_ntohs(brk->node_seqno), brk->metric_type, brk->metric_value);
-  PRINTF(" initial=");
-  PRINT6ADDR(&brk->initial_sender);
-  PRINTF("\n");
 
   brk->node_seqno = uip_ntohs(brk->node_seqno);
 
@@ -403,17 +384,6 @@ lrp_handle_incoming_upd()
 {
 #if LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK
   struct lrp_msg_upd_t *upd = (struct lrp_msg_upd_t *)uip_appdata;
-
-  /* Log */
-  PRINTF("Received UPD ");
-  PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
-  PRINTF(" -> ");
-  PRINT6ADDR(&UIP_IP_BUF->destipaddr);
-  PRINTF(" repair_seqno=%d", uip_ntohs(upd->repair_seqno));
-  PRINTF(" seqno/metric/value=%u/0x%x/%u", uip_ntohs(upd->tree_seqno), upd->metric_type, upd->metric_value);
-  PRINTF(" lost_node=");
-  PRINT6ADDR(&upd->lost_node);
-  PRINTF("\n");
 
   /* Network to host */
   upd->tree_seqno = uip_ntohs(upd->tree_seqno);
