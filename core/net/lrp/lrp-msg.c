@@ -62,24 +62,24 @@ lrp_send_rreq(const uip_ipaddr_t *searched_addr,
               const uint8_t metric_type,
               const uint16_t metric_value)
 {
-  struct lrp_msg_rreq_t rm;
+  struct lrp_msg_rreq_t rreq;
 
   PRINTF("Send RREQ (broadcast) for ");
   PRINT6ADDR(searched_addr);
   PRINTF(" seqno/metric/value=%u/0x%x/%u\n", source_seqno, metric_type, metric_value);
 
   /* Fill message */
-  rm.type = (LRP_RREQ_TYPE << 4) | 0x0;
-  rm.addr_len = (0x0 << 4) | LRP_ADDR_LEN_IPV6;
-  rm.source_seqno = uip_htons(source_seqno);
-  rm.metric_type = metric_type;
-  rm.metric_value = metric_value;
-  uip_ipaddr_copy(&rm.searched_addr, searched_addr);
-  uip_ipaddr_copy(&rm.source_addr, source_addr);
+  rreq.type = (LRP_RREQ_TYPE << 4) | 0x0;
+  rreq.addr_len = (0x0 << 4) | LRP_ADDR_LEN_IPV6;
+  rreq.source_seqno = uip_htons(source_seqno);
+  rreq.metric_type = metric_type;
+  rreq.metric_value = metric_value;
+  uip_ipaddr_copy(&rreq.searched_addr, searched_addr);
+  uip_ipaddr_copy(&rreq.source_addr, source_addr);
 
   /* Send packet */
   uip_create_linklocal_lln_routers_mcast(&lrp_udpconn->ripaddr);
-  uip_udp_packet_send(lrp_udpconn, &rm, sizeof(struct lrp_msg_rreq_t));
+  uip_udp_packet_send(lrp_udpconn, &rreq, sizeof(struct lrp_msg_rreq_t));
   memset(&lrp_udpconn->ripaddr, 0, sizeof(lrp_udpconn->ripaddr));
 }
 struct send_rreq_params_t {
@@ -133,7 +133,7 @@ lrp_send_rrep(const uip_ipaddr_t *dest_addr,
               const uint8_t metric_type,
               const uint16_t metric_value)
 {
-  struct lrp_msg_rrep_t rm;
+  struct lrp_msg_rrep_t rrep;
 
   PRINTF("Send RREP -> ");
   PRINT6ADDR(nexthop);
@@ -143,17 +143,17 @@ lrp_send_rrep(const uip_ipaddr_t *dest_addr,
   PRINT6ADDR(dest_addr);
   PRINTF(" seqno/metric/value=%u/0x%x/%u\n", source_seqno, metric_type, metric_value);
 
-  rm.type = (LRP_RREP_TYPE << 4) | 0x0;
-  rm.addr_len = (0x0 << 4) | LRP_ADDR_LEN_IPV6;
-  rm.source_seqno = uip_htons(source_seqno);
-  rm.metric_type = metric_type;
-  rm.metric_value = metric_value;
-  uip_ipaddr_copy(&rm.source_addr, source_addr);
-  uip_ipaddr_copy(&rm.dest_addr, dest_addr);
+  rrep.type = (LRP_RREP_TYPE << 4) | 0x0;
+  rrep.addr_len = (0x0 << 4) | LRP_ADDR_LEN_IPV6;
+  rrep.source_seqno = uip_htons(source_seqno);
+  rrep.metric_type = metric_type;
+  rrep.metric_value = metric_value;
+  uip_ipaddr_copy(&rrep.source_addr, source_addr);
+  uip_ipaddr_copy(&rrep.dest_addr, dest_addr);
 
-  uip_ipaddr_copy(&lrp_udpconn->ripaddr, nexthop);
-  uip_udp_packet_send(lrp_udpconn, &rm, sizeof(struct lrp_msg_rrep_t));
-  memset(&lrp_udpconn->ripaddr, 0, sizeof(lrp_udpconn->ripaddr));
+  uip_udp_packet_sendto(lrp_udpconn,
+                        &rrep, sizeof(struct lrp_msg_rrep_t),
+                        nexthop, lrp_udpconn->rport);
 }
 struct send_rrep_params_t {
   uip_ipaddr_t dest_addr;
@@ -219,7 +219,7 @@ lrp_send_rerr(const uip_ipaddr_t *dest_addr,
               const uip_ipaddr_t *addr_in_error,
               const uip_ipaddr_t *nexthop)
 {
-  struct lrp_msg_rerr_t rm;
+  struct lrp_msg_rerr_t rerr;
 
   PRINTF("Send RERR -> ");
   PRINT6ADDR(nexthop);
@@ -227,14 +227,14 @@ lrp_send_rerr(const uip_ipaddr_t *dest_addr,
   PRINT6ADDR(addr_in_error);
   PRINTF("\n");
 
-  rm.type = (LRP_RERR_TYPE << 4) | 0x0;
-  rm.addr_len = (0x0 << 4) | LRP_ADDR_LEN_IPV6;
-  uip_ipaddr_copy(&rm.addr_in_error, addr_in_error);
-  uip_ipaddr_copy(&rm.dest_addr, dest_addr);
+  rerr.type = (LRP_RERR_TYPE << 4) | 0x0;
+  rerr.addr_len = (0x0 << 4) | LRP_ADDR_LEN_IPV6;
+  uip_ipaddr_copy(&rerr.addr_in_error, addr_in_error);
+  uip_ipaddr_copy(&rerr.dest_addr, dest_addr);
 
-  uip_ipaddr_copy(&lrp_udpconn->ripaddr, nexthop);
-  uip_udp_packet_send(lrp_udpconn, &rm, sizeof(struct lrp_msg_rerr_t));
-  memset(&lrp_udpconn->ripaddr, 0, sizeof(lrp_udpconn->ripaddr));
+  uip_udp_packet_sendto(lrp_udpconn,
+                        &rerr, sizeof(struct lrp_msg_rerr_t),
+                        nexthop, lrp_udpconn->rport);
 }
 #endif /* !LRP_IS_SINK */
 
@@ -245,7 +245,7 @@ lrp_send_rerr(const uip_ipaddr_t *dest_addr,
 void
 lrp_send_dio(uip_ipaddr_t *destination, uint8_t options)
 {
-  struct lrp_msg_dio_t rm;
+  struct lrp_msg_dio_t dio;
 
   /* Logs */
   PRINTF("Send DIO");
@@ -264,13 +264,13 @@ lrp_send_dio(uip_ipaddr_t *destination, uint8_t options)
   PRINTF(" options=%02x\n", options);
 
   /* Create message's content */
-  rm.type = (LRP_DIO_TYPE << 4) | 0x0;
-  rm.addr_len = (0x0 << 4) | LRP_ADDR_LEN_IPV6;
-  rm.tree_seqno = uip_htons(lrp_state.tree_seqno);
-  rm.metric_type = lrp_state.metric_type;
-  rm.metric_value = lrp_state.metric_value;
-  rm.options = options;
-  uip_ipaddr_copy(&rm.sink_addr, &lrp_state.sink_addr);
+  dio.type = (LRP_DIO_TYPE << 4) | 0x0;
+  dio.addr_len = (0x0 << 4) | LRP_ADDR_LEN_IPV6;
+  dio.tree_seqno = uip_htons(lrp_state.tree_seqno);
+  dio.metric_type = lrp_state.metric_type;
+  dio.metric_value = lrp_state.metric_value;
+  dio.options = options;
+  uip_ipaddr_copy(&dio.sink_addr, &lrp_state.sink_addr);
 
   /* Compute destination and send packet */
   if(destination == NULL) {
@@ -278,7 +278,7 @@ lrp_send_dio(uip_ipaddr_t *destination, uint8_t options)
   } else {
     uip_ipaddr_copy(&lrp_udpconn->ripaddr, destination);
   }
-  uip_udp_packet_send(lrp_udpconn, &rm, sizeof(struct lrp_msg_dio_t));
+  uip_udp_packet_send(lrp_udpconn, &dio, sizeof(struct lrp_msg_dio_t));
   memset(&lrp_udpconn->ripaddr, 0, sizeof(lrp_udpconn->ripaddr));
 }
 struct send_dio_params_t {
@@ -361,7 +361,7 @@ lrp_send_brk(const uip_ipaddr_t *initial_sender,
              const uint16_t metric_value,
              const uint8_t ring_size)
 {
-  struct lrp_msg_brk_t rm;
+  struct lrp_msg_brk_t brk;
 
   PRINTF("Send BRK ");
   if(nexthop == NULL || nexthop->u8[0] == 0xFF) {
@@ -374,21 +374,22 @@ lrp_send_brk(const uip_ipaddr_t *initial_sender,
   PRINT6ADDR(initial_sender);
   PRINTF("\n");
 
-  rm.type = LRP_BRK_TYPE;
-  rm.type = (rm.type << 4) | 0x0;
-  rm.addr_len = (0x0 << 4) | LRP_ADDR_LEN_IPV6;
-  rm.node_seqno = uip_htons(node_seqno);
-  rm.metric_type = metric_type;
-  rm.metric_value = metric_value;
-  rm.ring_size = ring_size;
-  uip_ipaddr_copy(&rm.initial_sender, initial_sender);
+  brk.type = (LRP_BRK_TYPE << 4) | 0x0;
+  brk.addr_len = (0x0 << 4) | LRP_ADDR_LEN_IPV6;
+  brk.node_seqno = uip_htons(node_seqno);
+  brk.metric_type = metric_type;
+  brk.metric_value = metric_value;
+  brk.ring_size = ring_size;
+  uip_ipaddr_copy(&brk.initial_sender, initial_sender);
 
   if(nexthop == NULL) {
     uip_create_linklocal_lln_routers_mcast(&lrp_udpconn->ripaddr);
   } else {
     uip_ipaddr_copy(&lrp_udpconn->ripaddr, nexthop);
-  } uip_udp_packet_send(lrp_udpconn, &rm, sizeof(struct lrp_msg_brk_t));
-  memset(&lrp_udpconn->ripaddr, 0, sizeof(lrp_udpconn->ripaddr));
+  }
+  uip_udp_packet_sendto(lrp_udpconn,
+                        &brk, sizeof(struct lrp_msg_brk_t),
+                        nexthop, lrp_udpconn->rport);
 }
 struct send_brk_params_t {
   uip_ipaddr_t initial_sender;
@@ -448,7 +449,7 @@ lrp_send_upd(const uip_ipaddr_t *lost_node,
              const uint8_t metric_type,
              const uint16_t metric_value)
 {
-  struct lrp_msg_upd_t rm;
+  struct lrp_msg_upd_t upd;
 
   PRINTF("Send UPD -> ");
   PRINT6ADDR(nexthop);
@@ -456,18 +457,18 @@ lrp_send_upd(const uip_ipaddr_t *lost_node,
   PRINT6ADDR(lost_node);
   PRINTF("\n");
 
-  rm.type = (LRP_UPD_TYPE << 4) | 0x0;
-  rm.addr_len = (0x0 << 4) | LRP_ADDR_LEN_IPV6;
-  rm.tree_seqno = uip_htons(tree_seqno);
-  rm.repair_seqno = uip_htons(repair_seqno);
-  rm.metric_type = metric_type;
-  rm.metric_value = metric_value;
-  uip_ipaddr_copy(&rm.sink_addr, sink_addr);
-  uip_ipaddr_copy(&rm.lost_node, lost_node);
+  upd.type = (LRP_UPD_TYPE << 4) | 0x0;
+  upd.addr_len = (0x0 << 4) | LRP_ADDR_LEN_IPV6;
+  upd.tree_seqno = uip_htons(tree_seqno);
+  upd.repair_seqno = uip_htons(repair_seqno);
+  upd.metric_type = metric_type;
+  upd.metric_value = metric_value;
+  uip_ipaddr_copy(&upd.sink_addr, sink_addr);
+  uip_ipaddr_copy(&upd.lost_node, lost_node);
 
-  uip_ipaddr_copy(&lrp_udpconn->ripaddr, nexthop);
-  uip_udp_packet_send(lrp_udpconn, &rm, sizeof(struct lrp_msg_upd_t));
-  memset(&lrp_udpconn->ripaddr, 0, sizeof(lrp_udpconn->ripaddr));
+  uip_udp_packet_sendto(lrp_udpconn,
+                        &upd, sizeof(struct lrp_msg_upd_t),
+                        nexthop, lrp_udpconn->rport);
 }
 #endif /* LRP_IS_COORDINATOR */
 
