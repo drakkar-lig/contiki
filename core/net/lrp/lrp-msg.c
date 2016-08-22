@@ -478,10 +478,10 @@ lrp_handle_incoming_msg(void)
 {
   /* Record neighbor */
   lrp_nbr_add(&((struct uip_udpip_hdr *)&uip_buf[UIP_LLH_LEN])->srcipaddr);
-  /* Make type readable */
-  ((struct lrp_msg *)uip_appdata)->type >>= 4;
+  /* Compute message type */
+  uint8_t type = ((struct lrp_msg *)uip_appdata)->type >> 4;
   /* Check message type */
-  switch(((struct lrp_msg *)uip_appdata)->type) {
+  switch(type) {
   case LRP_RREQ_TYPE:
     PRINTF("Received RREQ ");
     struct lrp_msg_rreq_t *rreq = (struct lrp_msg_rreq_t *)uip_appdata;
@@ -567,7 +567,7 @@ lrp_handle_incoming_msg(void)
     lrp_handle_incoming_upd();
     break;
   default:
-    PRINTF("Unknown message type\n");
+    PRINTF("Unknown message type 0x%x\n", type);
   }
 }
 #endif /* UIP_CONF_IPV6_LRP */
