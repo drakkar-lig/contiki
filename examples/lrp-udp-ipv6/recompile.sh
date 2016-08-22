@@ -9,7 +9,7 @@ if test -z "$TARGET"; then
   if test -f Makefile.target; then
     TARGET="$(cat Makefile.target | cut -d' ' -f3)"
   else
-    TARGET=sky
+    TARGET=native
   fi
 fi
 
