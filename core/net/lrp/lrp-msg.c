@@ -473,6 +473,31 @@ lrp_send_upd(const uip_ipaddr_t *lost_node,
 #endif /* LRP_IS_COORDINATOR */
 
 /*---------------------------------------------------------------------------*/
+/* Format and send a HELLO type message. */
+void
+lrp_send_hello(const uip_ipaddr_t *nexthop,
+               const uint8_t link_cost_type,
+               const uint16_t link_cost_value,
+               const uint8_t options)
+{
+  struct lrp_msg_hello_t hello;
+
+  PRINTF("Send HELLO -> ");
+  PRINT6ADDR(nexthop);
+  PRINTF("\n");
+
+  hello.type = (LRP_HELLO_TYPE << 4) | 0x0;
+  hello.addr_len = (0x0 << 4) | LRP_ADDR_LEN_IPV6;
+  hello.options = options;
+  hello.link_cost_type = link_cost_type;
+  hello.link_cost_value = link_cost_value;
+
+  uip_udp_packet_sendto(lrp_udpconn,
+                        &hello, sizeof(struct lrp_msg_hello_t),
+                        nexthop, lrp_udpconn->rport);
+}
+
+/*---------------------------------------------------------------------------*/
 /* Handle an incoming LRP message. */
 void
 lrp_handle_incoming_msg(void)
@@ -566,6 +591,16 @@ lrp_handle_incoming_msg(void)
     PRINT6ADDR(&upd->lost_node);
     PRINTF("\n");
     lrp_handle_incoming_upd(&UIP_IP_BUF->srcipaddr, upd);
+    break;
+  case LRP_HELLO_TYPE:
+    PRINTF("Received HELLO ");
+    struct lrp_msg_hello_t* hello = (struct lrp_msg_hello_t*)uip_appdata;
+    PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
+    PRINTF(" -> ");
+    PRINT6ADDR(&UIP_IP_BUF->destipaddr);
+    PRINTF(" link cost metric/value=0x%x/%u\n",
+        hello->link_cost_type, hello->link_cost_value);
+    PRINTF("HELLO messages not yet handled\n");
     break;
   default:
     PRINTF("Unknown message type 0x%x\n", type);

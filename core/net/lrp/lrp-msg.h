@@ -211,6 +211,23 @@ void lrp_send_upd(const uip_ipaddr_t *lost_node,
                   const uint16_t metric_value);
 #endif /* LRP_IS_COORDINATOR */
 
+/*-------------------------------------------------------------------*/
+/* LRP HELLO message */
+#define LRP_HELLO_TYPE      8
+struct lrp_msg_hello_t {
+  uint8_t type;
+  uint8_t addr_len;
+  uint16_t _padding;
+  uint8_t options;
+  uint8_t link_cost_type;
+  uint16_t link_cost_value;
+};
+void lrp_send_hello(const uip_ipaddr_t* nexthop,
+                    const uint8_t link_cost_type,
+                    const uint16_t link_cost_value,
+                    const uint8_t options);
+#define LRP_MSG_FLAG_PLEASE_REPLY 0x80
+
 #endif /* LRP_USE_DIO */
 
 #endif /* UIP_CONF_IPV6_LRP */
