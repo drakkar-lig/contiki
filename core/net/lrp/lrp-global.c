@@ -355,4 +355,21 @@ rand_wait_duration_before_broadcast()
 {
   return (random_rand() % 256) * LRP_RANDOM_WAIT / 256;
 }
+/*---------------------------------------------------------------------------*/
+enum path_length_comparison_result_t
+path_length_compare(uint16_t seqno_1, uint8_t metric_type_1, uint16_t metric_value_1,
+                    uint16_t seqno_2, uint8_t metric_type_2, uint16_t metric_value_2)
+{
+  if(SEQNO_GREATER_THAN(seqno_1, seqno_2))
+    return PLC_NEWER_SEQNO;
+  if(SEQNO_GREATER_THAN(seqno_2, seqno_1))
+    return PLC_OLDER_SEQNO;
+  if(metric_type_1 != metric_type_2)
+    return PLC_UNCOMPARABLE_METRICS;
+  if(metric_value_1 < metric_value_2)
+    return PLC_SHORTER_METRIC;
+  if(metric_value_1 > metric_value_2)
+    return PLC_LONGER_METRIC;
+  return PLC_EQUAL;
+}
 #endif /* UIP_CONF_IPV6_LRP */

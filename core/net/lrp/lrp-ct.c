@@ -132,7 +132,6 @@ offer_default_route(uip_ipaddr_t *next_hop, struct lrp_msg *msg)
   uint8_t metric_type;
   uint16_t metric_value;
   uip_ds6_defrt_t *defrt = NULL;
-  uint16_t lc;
 
   if(msg->type == LRP_DIO_TYPE) {
     sink_addr    = &((struct lrp_msg_dio_t*)msg)->sink_addr;
@@ -155,39 +154,36 @@ offer_default_route(uip_ipaddr_t *next_hop, struct lrp_msg *msg)
     return NULL;
   }
 
-  lc = lrp_link_cost(next_hop, metric_type);
-  if(SEQNO_GREATER_THAN(repair_seqno, lrp_state.repair_seqno) ||
-     (repair_seqno != 0 && repair_seqno == lrp_state.repair_seqno &&
-      (metric_type == lrp_state.metric_type &&
-       (metric_value + lc < lrp_state.metric_value ||
-        (metric_value + lc == lrp_state.metric_value &&
-          uip_ds6_defrt_choose() == NULL))))) {
-
-    /* Offered route is accepted. Store configuration in temporary space */
-    lrp_store_tmp_state(next_hop, msg);
-
-    /* Check if we are actually changing of next hop */
-    defrt = uip_ds6_defrt_lookup(uip_ds6_defrt_choose());
-    if(defrt == NULL || !uip_ip6addr_cmp(&defrt->ipaddr, next_hop)) {
-      PRINTF("Trying to send RREP to new successor ");
-      PRINT6ADDR(next_hop);
-      PRINTF(" before association: link test\n");
-      SEQNO_INCREASE(lrp_state.node_seqno);
-      lrp_state_save();
-      lrp_delayed_rrep(sink_addr, next_hop, &lrp_myipaddr,
-                       lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
-    } else if(defrt != NULL) {
-      /* We just need to refresh the route */
-      PRINTF("Refreshing default route ");
-      PRINT6ADDR(next_hop);
-      PRINTF("\n");
-      lrp_confirm_tmp_state();
-    }
-    return defrt;
-  } else {
-    PRINTF("Skipping: route worse than previous\n");
+  /* Is the route acceptable or not ? */
+  enum path_length_comparison_result_t plc = path_length_compare(
+      repair_seqno, metric_type, metric_value,
+      lrp_state.repair_seqno, lrp_state.metric_type, lrp_state.metric_value);
+  if(plc == PLC_OLDER_SEQNO || plc == PLC_LONGER_METRIC ||
+     plc == PLC_UNCOMPARABLE_METRICS ||
+     (plc == PLC_EQUAL && uip_ds6_defrt_choose() != NULL)) {
+    /* Offered route is clearly not acceptable. Drop it. */
+    PRINTF("Route not acceptable\n");
     return NULL;
   }
+
+  /* Check if we are actually changing of next hop */
+  defrt = uip_ds6_defrt_lookup(uip_ds6_defrt_choose());
+  if(defrt == NULL || !uip_ip6addr_cmp(&defrt->ipaddr, next_hop)) {
+    PRINTF("Trying to send RREP to new successor ");
+    PRINT6ADDR(next_hop);
+    PRINTF(" before association: link test\n");
+    SEQNO_INCREASE(lrp_state.node_seqno);
+    lrp_state_save();
+    lrp_delayed_rrep(sink_addr, next_hop, &lrp_myipaddr,
+                     lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
+  } else if(defrt != NULL) {
+    /* We just need to refresh the route */
+    PRINTF("Refreshing default route ");
+    PRINT6ADDR(next_hop);
+    PRINTF("\n");
+    lrp_confirm_tmp_state();
+  }
+  return defrt;
 }
 #endif /* !LRP_IS_SINK */
 
@@ -296,11 +292,11 @@ lrp_handle_incoming_dio(uip_ipaddr_t* neighbor, struct lrp_msg_dio_t* dio)
   /* Check if other node needs a DIO */
   uint16_t its_mertic_with_our_dio =
       lrp_state.metric_value + lrp_link_cost(neighbor, dio->metric_type);
-  if(SEQNO_GREATER_THAN(lrp_state.tree_seqno, dio->tree_seqno) ||
-     (lrp_state.tree_seqno == dio->tree_seqno && lrp_state.metric_type == dio->metric_type &&
-      (its_mertic_with_our_dio < dio->metric_value ||
-       (dio->options & LRP_DIO_OPTION_DETECT_ALL_SUCCESSORS && its_mertic_with_our_dio == dio->metric_value)))) {
-    /* Assume symmetric costs */
+  enum path_length_comparison_result_t plc = path_length_compare(
+      lrp_state.tree_seqno, lrp_state.metric_type, its_mertic_with_our_dio,
+      dio->tree_seqno, dio->metric_type, dio->metric_value);
+  if(plc == PLC_NEWER_SEQNO || plc == PLC_SHORTER_METRIC ||
+     (plc == PLC_EQUAL && dio->options & LRP_DIO_OPTION_DETECT_ALL_SUCCESSORS)) {
     PRINTF("Sender node may be interested by our DIO => will send one back\n");
     lrp_delayed_dio(neighbor, 0);
   }

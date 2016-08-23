@@ -122,5 +122,24 @@ uint8_t lrp_is_my_global_address(uip_ipaddr_t *);
 uint8_t lrp_addr_match_local_prefix(uip_ipaddr_t *);
 void lrp_nbr_add(uip_ipaddr_t *next_hop);
 uint32_t rand_wait_duration_before_broadcast();
+
+enum path_length_comparison_result_t {
+  PLC_NEWER_SEQNO,
+  PLC_SHORTER_METRIC,
+  PLC_EQUAL,
+  PLC_LONGER_METRIC,
+  PLC_OLDER_SEQNO,
+  /** PLC_UNCOMPARABLE_METRICS is used when seqno are equal but metric types are
+   * differents. In this situation, the two paths lengths are uncomparable */
+  PLC_UNCOMPARABLE_METRICS
+};
+/** Compare two path lengths.
+ *
+ * @return one of the PLC_* constants, to indicate if the first is inferior,
+ * superior or equal to the second path description.
+ */
+enum path_length_comparison_result_t path_length_compare(
+    uint16_t seqno_1, uint8_t metric_type_1, uint16_t metric_value_1,
+    uint16_t seqno_2, uint8_t metric_type_2, uint16_t metric_value_2);
 #endif /* UIP_CONF_IPV6_LRP */
 #endif /* __LRP_GLOBAL_H__ */
