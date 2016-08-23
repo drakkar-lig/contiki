@@ -73,7 +73,7 @@ lrp_send_rreq(const uip_ipaddr_t *searched_addr,
   rreq.addr_len = (0x0 << 4) | LRP_ADDR_LEN_IPV6;
   rreq.source_seqno = uip_htons(source_seqno);
   rreq.metric_type = metric_type;
-  rreq.metric_value = metric_value;
+  rreq.metric_value = uip_htons(metric_value);
   uip_ipaddr_copy(&rreq.searched_addr, searched_addr);
   uip_ipaddr_copy(&rreq.source_addr, source_addr);
 
@@ -147,7 +147,7 @@ lrp_send_rrep(const uip_ipaddr_t *dest_addr,
   rrep.addr_len = (0x0 << 4) | LRP_ADDR_LEN_IPV6;
   rrep.source_seqno = uip_htons(source_seqno);
   rrep.metric_type = metric_type;
-  rrep.metric_value = metric_value;
+  rrep.metric_value = uip_htons(metric_value);
   uip_ipaddr_copy(&rrep.source_addr, source_addr);
   uip_ipaddr_copy(&rrep.dest_addr, dest_addr);
 
@@ -268,7 +268,7 @@ lrp_send_dio(uip_ipaddr_t *destination, uint8_t options)
   dio.addr_len = (0x0 << 4) | LRP_ADDR_LEN_IPV6;
   dio.tree_seqno = uip_htons(lrp_state.tree_seqno);
   dio.metric_type = lrp_state.metric_type;
-  dio.metric_value = lrp_state.metric_value;
+  dio.metric_value = uip_htons(lrp_state.metric_value);
   dio.options = options;
   uip_ipaddr_copy(&dio.sink_addr, &lrp_state.sink_addr);
 
@@ -378,7 +378,7 @@ lrp_send_brk(const uip_ipaddr_t *initial_sender,
   brk.addr_len = (0x0 << 4) | LRP_ADDR_LEN_IPV6;
   brk.node_seqno = uip_htons(node_seqno);
   brk.metric_type = metric_type;
-  brk.metric_value = metric_value;
+  brk.metric_value = uip_htons(metric_value);
   brk.ring_size = ring_size;
   uip_ipaddr_copy(&brk.initial_sender, initial_sender);
 
@@ -462,7 +462,7 @@ lrp_send_upd(const uip_ipaddr_t *lost_node,
   upd.tree_seqno = uip_htons(tree_seqno);
   upd.repair_seqno = uip_htons(repair_seqno);
   upd.metric_type = metric_type;
-  upd.metric_value = metric_value;
+  upd.metric_value = uip_htons(metric_value);
   uip_ipaddr_copy(&upd.sink_addr, sink_addr);
   uip_ipaddr_copy(&upd.lost_node, lost_node);
 
@@ -490,7 +490,7 @@ lrp_send_hello(const uip_ipaddr_t *nexthop,
   hello.addr_len = (0x0 << 4) | LRP_ADDR_LEN_IPV6;
   hello.options = options;
   hello.link_cost_type = link_cost_type;
-  hello.link_cost_value = link_cost_value;
+  hello.link_cost_value = uip_htons(link_cost_value);
 
   uip_udp_packet_sendto(lrp_udpconn,
                         &hello, sizeof(struct lrp_msg_hello_t),
@@ -510,10 +510,12 @@ lrp_handle_incoming_msg(void)
   switch(type) {
   case LRP_RREQ_TYPE:
     PRINTF("Received RREQ ");
-    struct lrp_msg_rreq_t *rreq = (struct lrp_msg_rreq_t *)uip_appdata;
     PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
     PRINTF(" -> ");
     PRINT6ADDR(&UIP_IP_BUF->destipaddr);
+    struct lrp_msg_rreq_t *rreq = (struct lrp_msg_rreq_t *)uip_appdata;
+    rreq->source_seqno = uip_ntohs(rreq->source_seqno);
+    rreq->metric_value = uip_ntohs(rreq->metric_value);
     PRINTF(" orig=");
     PRINT6ADDR(&rreq->source_addr);
     PRINTF(" searched=");
@@ -523,10 +525,12 @@ lrp_handle_incoming_msg(void)
     break;
   case LRP_RREP_TYPE:
     PRINTF("Received RREP ");
-    struct lrp_msg_rrep_t *rrep = (struct lrp_msg_rrep_t *)uip_appdata;
     PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
     PRINTF(" -> ");
     PRINT6ADDR(&UIP_IP_BUF->destipaddr);
+    struct lrp_msg_rrep_t *rrep = (struct lrp_msg_rrep_t *)uip_appdata;
+    rrep->source_seqno = uip_ntohs(rrep->source_seqno);
+    rrep->metric_value = uip_ntohs(rrep->metric_value);
     PRINTF(" source=");
     PRINT6ADDR(&rrep->source_addr);
     PRINTF(" seqno/metric/value=%u/0x%x/%u",
@@ -538,10 +542,10 @@ lrp_handle_incoming_msg(void)
     break;
   case LRP_RERR_TYPE:
     PRINTF("Recieved RERR ");
-    struct lrp_msg_rerr_t *rerr = (struct lrp_msg_rerr_t *)uip_appdata;
     PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
     PRINTF(" -> ");
     PRINT6ADDR(&UIP_IP_BUF->destipaddr);
+    struct lrp_msg_rerr_t *rerr = (struct lrp_msg_rerr_t *)uip_appdata;
     PRINTF(" addr_in_error=");
     PRINT6ADDR(&rerr->addr_in_error);
     PRINTF(" dest=");
@@ -551,10 +555,12 @@ lrp_handle_incoming_msg(void)
     break;
   case LRP_DIO_TYPE:
     PRINTF("Received DIO ");
-    struct lrp_msg_dio_t* dio = (struct lrp_msg_dio_t*)uip_appdata;
     PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
     PRINTF(" -> ");
     PRINT6ADDR(&UIP_IP_BUF->destipaddr);
+    struct lrp_msg_dio_t* dio = (struct lrp_msg_dio_t*)uip_appdata;
+    dio->tree_seqno = uip_ntohs(dio->tree_seqno);
+    dio->metric_value = uip_ntohs(dio->metric_value);
     PRINTF(" seqno/metric/value=%u/0x%x/%u",
         uip_ntohs(dio->tree_seqno), dio->metric_type, dio->metric_value);
     PRINTF(" sink=");
@@ -564,10 +570,12 @@ lrp_handle_incoming_msg(void)
     break;
   case LRP_BRK_TYPE:
     PRINTF("Received BRK ");
-    struct lrp_msg_brk_t* brk = (struct lrp_msg_brk_t*)uip_appdata;
     PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
     PRINTF(" -> ");
     PRINT6ADDR(&UIP_IP_BUF->destipaddr);
+    struct lrp_msg_brk_t* brk = (struct lrp_msg_brk_t*)uip_appdata;
+    brk->node_seqno = uip_ntohs(brk->node_seqno);
+    brk->metric_value = uip_ntohs(brk->metric_value);
     PRINTF(" initial=");
     PRINT6ADDR(&brk->initial_sender);
     PRINTF(" seqno/metric/value=%u/0x%x/%u",
@@ -578,10 +586,13 @@ lrp_handle_incoming_msg(void)
     break;
   case LRP_UPD_TYPE:
     PRINTF("Received UPD ");
-    struct lrp_msg_upd_t* upd = (struct lrp_msg_upd_t*)uip_appdata;
     PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
     PRINTF(" -> ");
     PRINT6ADDR(&UIP_IP_BUF->destipaddr);
+    struct lrp_msg_upd_t* upd = (struct lrp_msg_upd_t*)uip_appdata;
+    upd->tree_seqno = uip_ntohs(upd->tree_seqno);
+    upd->metric_value = uip_ntohs(upd->metric_value);
+    upd->repair_seqno = uip_ntohs(upd->repair_seqno);
     PRINTF(" sink=");
     PRINT6ADDR(&upd->sink_addr);
     PRINTF(" seqno/metric/value=%u/0x%x/%u",
@@ -594,10 +605,11 @@ lrp_handle_incoming_msg(void)
     break;
   case LRP_HELLO_TYPE:
     PRINTF("Received HELLO ");
-    struct lrp_msg_hello_t* hello = (struct lrp_msg_hello_t*)uip_appdata;
     PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
     PRINTF(" -> ");
     PRINT6ADDR(&UIP_IP_BUF->destipaddr);
+    struct lrp_msg_hello_t* hello = (struct lrp_msg_hello_t*)uip_appdata;
+    hello->link_cost_value = uip_ntohs(hello->link_cost_value);
     PRINTF(" link cost metric/value=0x%x/%u\n",
         hello->link_cost_type, hello->link_cost_value);
     PRINTF("HELLO messages not yet handled\n");

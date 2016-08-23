@@ -275,8 +275,6 @@ reconnect_callback()
 void
 lrp_handle_incoming_dio(uip_ipaddr_t* neighbor, struct lrp_msg_dio_t* dio)
 {
-  dio->tree_seqno = uip_ntohs(dio->tree_seqno);
-
 #if !LRP_IS_SINK
   /* Check if this route is interesting or not. If so, select it as
    * successor. */
@@ -324,7 +322,6 @@ lrp_handle_incoming_brk(uip_ipaddr_t* neighbor, struct lrp_msg_brk_t* brk)
     return;
   }
 
-  brk->node_seqno = uip_ntohs(brk->node_seqno);
 
 #if LRP_IS_SINK
   /* Send UPD on the reversed route and exits */
@@ -381,10 +378,6 @@ void
 lrp_handle_incoming_upd(uip_ipaddr_t* neighbor, struct lrp_msg_upd_t* upd)
 {
 #if LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK
-  /* Network to host */
-  upd->tree_seqno = uip_ntohs(upd->tree_seqno);
-  upd->repair_seqno = uip_ntohs(upd->repair_seqno);
-
   /* Try to use this UPD as default route */
   if(offer_default_route(neighbor, (struct lrp_msg*)upd)
      == NULL) {

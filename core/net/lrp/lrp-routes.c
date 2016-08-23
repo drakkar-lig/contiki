@@ -222,8 +222,6 @@ lrp_handle_incoming_rreq(uip_ipaddr_t* neighbor, struct lrp_msg_rreq_t* rreq)
   uip_ds6_route_t *rt;
 #endif
 
-  rreq->source_seqno = uip_ntohs(rreq->source_seqno);
-
   /* Add local link to described metric */
   rreq->metric_value += lrp_link_cost(neighbor, rreq->metric_type);
 
@@ -281,8 +279,6 @@ lrp_handle_incoming_rrep(uip_ipaddr_t* neighbor, struct lrp_msg_rrep_t* rrep)
 #if !LRP_IS_SINK
   uip_ipaddr_t *nexthop = NULL;
 #endif
-
-  rrep->source_seqno = uip_ntohs(rrep->source_seqno);
 
 #if LRP_USE_DIO
   /* LRP: Do not accept RREP from our default route */
