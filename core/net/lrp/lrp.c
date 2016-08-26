@@ -232,14 +232,6 @@ lrp_link_next_hop_callback(const linkaddr_t *addr, int status, int mutx)
       PRINTF("\n");
       nh->nb_consecutive_noack_msg = 0;
     }
-#if !LRP_IS_SINK
-    /* Check if the neighbor is the temporary state's unconfirmed successor.
-     * If so, the connectivity to this node is confirmed => we confirm the
-     * temporary state. */
-    if(uip_ipaddr_cmp(nb_ip, &lrp_tmp_state.unconfirmed_successor)) {
-      lrp_confirm_tmp_state();
-    }
-#endif /* !LRP_IS_SINK */
   }
 #endif /* !UIP_ND6_SEND_NA */
 }

@@ -111,11 +111,6 @@ void lrp_state_restore(void);
 #define lrp_state_restore() lrp_state_new()
 #endif /* LRP_USE_CFS */
 
-#if !LRP_IS_SINK && LRP_IS_COORDINATOR
-void lrp_store_tmp_state(uip_ipaddr_t* unconfirmed_successor, struct lrp_msg* msg);
-void lrp_confirm_tmp_state();
-#endif /* !LRP_IS_SINK && LRP_IS_COORDINATOR */
-
 uint8_t lrp_ipaddr_is_empty(uip_ipaddr_t *);
 uint16_t lrp_link_cost(uip_ipaddr_t *link, uint8_t metric_type);
 uint8_t lrp_is_my_global_address(uip_ipaddr_t *);
