@@ -67,7 +67,7 @@ NBR_TABLE_GLOBAL(lrp_neighbor_t, lrp_neighbors);
 #if !LRP_IS_SINK
 static struct ctimer reconnect_timer = { 0 };
 static uint16_t reconnect_nb_sent = 0;
-static uint16_t exp_residuum = LRP_SEND_DIO_INTERVAL;
+static uint32_t exp_residuum = LRP_SEND_DIO_INTERVAL;
 #endif /* !LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
