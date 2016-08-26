@@ -63,6 +63,12 @@ typedef struct {
 } lrp_neighbor_t;
 /** List of all known neighbors and description to reach them */
 NBR_TABLE_GLOBAL(lrp_neighbor_t, lrp_neighbors);
+/** A callback function, used in HELLO message processing */
+typedef void (*hello_callback_f)(uip_ipaddr_t* neighbor, struct lrp_msg* msg);
+/** Add a callback, linked with a neighbor: when a HELLO message is received,
+ * the callback function is called. Useful to postpone a message processing. */
+static void hello_callback_add(
+    const uip_ipaddr_t*, const hello_callback_f, const struct lrp_msg*);
 
 #if !LRP_IS_SINK
 static struct ctimer reconnect_timer = { 0 };
@@ -95,7 +101,7 @@ lrp_brc_lookup(const uip_ipaddr_t *brk_sender)
   return NULL;
 }
 #endif /* !LRP_IS_SINK */
-/* Force insertion of the BRK offer, without considering cached values. */
+/** Force insertion of the BRK offer, without considering cached values. */
 void
 lrp_brc_force_add(const uip_ipaddr_t *brk_sender, const uint16_t seqno,
               uip_ipaddr_t *forwarded_to)
@@ -107,7 +113,8 @@ lrp_brc_force_add(const uip_ipaddr_t *brk_sender, const uint16_t seqno,
   uip_ipaddr_copy(&brcache[n].forwarded_to, forwarded_to);
   uip_ipaddr_copy(&brcache[n].brk_sender, brk_sender);
 }
-/* Consider the BRK offer. If it is interesting, insert it into cache and true is returned. */
+/** Consider the BRK offer. If it is interesting, insert it in the cache and
+ * true is returned. */
 uint8_t
 lrp_brc_add(const uip_ipaddr_t *brk_sender, const uint16_t seqno,
         uip_ipaddr_t *forwarded_to)
@@ -126,72 +133,69 @@ lrp_brc_add(const uip_ipaddr_t *brk_sender, const uint16_t seqno,
 #endif /* LRP_USE_DIO && LRP_IS_COORDINATOR */
 
 /*---------------------------------------------------------------------------*/
-/* Change default route if offered one is better than the previous one. Return
- * NULL if the route has not been added. tree_seqno is the seqno used into the
- * tree; repair_seqno is the last known seqno sent by the sink to handle local
- * reparations. To choose route, we rely on repair_seqno, but only tree_seqno
- * is broadcast through DIOs. */
+/* Change the default route. `successor` is the neighbor to use as successor ;
+ * `link_cost` is the link cost value to this neighbor (types are not checked,
+ * and are supposed to be equal between this variable and the information in
+ * `msg`). `msg` is a DIO or UPD message from which the decision was taken to
+ * select this neighbor as successor. */
 #if !LRP_IS_SINK
-static uip_ds6_defrt_t *
-offer_default_route(uip_ipaddr_t *next_hop, struct lrp_msg *msg)
+static void
+select_default_route(uip_ipaddr_t *successor, uint16_t link_cost,
+                     struct lrp_msg *msg)
 {
-  uip_ipaddr_t *sink_addr;
-  seqno_t repair_seqno;
-  uint8_t metric_type;
-  uint16_t metric_value;
-  uip_ds6_defrt_t *defrt = NULL;
+  uip_ds6_defrt_t *old_defrt = uip_ds6_defrt_lookup(successor);
 
+  /* Update state */
   if(msg->type == LRP_DIO_TYPE) {
-    sink_addr    = &((struct lrp_msg_dio_t*)msg)->sink_addr;
-    repair_seqno = ((struct lrp_msg_dio_t*)msg)->tree_seqno;
-    metric_type  = ((struct lrp_msg_dio_t*)msg)->metric_type;
-    metric_value = ((struct lrp_msg_dio_t*)msg)->metric_value;
+    uip_ipaddr_copy(&lrp_state.sink_addr,
+                    &((struct lrp_msg_dio_t*)msg)->sink_addr);
+    lrp_state.tree_seqno   = ((struct lrp_msg_dio_t*)msg)->tree_seqno;
+    lrp_state.repair_seqno = ((struct lrp_msg_dio_t*)msg)->tree_seqno;
+    lrp_state.metric_type  = ((struct lrp_msg_dio_t*)msg)->metric_type;
+    lrp_state.metric_value =
+        ((struct lrp_msg_dio_t*)msg)->metric_value + link_cost;
   } else if(msg->type == LRP_UPD_TYPE) {
-    sink_addr    = &((struct lrp_msg_upd_t*)msg)->sink_addr;
-    repair_seqno = ((struct lrp_msg_upd_t*)msg)->repair_seqno;
-    metric_type  = ((struct lrp_msg_upd_t*)msg)->metric_type;
-    metric_value = ((struct lrp_msg_upd_t*)msg)->metric_value;
+    uip_ipaddr_copy(&lrp_state.sink_addr,
+                    &((struct lrp_msg_upd_t*)msg)->sink_addr);
+    lrp_state.tree_seqno   = ((struct lrp_msg_upd_t*)msg)->tree_seqno;
+    lrp_state.repair_seqno = ((struct lrp_msg_upd_t*)msg)->repair_seqno;
+    lrp_state.metric_type  = ((struct lrp_msg_upd_t*)msg)->metric_type;
+    lrp_state.metric_value =
+        ((struct lrp_msg_upd_t*)msg)->metric_value + link_cost;
   } else {
-    PRINTF("WARNING: unknown message type %x when offering default route\n", msg->type);
-    return NULL;
+    PRINTF("WARNING: can't use message type %x when selecting default route\n",
+           msg->type);
+    return;
   }
 
-  if(!lrp_ipaddr_is_empty(&lrp_state.sink_addr) &&
-     !uip_ipaddr_cmp(sink_addr, &lrp_state.sink_addr)) {
-    PRINTF("Not the same sink. Do not change it\n");
-    return NULL;
-  }
-
-  /* Is the route acceptable or not ? */
-  enum path_length_comparison_result_t plc = path_length_compare(
-      repair_seqno, metric_type, metric_value,
-      lrp_state.repair_seqno, lrp_state.metric_type, lrp_state.metric_value);
-  if(plc == PLC_OLDER_SEQNO || plc == PLC_LONGER_METRIC ||
-     plc == PLC_UNCOMPARABLE_METRICS ||
-     (plc == PLC_EQUAL && uip_ds6_defrt_choose() != NULL)) {
-    /* Offered route is clearly not acceptable. Drop it. */
-    PRINTF("Route not acceptable\n");
-    return NULL;
-  }
 
   /* Check if we are actually changing of next hop */
-  defrt = uip_ds6_defrt_lookup(uip_ds6_defrt_choose());
-  if(defrt == NULL || !uip_ip6addr_cmp(&defrt->ipaddr, next_hop)) {
-    PRINTF("Trying to send RREP to new successor ");
-    PRINT6ADDR(next_hop);
-    PRINTF(" before association: link test\n");
-    SEQNO_INCREASE(lrp_state.node_seqno);
-    lrp_state_save();
-    lrp_delayed_rrep(sink_addr, next_hop, &lrp_myipaddr,
-                     lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
-  } else if(defrt != NULL) {
-    /* We just need to refresh the route */
-    PRINTF("Refreshing default route ");
-    PRINT6ADDR(next_hop);
+  if(old_defrt == NULL) {
+    /* Remove previous default route */
+    uip_ds6_defrt_rm(uip_ds6_defrt_lookup(uip_ds6_defrt_choose()));
+
+    /* Flush routes through new default route */
+    uip_ds6_route_rm_by_nexthop(successor);
+
+    /* Record new default route */
+    PRINTF("New default route. Successor is ");
+    PRINT6ADDR(successor);
     PRINTF("\n");
-    lrp_confirm_tmp_state();
+    uip_ds6_defrt_add(successor, LRP_DEFRT_LIFETIME);
+
+    /* Schedule RREP */
+    PRINTF("Will send RREP to new successor\n");
+    SEQNO_INCREASE(lrp_state.node_seqno);
+    lrp_delayed_rrep(&lrp_state.sink_addr, successor, &lrp_myipaddr,
+                     lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
+  } else {
+    /* We just need to refresh this route */
+    PRINTF("Refreshing default route (through ");
+    PRINT6ADDR(successor);
+    PRINTF(")\n");
+    stimer_set(&old_defrt->lifetime, LRP_DEFRT_LIFETIME);
   }
-  return defrt;
+  lrp_state_save();
 }
 #endif /* !LRP_IS_SINK */
 
@@ -279,16 +283,59 @@ reconnect_callback()
 void
 lrp_handle_incoming_dio(uip_ipaddr_t* neighbor, struct lrp_msg_dio_t* dio)
 {
+  enum path_length_comparison_result_t plc;
+
+  /* Is it the same sink ? */
+  if(!lrp_ipaddr_is_empty(&lrp_state.sink_addr) &&
+     !uip_ipaddr_cmp(&dio->sink_addr, &lrp_state.sink_addr)) {
+    PRINTF("Skip DIO processing: not the same sink (multiple sinks not "
+           "supported yet).\n");
+    return;
+  }
+
+  /* Find link cost between ourself and this neighbor */
+  lrp_neighbor_t* nbr = nbr_table_get_from_lladdr(
+      lrp_neighbors, (linkaddr_t*) uip_ds6_nbr_lladdr_from_ipaddr(neighbor));
+  if(nbr == NULL) {
+    /* Unknown neighbor. Check the link and postpone the message processing */
+    PRINTF("Postpone DIO processing\n");
+    hello_callback_add(neighbor, (hello_callback_f) lrp_handle_incoming_dio,
+                      (struct lrp_msg*) dio);
+    lrp_send_hello(neighbor, lrp_state.metric_type,
+        lrp_link_cost(neighbor, lrp_state.metric_type),
+        LRP_MSG_FLAG_PLEASE_REPLY);
+    return;
+  }
+
 #if !LRP_IS_SINK
-  /* Check if this route is interesting or not. If so, select it as
-   * successor. */
-  if(!lrp_ipaddr_is_empty(&dio->sink_addr)) {
-    offer_default_route(neighbor, (struct lrp_msg*)dio);
+  /* Is the default route through this neighbor better than our current default
+   * route? */
+  plc = path_length_compare(
+      dio->tree_seqno, dio->metric_type, dio->metric_value + nbr->link_cost_value,
+      lrp_state.repair_seqno, lrp_state.metric_type, lrp_state.metric_value);
+  // Note: here, if the metrics types are not compatible, `dio->metric_value +
+  // nbr->link_cost_value` does not mean anything. However, in this situation,
+  // we do not take care to PLC_EQUAL nor to PLC_*_METRIC returned values, so it
+  // doesn't matter.
+  if(plc == PLC_NEWER_SEQNO ||
+     (dio->metric_type == nbr->link_cost_type &&
+      (plc == PLC_SHORTER_METRIC ||
+       (plc == PLC_EQUAL && uip_ds6_defrt_choose() == NULL)))) {
+    /* Accept the neighbor as new successor */
+    PRINTF("Neighbor ");
+    PRINT6ADDR(neighbor);
+    PRINTF(" accepted as successor from DIO\n");
+    select_default_route(neighbor, nbr->link_cost_value, (struct lrp_msg*)dio); /* TODO Warning: no verification is done here for metric types. */
+#if LRP_IS_COORDINATOR
+    /* Schedule broadcasting of this new information */
+    lrp_delayed_dio(NULL, 0);
+#endif /* LRP_IS_COORDINATOR */
+    return;
   }
 #endif /* !LRP_IS_SINK */
 
 #if LRP_IS_COORDINATOR
-  /* Check if the sender needs a DIO back */
+  /* The neighbor is not selected as successor. Does it need a DIO back? */
 #if !LRP_IS_SINK
   /* Ensure we have a default route, before sending any DIO */
   if(uip_ds6_defrt_choose() == NULL) {
@@ -297,14 +344,18 @@ lrp_handle_incoming_dio(uip_ipaddr_t* neighbor, struct lrp_msg_dio_t* dio)
   }
 #endif /* !LRP_IS_SINK */
 
-  /* Check if other node needs a DIO */
-  uint16_t its_mertic_with_our_dio =
-      lrp_state.metric_value + lrp_link_cost(neighbor, dio->metric_type);
-  enum path_length_comparison_result_t plc = path_length_compare(
-      lrp_state.tree_seqno, lrp_state.metric_type, its_mertic_with_our_dio,
+  plc = path_length_compare(
+      lrp_state.tree_seqno, lrp_state.metric_type,
+      lrp_state.metric_value + nbr->link_cost_value,
       dio->tree_seqno, dio->metric_type, dio->metric_value);
-  if(plc == PLC_NEWER_SEQNO || plc == PLC_SHORTER_METRIC ||
-     (plc == PLC_EQUAL && dio->options & LRP_DIO_OPTION_DETECT_ALL_SUCCESSORS)) {
+  // Note: here, if the metrics types are not compatible,
+  // `lrp_state->metric_value + nbr->link_cost_value` does not mean anything.
+  // However, in this situation, we do not take care to PLC_EQUAL nor to
+  // PLC_*_METRIC returned values, so it doesn't matter.
+  if(plc == PLC_NEWER_SEQNO ||
+     (lrp_state.metric_type == dio->metric_type &&
+      (plc == PLC_SHORTER_METRIC ||
+       (plc == PLC_EQUAL && dio->options & LRP_DIO_OPTION_DETECT_ALL_SUCCESSORS)))) {
     PRINTF("Sender node may be interested by our DIO => will send one back\n");
     lrp_delayed_dio(neighbor, 0);
   }
@@ -317,15 +368,25 @@ lrp_handle_incoming_brk(uip_ipaddr_t* neighbor, struct lrp_msg_brk_t* brk)
 {
 #if LRP_USE_DIO && LRP_IS_COORDINATOR
 #if !LRP_IS_SINK
-  uip_ds6_defrt_t *defrt;
-  uint16_t lc;
-#endif
-
   if(lrp_is_my_global_address(&brk->initial_sender)) {
-    PRINTF("Skipping BRK: loops back\n");
+    PRINTF("Skip BRK processing: it loops back\n");
     return;
   }
+#endif /* !LRP_IS_SINK */
 
+  /* Find link cost between ourself and this neighbor */
+  lrp_neighbor_t* nbr = nbr_table_get_from_lladdr(
+      lrp_neighbors, (linkaddr_t*) uip_ds6_nbr_lladdr_from_ipaddr(neighbor));
+  if(nbr == NULL) {
+    /* Unknown neighbor. Check the link and postpone the message processing */
+    PRINTF("Postpone BRK processing\n");
+    hello_callback_add(neighbor, (hello_callback_f) lrp_handle_incoming_brk,
+                      (struct lrp_msg*) brk);
+    lrp_send_hello(neighbor, lrp_state.metric_type,
+        lrp_link_cost(neighbor, lrp_state.metric_type),
+        LRP_MSG_FLAG_PLEASE_REPLY);
+    return;
+  }
 
 #if LRP_IS_SINK
   /* Send UPD on the reversed route and exits */
@@ -340,18 +401,16 @@ lrp_handle_incoming_brk(uip_ipaddr_t* neighbor, struct lrp_msg_brk_t* brk)
                lrp_state.metric_type, 0);
 
 #else /* LRP_IS_SINK */
-
-  /* Computing link cost */
-  lc = lrp_link_cost(neighbor, brk->metric_type);
-  if(lc == 0) {
-    PRINTF("Unable to determine the cost of the link to ");
-    PRINT6ADDR(neighbor);
-    PRINTF("\n");
+  /* We must be sure that the metric are compatible before summing them */
+  if(brk->metric_type != nbr->link_cost_type) {
+    PRINTF("Skip BRK forwarding: unable to determine path cost (metric are "
+           "incompatibles)\n");
     return;
+    // Here, we might request a compatible metric by sending a HELLO message
+    // with the required metric type.
   }
 
-  defrt = uip_ds6_defrt_lookup(neighbor);
-  if(defrt != NULL) {
+  if(uip_ds6_defrt_lookup(neighbor) != NULL) {
     /* BRK comes from our default next hop. Should be broadcast, but check the
      * ring size before. */
     if(brk->ring_size == 0) {
@@ -363,7 +422,9 @@ lrp_handle_incoming_brk(uip_ipaddr_t* neighbor, struct lrp_msg_brk_t* brk)
     }
     lrp_brc_force_add(&brk->initial_sender, brk->node_seqno, neighbor);
     lrp_delayed_brk(&brk->initial_sender, NULL, brk->node_seqno,
-                    brk->metric_type, brk->metric_value + lc, brk->ring_size);
+                    brk->metric_type, brk->metric_value + nbr->link_cost_value,
+                    brk->ring_size);
+
   } else {
     /* BRK comes from a neighbor broken branch. Forwarding BRK to sink */
     if(!lrp_brc_add(&brk->initial_sender, brk->node_seqno, neighbor)) {
@@ -371,7 +432,8 @@ lrp_handle_incoming_brk(uip_ipaddr_t* neighbor, struct lrp_msg_brk_t* brk)
       return;
     }
     lrp_send_brk(&brk->initial_sender, uip_ds6_defrt_choose(), brk->node_seqno,
-                 brk->metric_type, brk->metric_value + lc, brk->ring_size);
+                 brk->metric_type, brk->metric_value + nbr->link_cost_value,
+                 brk->ring_size);
   }
 #endif /* LRP_IS_SINK */
 #endif /* LRP_USE_DIO && LRP_IS_COORDINATOR */
@@ -382,14 +444,100 @@ void
 lrp_handle_incoming_upd(uip_ipaddr_t* neighbor, struct lrp_msg_upd_t* upd)
 {
 #if LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK
-  /* Try to use this UPD as default route */
-  if(offer_default_route(neighbor, (struct lrp_msg*)upd)
-     == NULL) {
-    /* UPD is not accepted => do nothing. */
+  /* Is it the same sink ? */
+  if(!lrp_ipaddr_is_empty(&lrp_state.sink_addr) &&
+     !uip_ipaddr_cmp(&upd->sink_addr, &lrp_state.sink_addr)) {
+    PRINTF("Skip UPD processing: not the same sink (multiple sinks not "
+           "supported yet).\n");
     return;
   }
+
+  /* Find link cost between ourself and this neighbor */
+  lrp_neighbor_t* nbr = nbr_table_get_from_lladdr(
+      lrp_neighbors, (linkaddr_t*) uip_ds6_nbr_lladdr_from_ipaddr(neighbor));
+  if(nbr == NULL) {
+    /* Unknown neighbor. Check the link and postpone the message processing */
+    PRINTF("Postpone UPD processing\n");
+    hello_callback_add(neighbor, (hello_callback_f) lrp_handle_incoming_upd,
+                      (struct lrp_msg*) upd);
+    lrp_send_hello(neighbor, lrp_state.metric_type,
+        lrp_link_cost(neighbor, lrp_state.metric_type),
+        LRP_MSG_FLAG_PLEASE_REPLY);
+    return;
+  }
+
+  /* Try to use this UPD as default route */
+  enum path_length_comparison_result_t plc = path_length_compare(
+      upd->repair_seqno, upd->metric_type, upd->metric_value + nbr->link_cost_value,
+      lrp_state.repair_seqno, lrp_state.metric_type, lrp_state.metric_value);
+  // Note: here, if the metrics types are not compatible, `upd->metric_value +
+  // nbr->link_cost_value` does not mean anything. However, in this situation,
+  // we do not take care to PLC_EQUAL nor to PLC_*_METRIC returned values, so it
+  // doesn't matter.
+  if(plc == PLC_NEWER_SEQNO ||
+     (upd->metric_type == nbr->link_cost_type && plc == PLC_SHORTER_METRIC)) {
+    /* The offer in the UPD message is better than previous successor. Select
+     * it as new successor */
+    select_default_route(neighbor, nbr->link_cost_value, (struct lrp_msg*)upd); /* TODO Warning: no verification is done here for metric types. */
+
+    if(lrp_is_my_global_address(&upd->lost_node)) {
+      /* We are the BRK originator. UPD has reach its final destination */
+      PRINTF("Route successfully repaired !\n");
+      return;
+    }
+
+    /* Find the neighbor we have to forward the UPD message to */
+    uip_ipaddr_t* nexthop = lrp_brc_lookup(&upd->lost_node);
+    if(nexthop == NULL) {
+      PRINTF("Skip UPD forwarding: No route to transmit UPD towards ");
+      PRINT6ADDR(&upd->lost_node);
+      PRINTF("\n");
+      return;
+    }
+
+    /* We must be sure that the metric are compatible before summing them */
+    if(upd->metric_type != nbr->link_cost_type) {
+      PRINTF("Skip UPD forwarding: unable to determine path cost (metric are "
+             "incompatibles)\n");
+      return;
+      // Here, we might request a compatible metric by sending a HELLO message
+      // with the required metric type.
+    }
+
+    /* Forward the UPD message further to this neighbor */
+    lrp_send_upd(&upd->lost_node, &upd->sink_addr, nexthop,
+                 upd->tree_seqno, upd->repair_seqno,
+                 upd->metric_type, upd->metric_value + nbr->link_cost_value);
+  }
 #endif /* LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK */
-  /* UPD message will be forwarded when the state will be confirmed */
+}
+/*---------------------------------------------------------------------------*/
+/* Handle an incoming HELLO type message */
+#define HELLO_CALLBACK_BUFFER_SIZE 2
+static struct {
+  hello_callback_f callback;
+  uip_ipaddr_t neighbor;
+  // Buffer large enough to store any LRP message
+  uint8_t message[LRP_MAX_MSG_SIZE];
+} hello_callback_buf[HELLO_CALLBACK_BUFFER_SIZE];
+static void
+hello_callback_add(const uip_ipaddr_t* neighbor, const hello_callback_f callback,
+                   const struct lrp_msg* message)
+{
+  int i;
+  for(i = 0; i < HELLO_CALLBACK_BUFFER_SIZE; i++)
+    if(lrp_ipaddr_is_empty(&hello_callback_buf[i].neighbor)) {
+      hello_callback_buf[i].callback = callback;
+      uip_ip6addr_copy(&hello_callback_buf[i].neighbor, neighbor);
+      memcpy(&hello_callback_buf[i].message, (void*) message, LRP_MAX_MSG_SIZE);
+      // Note: it does not matter if we copy too many memory because message
+      // does not fill the whole buffer
+      break;
+    }
+  if(i == HELLO_CALLBACK_BUFFER_SIZE) {
+    PRINTF("Skip storing helo callback: no more space\n");
+    return;
+  }
 }
 void
 lrp_handle_incoming_hello(uip_ipaddr_t* neighbor, struct lrp_msg_hello_t* hello)
@@ -414,6 +562,18 @@ lrp_handle_incoming_hello(uip_ipaddr_t* neighbor, struct lrp_msg_hello_t* hello)
   /* Reply if needed */
   if(hello->options & LRP_MSG_FLAG_PLEASE_REPLY) {
     lrp_send_hello(neighbor, hello->link_cost_type, local_link_cost, 0x0);
+  }
+
+  /* Call callback if there is one activated for this neighbor */
+  int i;
+  for(i = 0; i < HELLO_CALLBACK_BUFFER_SIZE; i++) {
+    if(uip_ipaddr_cmp(&hello_callback_buf[i].neighbor, neighbor)) {
+      PRINTF("Call hello callback\n");
+      hello_callback_buf[i].callback(&hello_callback_buf[i].neighbor,
+          (struct lrp_msg*) &hello_callback_buf[i].message);
+      /* Reset neighbor address to clear the buffer */
+      uip_ip6addr(&hello_callback_buf[i].neighbor, 0, 0, 0, 0, 0, 0, 0, 0);
+    }
   }
 }
 /*---------------------------------------------------------------------------*/

@@ -230,5 +230,10 @@ void lrp_send_hello(const uip_ipaddr_t* nexthop,
 
 #endif /* LRP_USE_DIO */
 
+#define LRP_MAX_MSG_SIZE sizeof(union{ \
+  struct lrp_msg_rreq_t a; struct lrp_msg_rrep_t b; struct lrp_msg_rerr_t c; \
+  struct lrp_msg_dio_t d; struct lrp_msg_brk_t e; struct lrp_msg_upd_t f; \
+  struct lrp_msg_hello_t g;})
+
 #endif /* UIP_CONF_IPV6_LRP */
 #endif /* __LRP_MSG_H__ */
