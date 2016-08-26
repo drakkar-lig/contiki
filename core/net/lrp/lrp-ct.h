@@ -46,10 +46,12 @@
 /* Look for an entry into the cache */
 uip_ipaddr_t * lrp_brc_lookup(const uip_ipaddr_t *brk_sender);
 
-/* Handle incoming tree maintenance messages */
+/* Handle incoming tree maintenance messages. The variable `neighbor` contains
+ * the IP address neighbor from which the message was received. */
 void lrp_handle_incoming_dio(uip_ipaddr_t* neighbor, struct lrp_msg_dio_t* dio);
 void lrp_handle_incoming_brk(uip_ipaddr_t* neighbor, struct lrp_msg_brk_t* brk);
 void lrp_handle_incoming_upd(uip_ipaddr_t* neighbor, struct lrp_msg_upd_t* upd);
+void lrp_handle_incoming_hello(uip_ipaddr_t* neighbor, struct lrp_msg_hello_t* hello);
 
 /* Inform maintenance algorithm that successor is unreachable. */
 #if !LRP_IS_SINK

@@ -252,8 +252,8 @@ lrp_ipaddr_is_empty(uip_ipaddr_t *addr)
   return 1 == 1;
 }
 /*---------------------------------------------------------------------------*/
-/* Return the link cost between this node and the next_hop, depending on the
- * metric type. */
+/* Return the cost of the this link, as seen by this node. This does not take
+ * care of the remote node vision of the link. */
 uint16_t
 lrp_link_cost(uip_ipaddr_t *link, uint8_t metric_type)
 {

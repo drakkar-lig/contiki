@@ -56,6 +56,14 @@
 #define UIP_IP_BUF ((struct uip_udpip_hdr *)&uip_buf[UIP_LLH_LEN])
 #define HOST_ROUTE_PREFIX_LEN 128
 
+/** Store informations about a neighbor */
+typedef struct {
+  uint8_t  link_cost_type;
+  uint16_t link_cost_value;
+} lrp_neighbor_t;
+/** List of all known neighbors and description to reach them */
+NBR_TABLE_GLOBAL(lrp_neighbor_t, lrp_neighbors);
+
 #if !LRP_IS_SINK
 static struct ctimer reconnect_timer = { 0 };
 static uint16_t reconnect_nb_sent = 0;
@@ -382,6 +390,31 @@ lrp_handle_incoming_upd(uip_ipaddr_t* neighbor, struct lrp_msg_upd_t* upd)
   }
 #endif /* LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK */
   /* UPD message will be forwarded when the state will be confirmed */
+}
+void
+lrp_handle_incoming_hello(uip_ipaddr_t* neighbor, struct lrp_msg_hello_t* hello)
+{
+  uint16_t local_link_cost = lrp_link_cost(neighbor, hello->link_cost_type);
+
+  /* Save the information in the neighbor table */
+  lrp_neighbor_t* nbr = nbr_table_get_from_lladdr(
+      lrp_neighbors, (linkaddr_t*) uip_ds6_nbr_lladdr_from_ipaddr(neighbor));
+  if(nbr == NULL) {
+    /* Unknown neighbor, create it */
+    PRINTF("Add neighbor ");
+    PRINT6ADDR(neighbor);
+    PRINTF(" in neighbor table\n");
+    nbr = nbr_table_add_lladdr(
+        lrp_neighbors, (linkaddr_t*) uip_ds6_nbr_lladdr_from_ipaddr(neighbor));
+  }
+  nbr->link_cost_type = hello->link_cost_type;
+  nbr->link_cost_value = hello->link_cost_value > local_link_cost ?
+      hello->link_cost_value : local_link_cost;
+
+  /* Reply if needed */
+  if(hello->options & LRP_MSG_FLAG_PLEASE_REPLY) {
+    lrp_send_hello(neighbor, hello->link_cost_type, local_link_cost, 0x0);
+  }
 }
 /*---------------------------------------------------------------------------*/
 /**

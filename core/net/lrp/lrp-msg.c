@@ -612,7 +612,7 @@ lrp_handle_incoming_msg(void)
     hello->link_cost_value = uip_ntohs(hello->link_cost_value);
     PRINTF(" link cost metric/value=0x%x/%u\n",
         hello->link_cost_type, hello->link_cost_value);
-    PRINTF("HELLO messages not yet handled\n");
+    lrp_handle_incoming_hello(&UIP_IP_BUF->srcipaddr, hello);
     break;
   default:
     PRINTF("Unknown message type 0x%x\n", type);
