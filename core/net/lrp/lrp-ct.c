@@ -285,13 +285,16 @@ lrp_handle_incoming_dio(uip_ipaddr_t* neighbor, struct lrp_msg_dio_t* dio)
 {
   enum path_length_comparison_result_t plc;
 
+#if !LRP_IS_SINK
   /* Is it the same sink ? */
   if(!lrp_ipaddr_is_empty(&lrp_state.sink_addr) &&
+     !lrp_ipaddr_is_empty(&dio->sink_addr) &&
      !uip_ipaddr_cmp(&dio->sink_addr, &lrp_state.sink_addr)) {
     PRINTF("Skip DIO processing: not the same sink (multiple sinks not "
            "supported yet).\n");
     return;
   }
+#endif /* !LRP_IS_SINK */
 
   /* Find link cost between ourself and this neighbor */
   lrp_neighbor_t* nbr = nbr_table_get_from_lladdr(
