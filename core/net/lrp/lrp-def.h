@@ -135,7 +135,7 @@
 #define LRP_METRIC_HOP_COUNT 0x01
 /* Special placeholder metric. Is not comparable. Should always be used with
  * a seqno of 0, in infinite-rank DIOs. */
-#define LRP_METRIC_NONE 0xff
+#define LRP_METRIC_NONE 0x00
 
 #endif /* UIP_CONF_IPV6_LRP */
 #endif /* __LRP_DEF_H__ */

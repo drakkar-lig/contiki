@@ -146,7 +146,7 @@ select_default_route(uip_ipaddr_t *successor, uint16_t link_cost,
   uip_ds6_defrt_t *old_defrt = uip_ds6_defrt_lookup(successor);
 
   /* Update state */
-  if(msg->type == LRP_DIO_TYPE) {
+  if(msg->type >> 4 == LRP_DIO_TYPE) {
     uip_ipaddr_copy(&lrp_state.sink_addr,
                     &((struct lrp_msg_dio_t*)msg)->sink_addr);
     lrp_state.tree_seqno   = ((struct lrp_msg_dio_t*)msg)->tree_seqno;
@@ -154,7 +154,7 @@ select_default_route(uip_ipaddr_t *successor, uint16_t link_cost,
     lrp_state.metric_type  = ((struct lrp_msg_dio_t*)msg)->metric_type;
     lrp_state.metric_value =
         ((struct lrp_msg_dio_t*)msg)->metric_value + link_cost;
-  } else if(msg->type == LRP_UPD_TYPE) {
+  } else if(msg->type >> 4 == LRP_UPD_TYPE) {
     uip_ipaddr_copy(&lrp_state.sink_addr,
                     &((struct lrp_msg_upd_t*)msg)->sink_addr);
     lrp_state.tree_seqno   = ((struct lrp_msg_upd_t*)msg)->tree_seqno;
@@ -163,8 +163,8 @@ select_default_route(uip_ipaddr_t *successor, uint16_t link_cost,
     lrp_state.metric_value =
         ((struct lrp_msg_upd_t*)msg)->metric_value + link_cost;
   } else {
-    PRINTF("WARNING: can't use message type %x when selecting default route\n",
-           msg->type);
+    PRINTF("WARNING: can't use message type 0x%x when selecting default route\n",
+           msg->type >> 4);
     return;
   }
 
@@ -295,8 +295,8 @@ lrp_handle_incoming_dio(uip_ipaddr_t* neighbor, struct lrp_msg_dio_t* dio)
 
   /* Find link cost between ourself and this neighbor */
   lrp_neighbor_t* nbr = nbr_table_get_from_lladdr(
-      lrp_neighbors, (linkaddr_t*) uip_ds6_nbr_lladdr_from_ipaddr(neighbor));
-  if(nbr == NULL) {
+    lrp_neighbors, (linkaddr_t*) uip_ds6_nbr_lladdr_from_ipaddr(neighbor));
+  if(nbr == NULL || nbr->link_cost_type == LRP_METRIC_NONE) {
     /* Unknown neighbor. Check the link and postpone the message processing */
     PRINTF("Postpone DIO processing\n");
     hello_callback_add(neighbor, (hello_callback_f) lrp_handle_incoming_dio,
