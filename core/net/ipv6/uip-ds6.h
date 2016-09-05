@@ -206,7 +206,7 @@ typedef struct uip_ds6_maddr {
 #define UIP_CONF_DS6_LINK_NEIGHBOR_CALLBACK rpl_link_neighbor_callback
 #endif /* UIP_CONF_IPV6_RPL */
 #if UIP_CONF_IPV6_LRP
-#define UIP_CONF_DS6_LINK_NEIGHBOR_CALLBACK lrp_link_next_hop_callback
+#define UIP_CONF_DS6_LINK_NEIGHBOR_CALLBACK lrp_neighbor_callback
 #endif /* UIP_CONF_IPV6_LRP */
 #endif /* UIP_CONF_DS6_NEIGHBOR_STATE_CHANGED */
 

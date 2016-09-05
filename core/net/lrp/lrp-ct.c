@@ -60,6 +60,12 @@
 typedef struct {
   uint8_t  link_cost_type;
   uint16_t link_cost_value;
+  uint8_t  nb_consecutive_noack_msg;
+  enum {
+    UNKNOWN = 0,  // Initialization value
+    REACHABLE,
+    UNREACHABLE
+  } reachability;
 } lrp_neighbor_t;
 /** List of all known neighbors and description to reach them */
 NBR_TABLE_GLOBAL(lrp_neighbor_t, lrp_neighbors);
@@ -633,5 +639,62 @@ global_repair()
 #endif /* !LRP_MAX_DODAG_LIFETIME */
 }
 #endif /* LRP_IS_SINK */
+/* Layer II callback. Used to discover neighbors unreachability */
+void
+lrp_neighbor_callback(const linkaddr_t *addr, int status, int mutx)
+{
+#if !UIP_ND6_SEND_NA
+  uip_ipaddr_t *nbr_ipaddr = uip_ds6_nbr_ipaddr_from_lladdr((uip_lladdr_t *) addr);
+  lrp_neighbor_t *nbr =
+      (lrp_neighbor_t *) nbr_table_get_from_lladdr(lrp_neighbors, addr);
+
+  if(nbr == NULL) {
+    PRINTF("Add neighbor ");
+    PRINTLLADDR((uip_lladdr_t *) addr);
+    PRINTF(" in neighbor list\n");
+    nbr = nbr_table_add_lladdr(lrp_neighbors, addr);
+  }
+
+  if(status == MAC_TX_NOACK) {
+    /* Message is not received by neighbor. Count unacked messages */
+    nbr->nb_consecutive_noack_msg += 1;
+    PRINTF("No ack received from next hop ");
+    PRINTLLADDR((uip_lladdr_t *)addr);
+    PRINTF(" (counter is %d/%d)\n",
+           nbr->nb_consecutive_noack_msg, LRP_MAX_CONSECUTIVE_NOACKED_MESSAGES);
+
+    if(nbr->nb_consecutive_noack_msg >= LRP_MAX_CONSECUTIVE_NOACKED_MESSAGES) {
+      /* Neighbor seems to be unreachable */
+      PRINTF("Delete routes through it\n");
+      uip_ds6_route_rm_by_nexthop(nbr_ipaddr);
+#if !LRP_IS_SINK
+      /* Was this nexthop the default route ? */
+      if(uip_ds6_defrt_lookup(nbr_ipaddr) != NULL) {
+        PRINTF("This was the default route. Launch LR algorithm\n");
+        uip_ds6_defrt_rm(uip_ds6_defrt_lookup(nbr_ipaddr));
+        PROCESS_CONTEXT_BEGIN(&lrp_process);
+        lrp_no_more_default_route();
+        PROCESS_CONTEXT_END();
+      }
+#endif /* !LRP_IS_SINK */
+      nbr->reachability = UNREACHABLE;
+    }
+
+  } else if(status == MAC_TX_OK) {
+    /* Resetting counter */
+    if(nbr->nb_consecutive_noack_msg != 0) {
+      /* The neighbor has not received our last message, but has received this
+       * one. It is now reachable */
+      PRINTF("Received ack from ");
+      PRINTLLADDR((uip_lladdr_t *)addr);
+      PRINTF(": reset noack counter");
+      PRINTF("\n");
+    }
+    nbr->nb_consecutive_noack_msg = 0;
+    nbr->reachability = REACHABLE;
+  }
+#endif /* !UIP_ND6_SEND_NA */
+}
+/*---------------------------------------------------------------------------*/
 
 #endif /* UIP_CONF_IPV6_LRP */

@@ -42,6 +42,7 @@
 #if UIP_CONF_IPV6_LRP
 
 #include "contiki.h"
+#include "net/nbr-table.h"
 
 #ifdef UIP_DS6_ROUTE_STATE_TYPE
 #undef UIP_DS6_ROUTE_STATE_TYPE
@@ -56,6 +57,8 @@ typedef struct lrp_route_entry {
   uint32_t valid_time;
   uint8_t ack_received;
 } lrp_route_entry_t;
+
+NBR_TABLE_DECLARE(lrp_neighbors);
 
 #include "net/ipv6/uip-ds6.h"
 #include "net/ipv6/uip-ds6-route.h"
@@ -83,7 +86,7 @@ uip_ipaddr_t *lrp_select_nexthop_for(uip_ipaddr_t *source,
  */
 uint8_t lrp_get_sink_address(uip_ipaddr_t *sink_address);
 
-void lrp_link_next_hop_callback(const linkaddr_t *addr, int status, int mutx);
+void lrp_neighbor_callback(const linkaddr_t *addr, int status, int mutx);
 
 /**
  * LRP process
