@@ -538,7 +538,7 @@ hello_callback_add(const uip_ipaddr_t* neighbor, const hello_callback_f callback
       break;
     }
   if(i == HELLO_CALLBACK_BUFFER_SIZE) {
-    PRINTF("Skip storing helo callback: no more space\n");
+    PRINTF("Skip storing hello callback: no more space\n");
     return;
   }
 }

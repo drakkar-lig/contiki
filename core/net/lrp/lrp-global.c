@@ -65,7 +65,7 @@ lrp_state_new(void)
 #else
   uip_ip6addr(&lrp_state.sink_addr, 0, 0, 0, 0, 0, 0, 0, 0);
   lrp_state.tree_seqno = 0;
-  lrp_state.metric_type = ~0;
+  lrp_state.metric_type = LRP_METRIC_NONE;
   lrp_state.metric_value = ~0;
 #endif
   lrp_state.repair_seqno = lrp_state.tree_seqno;
@@ -138,7 +138,7 @@ lrp_link_cost(uip_ipaddr_t *link, uint8_t metric_type)
     case LRP_METRIC_NONE:
       return 0;
     default:
-      PRINTF("WARNING: unknown metric type (%x)."
+      PRINTF("WARNING: unknown metric type (%x). "
              "Using hop count instead.\n", metric_type);
       /* Consider the metric is HOP_COUNT */
     case LRP_METRIC_HOP_COUNT:
