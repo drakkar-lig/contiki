@@ -304,12 +304,18 @@ lrp_handle_incoming_dio(uip_ipaddr_t* neighbor, struct lrp_msg_dio_t* dio)
 
   /* Find link cost between ourself and this neighbor */
   lrp_neighbor_t* nbr = nbr_table_get_from_lladdr(
-    lrp_neighbors, (linkaddr_t*) uip_ds6_nbr_lladdr_from_ipaddr(neighbor));
-  if(nbr == NULL || nbr->link_cost_type == LRP_METRIC_NONE) {
+      lrp_neighbors, (linkaddr_t*) uip_ds6_nbr_lladdr_from_ipaddr(neighbor));
+
+  if(nbr != NULL && nbr->reachability == UNREACHABLE) {
+    PRINTF("Skip DIO processing: neighbor is marked as unreachable.\n");
+    return;
+  }
+
+  if(nbr == NULL || nbr->reachability == UNKNOWN) {
     /* Unknown neighbor. Check the link and postpone the message processing */
     PRINTF("Postpone DIO processing\n");
     hello_callback_add(neighbor, (hello_callback_f) lrp_handle_incoming_dio,
-                      (struct lrp_msg*) dio);
+                       (struct lrp_msg*) dio);
     lrp_send_hello(neighbor, lrp_state.metric_type,
         lrp_link_cost(neighbor, lrp_state.metric_type),
         LRP_MSG_FLAG_PLEASE_REPLY);
@@ -386,7 +392,12 @@ lrp_handle_incoming_brk(uip_ipaddr_t* neighbor, struct lrp_msg_brk_t* brk)
   /* Find link cost between ourself and this neighbor */
   lrp_neighbor_t* nbr = nbr_table_get_from_lladdr(
       lrp_neighbors, (linkaddr_t*) uip_ds6_nbr_lladdr_from_ipaddr(neighbor));
-  if(nbr == NULL) {
+  if(nbr != NULL && nbr->reachability == UNREACHABLE) {
+    PRINTF("Skip DIO processing: neighbor is marked as unreachable.\n");
+    return;
+  }
+
+  if(nbr == NULL || nbr->reachability == UNKNOWN) {
     /* Unknown neighbor. Check the link and postpone the message processing */
     PRINTF("Postpone BRK processing\n");
     hello_callback_add(neighbor, (hello_callback_f) lrp_handle_incoming_brk,
