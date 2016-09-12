@@ -12,4 +12,20 @@
 #define WITH_UIP6 1
 #define UIP_CONF_DS6_ADDR_NBU 3
 
+//* Normal
+#define RF2XX_TX_POWER           PHY_POWER_5dBm
+#define RF2XX_RX_RSSI_THRESHOLD  RF2XX_PHY_RX_THRESHOLD__m101dBm
+// */
+
+/* Deaf
+#define RF2XX_TX_POWER           PHY_POWER_5dBm
+#define RF2XX_RX_RSSI_THRESHOLD  RF2XX_PHY_RX_THRESHOLD__m48dBm
+// */
+
+/* Dumb
+#define RF2XX_TX_POWER           PHY_POWER_m30dBm
+#define RF2XX_RX_RSSI_THRESHOLD  RF2XX_PHY_RX_THRESHOLD__m101dBm
+// */
+
+
 #endif /* __PROJECT_CONF_H__ */
