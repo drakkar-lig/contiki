@@ -544,20 +544,15 @@ static void
 hello_callback_add(const uip_ipaddr_t* neighbor, const hello_callback_f callback,
                    const struct lrp_msg* message)
 {
-  int i;
-  for(i = 0; i < HELLO_CALLBACK_BUFFER_SIZE; i++)
-    if(lrp_ipaddr_is_empty(&hello_callback_buf[i].neighbor)) {
-      hello_callback_buf[i].callback = callback;
-      uip_ip6addr_copy(&hello_callback_buf[i].neighbor, neighbor);
-      memcpy(&hello_callback_buf[i].message, (void*) message, LRP_MAX_MSG_SIZE);
-      // Note: it does not matter if we copy too many memory because message
-      // does not fill the whole buffer
-      break;
-    }
-  if(i == HELLO_CALLBACK_BUFFER_SIZE) {
-    PRINTF("Skip storing hello callback: no more space\n");
-    return;
-  }
+  static int i = 0;
+  // Take a new space. Override last value even if it is used: it is a too old
+  // one.
+  i = (i + 1) % HELLO_CALLBACK_BUFFER_SIZE;
+  hello_callback_buf[i].callback = callback;
+  uip_ip6addr_copy(&hello_callback_buf[i].neighbor, neighbor);
+  memcpy(&hello_callback_buf[i].message, (void*) message, LRP_MAX_MSG_SIZE);
+  // Note: it does not matter if we copy too many memory because it will never
+  // overflow of the whole buffer
 }
 void
 lrp_handle_incoming_hello(uip_ipaddr_t* neighbor, struct lrp_msg_hello_t* hello)
