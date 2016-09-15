@@ -144,7 +144,7 @@ lrp_select_nexthop_for(uip_ipaddr_t *source, uip_ipaddr_t *destination,
   uip_ipaddr_t *nexthop;
 
   route_to_dest = uip_ds6_route_lookup(destination);
-#if LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK
+#if LRP_IS_COORDINATOR && !LRP_IS_SINK
   /* Do not forward through default route a packet that comes from higher */
   if(!lrp_is_my_global_address(source) &&
      !lrp_is_predecessor(uip_ds6_nbr_ipaddr_from_lladdr(previoushop))) {
@@ -159,7 +159,7 @@ lrp_select_nexthop_for(uip_ipaddr_t *source, uip_ipaddr_t *destination,
       return NULL;
     }
   }
-#endif /* LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK */
+#endif /* LRP_IS_COORDINATOR && !LRP_IS_SINK */
 
   if(route_to_dest == NULL) {
     /* No host route */
@@ -264,10 +264,10 @@ PROCESS_THREAD(lrp_process, ev, data)
   lrp_check_expired_route();
 #endif /* LRP_ROUTE_HOLD_TIME */
 
-#if LRP_RREQ_RETRIES && (LRP_IS_SINK || !LRP_USE_DIO)
+#if LRP_RREQ_RETRIES && LRP_IS_SINK
   /* Activate RREQ retransmission */
   rrc_check_expired_rreq();
-#endif /* LRP_RREQ_RETRIES && (LRP_IS_SINK || !LRP_USE_DIO) */
+#endif /* LRP_RREQ_RETRIES && LRP_IS_SINK */
 
 #if !LRP_IS_SINK
   /* Start LR to find nodes just around */

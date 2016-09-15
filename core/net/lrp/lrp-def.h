@@ -121,11 +121,6 @@
 #define LRP_IS_COORDINATOR     1
 #endif
 
-/* Use DIO, or keep a LOADng's standard comportment */
-#ifndef LRP_USE_DIO
-#define LRP_USE_DIO            1
-#endif
-
 #if LRP_IS_SINK && !LRP_IS_COORDINATOR
 #error The node is sink but not coordinator, which is particularly \
   problematic (and stupid). Please check again your settings.

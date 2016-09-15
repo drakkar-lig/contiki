@@ -85,7 +85,7 @@ static uint32_t exp_residuum = LRP_SEND_DIO_INTERVAL;
 /*---------------------------------------------------------------------------*/
 /* Implementation of Broken Routes Cache to avoid multiple forwarding of BRK
  * messages and to be able to retransmit UPD on the reverted path */
-#if LRP_USE_DIO && LRP_IS_COORDINATOR
+#if LRP_IS_COORDINATOR
 #define BRCACHESIZE 2
 
 static struct {
@@ -136,7 +136,7 @@ lrp_brc_add(const uip_ipaddr_t *brk_sender, const uint16_t seqno,
     return 0 == 1;
   }
 }
-#endif /* LRP_USE_DIO && LRP_IS_COORDINATOR */
+#endif /* LRP_IS_COORDINATOR */
 
 /*---------------------------------------------------------------------------*/
 /* Change the default route. `successor` is the neighbor to use as successor ;
@@ -381,7 +381,7 @@ lrp_handle_incoming_dio(uip_ipaddr_t* neighbor, struct lrp_msg_dio_t* dio)
 void
 lrp_handle_incoming_brk(uip_ipaddr_t* neighbor, struct lrp_msg_brk_t* brk)
 {
-#if LRP_USE_DIO && LRP_IS_COORDINATOR
+#if LRP_IS_COORDINATOR
 #if !LRP_IS_SINK
   if(lrp_is_my_global_address(&brk->initial_sender)) {
     PRINTF("Skip BRK processing: it loops back\n");
@@ -456,14 +456,14 @@ lrp_handle_incoming_brk(uip_ipaddr_t* neighbor, struct lrp_msg_brk_t* brk)
                  brk->ring_size);
   }
 #endif /* LRP_IS_SINK */
-#endif /* LRP_USE_DIO && LRP_IS_COORDINATOR */
+#endif /* LRP_IS_COORDINATOR */
 }
 /*---------------------------------------------------------------------------*/
 /* Handle an incoming UPD type message. */
 void
 lrp_handle_incoming_upd(uip_ipaddr_t* neighbor, struct lrp_msg_upd_t* upd)
 {
-#if LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK
+#if LRP_IS_COORDINATOR && !LRP_IS_SINK
   /* Is it the same sink ? */
   if(!lrp_ipaddr_is_empty(&lrp_state.sink_addr) &&
      !uip_ipaddr_cmp(&upd->sink_addr, &lrp_state.sink_addr)) {
@@ -529,7 +529,7 @@ lrp_handle_incoming_upd(uip_ipaddr_t* neighbor, struct lrp_msg_upd_t* upd)
                  upd->tree_seqno, upd->repair_seqno,
                  upd->metric_type, upd->metric_value + nbr->link_cost_value);
   }
-#endif /* LRP_USE_DIO && LRP_IS_COORDINATOR && !LRP_IS_SINK */
+#endif /* LRP_IS_COORDINATOR && !LRP_IS_SINK */
 }
 /*---------------------------------------------------------------------------*/
 /* Handle an incoming HELLO type message */

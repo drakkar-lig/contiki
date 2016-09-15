@@ -47,9 +47,9 @@ void lrp_handle_incoming_rreq(uip_ipaddr_t* neighbor, struct lrp_msg_rreq_t* rre
 void lrp_handle_incoming_rrep(uip_ipaddr_t* neighbor, struct lrp_msg_rrep_t* rrep);
 void lrp_handle_incoming_rerr(uip_ipaddr_t* neighbor, struct lrp_msg_rerr_t* rerr);
 
-#if LRP_RREQ_RETRIES && (LRP_IS_SINK || !LRP_USE_DIO)
+#if LRP_RREQ_RETRIES && LRP_IS_SINK
 void rrc_check_expired_rreq(void);
-#endif /* LRP_RREQ_RETRIES && (LRP_IS_SINK || !LRP_USE_DIO) */
+#endif /* LRP_RREQ_RETRIES && LRP_IS_SINK */
 
 #if LRP_ROUTE_HOLD_TIME
 void lrp_check_expired_route(void);

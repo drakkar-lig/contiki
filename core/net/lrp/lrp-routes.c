@@ -55,7 +55,7 @@
 /*---------------------------------------------------------------------------*/
 /* Implementation of Route Request Cache for LRP_RREQ_RETRIES and
  * LRP_NET_TRAVERSAL_TIME */
-#if LRP_RREQ_RETRIES && (LRP_IS_SINK || !LRP_USE_DIO)
+#if LRP_RREQ_RETRIES && LRP_IS_SINK
 #define RRCACHE 2 /* Size of the cache */
 
 static struct {
@@ -115,7 +115,7 @@ rrc_check_expired_rreq()
   ctimer_set(&retry_rreq_timer, LRP_RETRY_RREQ_INTERVAL,
              (void (*)(void *)) & rrc_check_expired_rreq, NULL);
 }
-#endif /* LRP_RREQ_RETRIES && (LRP_IS_SINK || !LRP_USE_DIO) */
+#endif /* LRP_RREQ_RETRIES && LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
 /* Implementation of route validity time check and purge */
@@ -218,33 +218,11 @@ void
 lrp_handle_incoming_rreq(uip_ipaddr_t* neighbor, struct lrp_msg_rreq_t* rreq)
 {
 #if !LRP_IS_SINK
-#if !LRP_USE_DIO
-  uip_ds6_route_t *rt;
-#endif
 
   /* Add local link to described metric */
   rreq->metric_value += lrp_link_cost(neighbor, rreq->metric_type);
 
   /* Check if we do not have already received a better RREQ message */
-#if !LRP_USE_DIO
-  /* LOADng's: try to add route to source */
-  if(!lrp_is_my_global_address(&rreq->orig_addr)) {
-    if((rt = offer_route(&rreq->orig_addr, HOST_ROUTE_PREFIX_LEN,
-                         neighbor, rreq->metric_type,
-                         metric_value, rreq->node_seqno)) == NULL) {
-      PRINTF("Skipping: has a better RREQ to dest\n");
-      return;
-    }
-  }
-
-  /* Answer to RREQ if the searched address is our address */
-  if(lrp_is_my_global_address(&rreq->searched_addr)) {
-    SEQNO_INCREASE(lrp_state.node_seqno);
-    lrp_state_save();
-    lrp_send_rrep(&rreq->source_addr, neighbor, &rreq->searched_addr,
-                  lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
-#else
-  /* LRP: consult cache */
   if(fwc_lookup(&rreq->source_addr, &rreq->source_seqno)) {
     PRINTF("Skipping: RREQ cached\n");
     return;
@@ -257,7 +235,6 @@ lrp_handle_incoming_rreq(uip_ipaddr_t* neighbor, struct lrp_msg_rreq_t* rreq)
     lrp_state_save();
     lrp_send_rrep(&rreq->source_addr, uip_ds6_defrt_choose(), &rreq->searched_addr,
                   lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
-#endif /* !LRP_USE_DIO */
 
 #if LRP_IS_COORDINATOR
     /* Only coordinator forward RREQ */
@@ -277,16 +254,14 @@ lrp_handle_incoming_rrep(uip_ipaddr_t* neighbor, struct lrp_msg_rrep_t* rrep)
 #if LRP_IS_COORDINATOR
   struct uip_ds6_route *rt;
 #if !LRP_IS_SINK
-  uip_ipaddr_t *nexthop = NULL;
+  uip_ipaddr_t *upstream_neighbor = NULL;
 #endif
 
-#if LRP_USE_DIO
-  /* LRP: Do not accept RREP from our default route */
+  /* Do not accept RREP from our default route */
   if(uip_ds6_defrt_lookup(neighbor) != NULL) {
     PRINTF("Do not allow RREP from default route\n");
     return;
   }
-#endif /* LRP_USE_DIO */
 
   /* Add link cost to described metric */
   rrep->metric_value += lrp_link_cost(neighbor, rrep->metric_type);
@@ -303,37 +278,22 @@ lrp_handle_incoming_rrep(uip_ipaddr_t* neighbor, struct lrp_msg_rrep_t* rrep)
   } else {
     PRINTF("Former route is better\n");
   }
-#if LRP_RREQ_RETRIES && (LRP_IS_SINK || !LRP_USE_DIO)
+#if LRP_RREQ_RETRIES && LRP_IS_SINK
   /* Clean route request cache */
   rrc_remove(&rrep->source_addr);
-#endif /* LRP_RREQ_RETRIES && (LRP_IS_SINK || !LRP_USE_DIO) */
+#endif /* LRP_RREQ_RETRIES && LRP_IS_SINK */
 
-  /* Select next hop */
-#if !LRP_USE_DIO
-  /* LOADng: find a host route to destination */
-  if(!lrp_is_my_global_address(&rrep->dest_addr)) {
-    nexthop = uip_ds6_route_nexthop(uip_ds6_route_lookup(&rrep->dest_addr));
-    if(nexthop == NULL) {
-      PRINTF("Unable to forward RREP: unknown destination\n");
-    }
-  }
-#else /* !LRP_USE_DIO */
-  /* LRP: get the default route */
 #if !LRP_IS_SINK
-  nexthop = uip_ds6_defrt_choose();
-  if(uip_ds6_defrt_choose() == NULL) {
+  /* Forward RREP to upstream neighbor */
+  upstream_neighbor = uip_ds6_defrt_choose();
+  if(upstream_neighbor != NULL) {
+    lrp_send_rrep(&rrep->dest_addr, upstream_neighbor, &rrep->source_addr,
+                  rrep->source_seqno, rrep->metric_type, rrep->metric_value);
+  } else {
     PRINTF("Unable to forward RREP: no defaut route\n");
+    return;
   }
 #endif /* !LRP_IS_SINK */
-#endif /* !LRP_USE_DIO */
-
-#if !LRP_IS_SINK
-  /* Forward RREP to nexthop */
-  if(nexthop != NULL) {
-    lrp_send_rrep(&rrep->dest_addr, nexthop, &rrep->source_addr, rrep->source_seqno,
-                  rrep->metric_type, rrep->metric_value);
-  }
-#endif
 #endif /* LRP_IS_COORDINATOR */
 }
 /*---------------------------------------------------------------------------*/
@@ -341,52 +301,39 @@ lrp_handle_incoming_rrep(uip_ipaddr_t* neighbor, struct lrp_msg_rrep_t* rrep)
 void
 lrp_handle_incoming_rerr(uip_ipaddr_t* neighbor, struct lrp_msg_rerr_t* rerr)
 {
-#if !LRP_USE_DIO
-  struct uip_ds6_route *rt;
-#endif
-#if LRP_IS_COORDINATOR && LRP_USE_DIO && !LRP_IS_SINK
+#if LRP_IS_COORDINATOR && !LRP_IS_SINK
   uip_ipaddr_t *defrt;
 #endif
 
 #if LRP_IS_COORDINATOR
   /* Remove route */
   uip_ds6_route_rm(uip_ds6_route_lookup(&rerr->addr_in_error));
+#endif /* LRP_IS_COORDINATOR */
 
-#if !LRP_USE_DIO
-  /* LOADng: forwarding RERR to dest_addr */
-  rt = uip_ds6_route_lookup(&rerr->dest_addr);
-  if(rt != NULL) {
-    lrp_send_rerr(&rerr->dest_addr, &rerr->addr_in_error,
-                  uip_ds6_route_nexthop(rt));
-  }
-#else
-  /* LRP */
 #if !LRP_IS_SINK
   if(uip_ds6_defrt_lookup(neighbor) != NULL) {
-    PRINTF("Successor doesn't know us. Spontaneously send RREP\n");
+    /* Upstream neighbor does not know us as its downstream neighbor */
+    PRINTF("Upstream neighbor does not know us as its downstream neighbor. "
+           "Spontaneously send RREP\n");
     SEQNO_INCREASE(lrp_state.node_seqno);
     lrp_state_save();
     lrp_send_rrep(&lrp_state.sink_addr, neighbor, &lrp_myipaddr,
                   lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
-  } else {
-    /* Forward the RERR higher */
+  }
+
+#if LRP_IS_COORDINATOR
+  if(uip_ds6_defrt_lookup(neighbor)) {
+    /* Forward packet upward, to completely remove the route */
     defrt = uip_ds6_defrt_choose();
     if(defrt != NULL) {
       lrp_send_rerr(&rerr->dest_addr, &rerr->addr_in_error, defrt);
     }
   }
-#endif /* !LRP_IS_SINK */
-#endif /* !LRP_USE_DIO */
-#else /* LRP_IS_COORDINATOR */
-  PRINTF("Successor doesn't know us. Spontaneously send RREP\n");
-  SEQNO_INCREASE(lrp_state.node_seqno);
-  lrp_state_save();
-  lrp_send_rrep(&lrp_state.sink_addr, neighbor, &lrp_myipaddr,
-                lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
 #endif /* LRP_IS_COORDINATOR */
+#endif /* !LRP_IS_SINK */
 }
 /*---------------------------------------------------------------------------*/
-#if LRP_IS_SINK || !LRP_USE_DIO
+#if LRP_IS_SINK
 void
 lrp_request_route_to(uip_ipaddr_t *host)
 {
@@ -428,7 +375,7 @@ lrp_request_route_to(uip_ipaddr_t *host)
   timer_set(&rreq_ratelimit_timer, LRP_RREQ_MININTERVAL);
 #endif /* LRP_RREQ_MININTERVAL */
 }
-#endif /* LRP_IS_SINK || !LRP_USE_DIO */
+#endif /* LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
 #if LRP_IS_COORDINATOR && !LRP_IS_SINK

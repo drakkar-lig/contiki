@@ -134,10 +134,6 @@ void lrp_send_rerr(const uip_ipaddr_t *dest_addr,
                    const uip_ipaddr_t *nexthop);
 #endif /* !LRP_IS_SINK */
 
-/*---------------------------------------------------------------------------*/
-/* Messages non available on LoadNG */
-#if LRP_USE_DIO
-
 /*-------------------------------------------------------------------*/
 /* LRP DIO message */
 #define LRP_DIO_TYPE      4
@@ -227,8 +223,6 @@ void lrp_send_hello(const uip_ipaddr_t* nexthop,
                     const uint16_t link_cost_value,
                     const uint8_t options);
 #define LRP_MSG_FLAG_PLEASE_REPLY 0x80
-
-#endif /* LRP_USE_DIO */
 
 #define LRP_MAX_MSG_SIZE sizeof(union{ \
   struct lrp_msg_rreq_t a; struct lrp_msg_rrep_t b; struct lrp_msg_rerr_t c; \
