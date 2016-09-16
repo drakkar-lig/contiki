@@ -177,7 +177,6 @@ offer_route(uip_ipaddr_t *orig_addr, const uint8_t length,
       rt->state.metric_value = metric_value;
       rt->state.seqno = node_seqno;
       rt->state.valid_time = LRP_ROUTE_HOLD_TIME;
-      rt->state.ack_received = 1;
     }
     return rt;
   } else {
@@ -246,9 +245,6 @@ lrp_handle_incoming_rrep(uip_ipaddr_t* neighbor, struct lrp_msg_rrep_t* rrep)
                    rrep->metric_value, rrep->source_seqno);
   if(rt != NULL) {
     PRINTF("Route inserted from RREP\n");
-#if LRP_RREP_ACK
-    rt->state.ack_received = 0; /* Pending route for ACK */
-#endif /* LRP_RREP_ACK */
   } else {
     PRINTF("Former route is better\n");
   }

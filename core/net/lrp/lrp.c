@@ -191,13 +191,6 @@ lrp_select_nexthop_for(uip_ipaddr_t *source, uip_ipaddr_t *destination,
     /* Use provided host route */
     nexthop = uip_ds6_route_nexthop(route_to_dest);
   }
-#if LRP_IS_COORDINATOR
-  if(route_to_dest != NULL && !route_to_dest->state.ack_received) {
-    PRINTF("Discarding packet: used route is not acked\n");
-    /* FIXME: remove the route? Send RERR? */
-    return NULL;
-  }
-#endif /* LRP_IS_COORDINATOR */
 
   if(nexthop == NULL) {
     /* The nexthop is not in neighbour table */

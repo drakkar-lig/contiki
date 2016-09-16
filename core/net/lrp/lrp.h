@@ -55,7 +55,6 @@ typedef struct lrp_route_entry {
   uint8_t metric_type;
   uint16_t metric_value;
   uint32_t valid_time;
-  uint8_t ack_received;
 } lrp_route_entry_t;
 
 NBR_TABLE_DECLARE(lrp_neighbors);

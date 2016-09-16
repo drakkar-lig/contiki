@@ -98,18 +98,6 @@ void lrp_delayed_rrep(const uip_ipaddr_t *dest_addr,
 #endif /* !LRP_IS_SINK */
 
 /*-------------------------------------------------------------------*/
-/* LRP RREP-ACK message */
-#define LRP_RACK_TYPE     2
-#if LRP_RREP_ACK
-struct lrp_msg_rack_t {
-  uint8_t type;
-  uint8_t addr_len;
-  uint16_t node_seqno;
-  uip_ipaddr_t src_addr;
-};
-#endif /* LRP_RREP_ACK */
-
-/*-------------------------------------------------------------------*/
 /* LRP RERR message */
 #define LRP_RERR_TYPE     3
 struct lrp_msg_rerr_t {
