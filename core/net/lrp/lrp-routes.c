@@ -140,31 +140,6 @@ lrp_check_expired_route()
 #endif /* LRP_ROUTE_HOLD_TIME */
 
 /*---------------------------------------------------------------------------*/
-/* Implementation of RREQ Forwarding Cache to avoid multiple forwarding */
-#if !LRP_IS_SINK
-#define FWCACHE 2
-
-static struct {
-  uip_ipaddr_t orig;
-  uint16_t seqno;
-} fwcache[FWCACHE];
-
-static int
-fwc_lookup(const uip_ipaddr_t *orig, const uint16_t *seqno)
-{
-  unsigned n = (((uint8_t *)orig)[0] + ((uint8_t *)orig)[15]) % FWCACHE;
-  return fwcache[n].seqno >= *seqno && uip_ipaddr_cmp(&fwcache[n].orig, orig);
-}
-static void
-fwc_add(const uip_ipaddr_t *orig, const uint16_t *seqno)
-{
-  unsigned n = (((uint8_t *)orig)[0] + ((uint8_t *)orig)[15]) % FWCACHE;
-  fwcache[n].seqno = *seqno;
-  uip_ipaddr_copy(&fwcache[n].orig, orig);
-}
-#endif /* !LRP_IS_SINK */
-
-/*---------------------------------------------------------------------------*/
 /* Add the described route into the routing table, if it is better than
  * the previous one. Return NULL if the route has not been added. */
 #if LRP_IS_COORDINATOR
@@ -218,30 +193,29 @@ void
 lrp_handle_incoming_rreq(uip_ipaddr_t* neighbor, struct lrp_msg_rreq_t* rreq)
 {
 #if !LRP_IS_SINK
+  static seqno_t last_seen_rreq_seqno = 0;
 
-  /* Add local link to described metric */
-  rreq->metric_value += lrp_link_cost(neighbor, rreq->metric_type);
-
-  /* Check if we do not have already received a better RREQ message */
-  if(fwc_lookup(&rreq->source_addr, &rreq->source_seqno)) {
-    PRINTF("Skipping: RREQ cached\n");
+  /* Check if it is a new RREQ message */
+  if(SEQNO_GREATER_THAN(last_seen_rreq_seqno, rreq->source_seqno) ||
+     last_seen_rreq_seqno == rreq->source_seqno) {
+    PRINTF("Skip: RREQ too old\n");
     return;
   }
-  fwc_add(&rreq->source_addr, &rreq->source_seqno);
+  last_seen_rreq_seqno = rreq->source_seqno;
 
   /* Answer to RREQ if the searched address is our address */
   if(lrp_is_my_global_address(&rreq->searched_addr)) {
     SEQNO_INCREASE(lrp_state.node_seqno);
     lrp_state_save();
-    lrp_send_rrep(&rreq->source_addr, uip_ds6_defrt_choose(), &rreq->searched_addr,
+    lrp_send_rrep(&lrp_state.sink_addr, uip_ds6_defrt_choose(),
+                  &rreq->searched_addr,
                   lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
 
 #if LRP_IS_COORDINATOR
     /* Only coordinator forward RREQ */
   } else {
     PRINTF("Forward RREQ\n");
-    lrp_delayed_rreq(&rreq->searched_addr, &rreq->source_addr, rreq->source_seqno,
-                     rreq->metric_type, rreq->metric_value);
+    lrp_delayed_rreq(&rreq->searched_addr, rreq->source_seqno);
 #endif /* LRP_IS_COORDINATOR */
   }
 #endif /* !LRP_IS_SINK */
@@ -326,7 +300,7 @@ lrp_handle_incoming_rerr(uip_ipaddr_t* neighbor, struct lrp_msg_rerr_t* rerr)
     /* Forward packet upward, to completely remove the route */
     defrt = uip_ds6_defrt_choose();
     if(defrt != NULL) {
-      lrp_send_rerr(&rerr->dest_addr, &rerr->addr_in_error, defrt);
+      lrp_send_rerr(&rerr->addr_in_error, defrt);
     }
   }
 #endif /* LRP_IS_COORDINATOR */
@@ -368,8 +342,7 @@ lrp_request_route_to(uip_ipaddr_t *host)
 
   SEQNO_INCREASE(lrp_state.node_seqno);
   lrp_state_save();
-  lrp_delayed_rreq(host, &lrp_myipaddr, lrp_state.node_seqno,
-                   LRP_METRIC_HOP_COUNT, 0);
+  lrp_delayed_rreq(host, lrp_state.node_seqno);
 
 #if LRP_RREQ_MININTERVAL
   timer_set(&rreq_ratelimit_timer, LRP_RREQ_MININTERVAL);
@@ -394,7 +367,7 @@ lrp_routing_error(uip_ipaddr_t *source, uip_ipaddr_t *destination,
     prevhop = &ipaddr;
   }
   if(prevhop != NULL) {
-    lrp_send_rerr(source, destination, prevhop);
+    lrp_send_rerr(destination, prevhop);
   }
 }
 #endif /* LRP_IS_COORDINATOR && !LRP_IS_SINK */

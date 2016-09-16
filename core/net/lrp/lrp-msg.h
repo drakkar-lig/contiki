@@ -60,23 +60,13 @@ struct lrp_msg_rreq_t {
   uint8_t type;
   uint8_t addr_len;
   uint16_t source_seqno;
-  uint8_t _padding;
-  uint8_t metric_type;
-  uint16_t metric_value;
   uip_ipaddr_t searched_addr;
-  uip_ipaddr_t source_addr;
 };
 #if LRP_IS_COORDINATOR
-void lrp_send_rreq(const uip_ipaddr_t *dest,
-                   const uip_ipaddr_t *orig,
-                   const uint16_t node_seqno,
-                   const uint8_t metric_type,
-                   const uint16_t metric_value);
-void lrp_delayed_rreq(const uip_ipaddr_t *dest,
-                      const uip_ipaddr_t *orig,
-                      const uint16_t node_seqno,
-                      const uint8_t metric_type,
-                      const uint16_t metric_value);
+void lrp_send_rreq(const uip_ipaddr_t *searched_addr,
+                   const uint16_t source_seqno);
+void lrp_delayed_rreq(const uip_ipaddr_t *searched_addr,
+                      const uint16_t source_seqno);
 #endif /* LRP_IS_COORDINATOR */
 
 /*-------------------------------------------------------------------*/
@@ -125,12 +115,10 @@ struct lrp_msg_rack_t {
 struct lrp_msg_rerr_t {
   uint8_t type;
   uint8_t addr_len;
-  uip_ipaddr_t dest_addr;
   uip_ipaddr_t addr_in_error;
 };
 #if !LRP_IS_SINK
-void lrp_send_rerr(const uip_ipaddr_t *dest_addr,
-                   const uip_ipaddr_t *addr_in_error,
+void lrp_send_rerr(const uip_ipaddr_t *addr_in_error,
                    const uip_ipaddr_t *nexthop);
 #endif /* !LRP_IS_SINK */
 
