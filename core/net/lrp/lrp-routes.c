@@ -200,6 +200,14 @@ lrp_handle_incoming_rreq(uip_ipaddr_t* neighbor, struct lrp_msg_rreq_t* rreq)
     PRINTF("Skip: RREQ too old\n");
     return;
   }
+
+  /* Ensure the RREQ follows the DODAG */
+  if(uip_ds6_defrt_lookup(neighbor) == NULL) {
+    /* This is not a upstream neighbor */
+    PRINTF("Skip: RREQ does not come from upstream neighbor\n");
+    return;
+  }
+
   last_seen_rreq_seqno = rreq->source_seqno;
 
   /* Answer to RREQ if the searched address is our address */
@@ -217,6 +225,8 @@ lrp_handle_incoming_rreq(uip_ipaddr_t* neighbor, struct lrp_msg_rreq_t* rreq)
     lrp_delayed_rreq(&rreq->searched_addr, rreq->source_seqno);
 #endif /* LRP_IS_COORDINATOR */
   }
+#else /* not !LRP_IS_SINK */
+  PRINTF("Skip RREQ processing: is a sink\n");
 #endif /* !LRP_IS_SINK */
 }
 /*---------------------------------------------------------------------------*/
