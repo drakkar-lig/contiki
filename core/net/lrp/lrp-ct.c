@@ -66,9 +66,13 @@ typedef struct {
     REACHABLE,
     UNREACHABLE
   } reachability;
+  struct timer unreachable_timer;/* TODO */
 } lrp_neighbor_t;
 /** List of all known neighbors and description to reach them */
 NBR_TABLE_GLOBAL(lrp_neighbor_t, lrp_neighbors);
+/** Check if the neighbor is still unreachable. Is so, return true. If not, mark
+ * its reachability as UNKNOWN and return false. */
+static uint8_t is_still_unreachable(lrp_neighbor_t*);
 /** A callback function, used in HELLO message processing */
 typedef void (*hello_callback_f)(uip_ipaddr_t* neighbor, struct lrp_msg* msg);
 /** Add a callback, linked with a neighbor: when a HELLO message is received,
@@ -307,8 +311,12 @@ lrp_handle_incoming_dio(uip_ipaddr_t* neighbor, struct lrp_msg_dio_t* dio)
       lrp_neighbors, (linkaddr_t*) uip_ds6_nbr_lladdr_from_ipaddr(neighbor));
 
   if(nbr != NULL && nbr->reachability == UNREACHABLE) {
-    PRINTF("Skip DIO processing: neighbor is marked as unreachable.\n");
-    return;
+    if(is_still_unreachable(nbr)) {
+      PRINTF("Skip DIO processing: neighbor is marked as unreachable.\n");
+      return;
+    } else {
+      PRINTF("Unreachable timer has stopped, trying to use this neighbor again\n");
+    }
   }
 
   if(nbr == NULL || nbr->reachability == UNKNOWN) {
@@ -392,9 +400,14 @@ lrp_handle_incoming_brk(uip_ipaddr_t* neighbor, struct lrp_msg_brk_t* brk)
   /* Find link cost between ourself and this neighbor */
   lrp_neighbor_t* nbr = nbr_table_get_from_lladdr(
       lrp_neighbors, (linkaddr_t*) uip_ds6_nbr_lladdr_from_ipaddr(neighbor));
+
   if(nbr != NULL && nbr->reachability == UNREACHABLE) {
-    PRINTF("Skip DIO processing: neighbor is marked as unreachable.\n");
-    return;
+    if(is_still_unreachable(nbr)) {
+      PRINTF("Skip BRK processing: neighbor is marked as unreachable.\n");
+      return;
+    } else {
+      PRINTF("Unreachable timer has stopped, trying to use this neighbor again\n");
+    }
   }
 
   if(nbr == NULL || nbr->reachability == UNKNOWN) {
@@ -684,6 +697,7 @@ lrp_neighbor_callback(const linkaddr_t *addr, int status, int mutx)
       }
 #endif /* !LRP_IS_SINK */
       nbr->reachability = UNREACHABLE;
+      timer_set(&nbr->unreachable_timer, LRP_NBR_UNREACHABLE_DURATION);
     }
 
   } else if(status == MAC_TX_OK) {
@@ -700,6 +714,16 @@ lrp_neighbor_callback(const linkaddr_t *addr, int status, int mutx)
     nbr->reachability = REACHABLE;
   }
 #endif /* !UIP_ND6_SEND_NA */
+}
+static uint8_t
+is_still_unreachable(lrp_neighbor_t *nbr)
+{
+  if(nbr->reachability == UNREACHABLE &&
+     timer_expired(&nbr->unreachable_timer)) {
+    nbr->reachability = UNKNOWN;
+    return 0;
+  }
+  return 1;
 }
 /*---------------------------------------------------------------------------*/
 

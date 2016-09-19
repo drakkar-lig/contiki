@@ -126,6 +126,8 @@
   problematic (and stupid). Please check again your settings.
 #endif
 
+#define LRP_NBR_UNREACHABLE_DURATION  10 * 60 * CLOCK_SECOND
+
 /* Define metric types */
 #define LRP_METRIC_HOP_COUNT 0x01
 /* Special placeholder metric. Is not comparable. Should always be used with
