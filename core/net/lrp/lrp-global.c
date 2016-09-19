@@ -241,7 +241,7 @@ path_length_compare(uint16_t seqno_1, uint8_t metric_type_1, uint16_t metric_val
     return PLC_NEWER_SEQNO;
   if(SEQNO_GREATER_THAN(seqno_2, seqno_1))
     return PLC_OLDER_SEQNO;
-  if(metric_type_1 != metric_type_2)
+  if(metric_type_1 != metric_type_2 || metric_type_1 == LRP_METRIC_NONE)
     return PLC_UNCOMPARABLE_METRICS;
   if(metric_value_1 < metric_value_2)
     return PLC_SHORTER_METRIC;
