@@ -354,6 +354,8 @@ lrp_handle_incoming_dio(uip_ipaddr_t* neighbor, struct lrp_msg_dio_t* dio)
     lrp_delayed_dio(NULL, 0);
 #endif /* LRP_IS_COORDINATOR */
     return;
+  } else {
+    PRINTF("DIO message refused to upstream neighbor selection\n");
   }
 #endif /* !LRP_IS_SINK */
 
