@@ -134,8 +134,7 @@ lrp_send_rrep(const uip_ipaddr_t *dest_addr,
   uip_ipaddr_copy(&rrep.source_addr, source_addr);
   uip_ipaddr_copy(&rrep.dest_addr, dest_addr);
 
-  uip_udp_packet_sendto(lrp_udpconn,
-                        &rrep, sizeof(struct lrp_msg_rrep_t),
+  uip_udp_packet_sendto(lrp_udpconn, &rrep, sizeof(struct lrp_msg_rrep_t),
                         nexthop, lrp_udpconn->rport);
 }
 struct send_rrep_params_t {
@@ -367,8 +366,8 @@ lrp_send_brk(const uip_ipaddr_t *initial_sender,
   } else {
     uip_ipaddr_copy(&lrp_udpconn->ripaddr, nexthop);
   }
-  uip_udp_packet_sendto(lrp_udpconn, &brk, sizeof(struct lrp_msg_brk_t),
-                        nexthop, lrp_udpconn->rport);
+  uip_udp_packet_send(lrp_udpconn, &brk, sizeof(struct lrp_msg_brk_t));
+  memset(&lrp_udpconn->ripaddr, 0, sizeof(lrp_udpconn->ripaddr));
 }
 struct send_brk_params_t {
   uip_ipaddr_t initial_sender;
