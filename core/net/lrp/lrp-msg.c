@@ -154,6 +154,8 @@ wrap_send_rrep(struct send_rrep_params_t *args)
   lrp_send_rrep(&args->dest_addr, &args->nexthop, &args->source_addr,
                 args->source_seqno, args->metric_type, args->metric_value);
 }
+/* Maximum number of delayed RREP messages stored */
+#define DELAYED_RREP_BUFFER_SIZE 3
 /* Schedule a RREP message sending later. */
 void
 lrp_delayed_rrep(const uip_ipaddr_t *dest_addr,
@@ -166,15 +168,15 @@ lrp_delayed_rrep(const uip_ipaddr_t *dest_addr,
   static struct {
     struct ctimer timer;
     struct send_rrep_params_t args;
-  } delayed_rrep_buffer[LRP_DELAYED_RREP_BUFFER_SIZE];
+  } delayed_rrep_buffer[DELAYED_RREP_BUFFER_SIZE];
   int position;
 
   /* Find an available space into buffer */
-  for (position = 0; position < LRP_DELAYED_RREP_BUFFER_SIZE; position++) {
+  for (position = 0; position < DELAYED_RREP_BUFFER_SIZE; position++) {
     if(ctimer_expired(&delayed_rrep_buffer[position].timer)) break;
   }
 
-  if(position != LRP_DELAYED_RREP_BUFFER_SIZE) {
+  if(position != DELAYED_RREP_BUFFER_SIZE) {
     /* Fill lrp_send_rrep parameters */
     uip_ipaddr_copy(&delayed_rrep_buffer[position].args.dest_addr, dest_addr);
     uip_ipaddr_copy(&delayed_rrep_buffer[position].args.nexthop, nexthop);
@@ -265,6 +267,10 @@ struct send_dio_params_t {
   uint8_t options;
 };
 
+/* Maximum number of unicast delayed DIO messages stored. If one more should
+ * be sent, all will be deleted and replaced by a broadcast one */
+#define DELAYED_DIO_BUFFER_SIZE 2
+
 static void
 wrap_send_dio(struct send_dio_params_t *params)
 {
@@ -276,11 +282,11 @@ lrp_delayed_dio(uip_ipaddr_t *destination, uint8_t options)
   static struct {
     struct ctimer timer;
     struct send_dio_params_t params;
-  } delayed_dio_buffer[LRP_DELAYED_DIO_BUFFER_SIZE];
+  } delayed_dio_buffer[DELAYED_DIO_BUFFER_SIZE];
   int position, free_space = -1;
 
   /* Check if the DIO really needs to be sent, and find an available position */
-  for(position = 0; position < LRP_DELAYED_DIO_BUFFER_SIZE; position++) {
+  for(position = 0; position < DELAYED_DIO_BUFFER_SIZE; position++) {
     if(!ctimer_expired(&delayed_dio_buffer[position].timer)) {
       if(delayed_dio_buffer[position].params.destination.u8[0] == 0xFF) {
         /* This message will be broadcasted => we do not need to send one again. */
@@ -308,7 +314,7 @@ lrp_delayed_dio(uip_ipaddr_t *destination, uint8_t options)
   if(free_space == -1) {
     /* No more space. Change all DIO unicast message to one unique DIO broadcasted message */
     PRINTF("No more space in buffer. Deleting all unicast DIO, and creating one broadcast DIO\n");
-    for(position = 0; position < LRP_DELAYED_DIO_BUFFER_SIZE; position++) {
+    for(position = 0; position < DELAYED_DIO_BUFFER_SIZE; position++) {
       ctimer_stop(&delayed_dio_buffer[position].timer);
     }
     destination = NULL;
