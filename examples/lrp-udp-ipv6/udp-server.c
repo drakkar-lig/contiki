@@ -105,6 +105,9 @@ PROCESS_THREAD(udp_server_process, ev, data)
   uip_ds6_addr_add(&ipaddr, 0, ADDR_AUTOCONF);
 #endif /* UIP_CONF_ROUTER */
 
+  uip_ip6addr(&ipaddr, 0xaaaa, 0, 0, 0, 0, 0, 0, 1);
+  uip_ds6_addr_add(&ipaddr, 0, ADDR_AUTOCONF);
+
   print_local_addresses();
 
   server_conn = udp_new(NULL, UIP_HTONS(3001), NULL);

@@ -46,10 +46,11 @@
 
 /* IP address of the udp-server node */
 #ifndef UDP_CONNECTION_ADDR
-#define UDP_CONNECTION_ADDR       aaaa:0:0:0:0:0:0:3455
+#define UDP_CONNECTION_ADDR       aaaa:0:0:0:0:0:0:1
 #endif /* !UDP_CONNECTION_ADDR */
 
 static struct uip_udp_conn *client_conn;
+static uip_ipaddr_t server_ipaddr;
 /*---------------------------------------------------------------------------*/
 PROCESS(udp_client_process, "UDP client process");
 AUTOSTART_PROCESSES(&resolv_process,&udp_client_process);
@@ -82,11 +83,7 @@ timeout_handler(void)
   PRINT6ADDR(&client_conn->ripaddr);
   sprintf(buf, "Hello %" PRIu16 " from client %" PRIu16, ++seq_id, my_ipaddr.u16[7]);
   PRINTF(" (msg: %s)\n", buf);
-#if SEND_TOO_LARGE_PACKET_TO_TEST_FRAGMENTATION
-  uip_udp_packet_send(client_conn, buf, UIP_APPDATA_SIZE);
-#else /* SEND_TOO_LARGE_PACKET_TO_TEST_FRAGMENTATION */
-  uip_udp_packet_send(client_conn, buf, strlen(buf));
-#endif /* SEND_TOO_LARGE_PACKET_TO_TEST_FRAGMENTATION */
+  uip_udp_packet_sendto(client_conn, buf, strlen(buf), &server_ipaddr, UIP_HTONS(3000));
 }
 /*---------------------------------------------------------------------------*/
 static void
@@ -153,7 +150,6 @@ set_connection_address(uip_ipaddr_t *ipaddr)
 PROCESS_THREAD(udp_client_process, ev, data)
 {
   static struct etimer et;
-  uip_ipaddr_t ipaddr;
 
   PROCESS_BEGIN();
   PRINTF("UDP client process started\n");
@@ -165,27 +161,31 @@ PROCESS_THREAD(udp_client_process, ev, data)
   print_local_addresses();
 
   /* new connection with remote host */
-  set_connection_address(&ipaddr);
-  client_conn = udp_new(&ipaddr, UIP_HTONS(3000), NULL);
+  set_connection_address(&server_ipaddr);
+  client_conn = udp_new(NULL, UIP_HTONS(3000), NULL);
   udp_bind(client_conn, UIP_HTONS(3001));
 
   PRINTF("Created a connection with the server [");
-  PRINT6ADDR(&client_conn->ripaddr);
+  PRINT6ADDR(&server_ipaddr);
   PRINTF("]:%u (local port %u)\n",
-         UIP_HTONS(client_conn->lport), UIP_HTONS(client_conn->rport));
+         UIP_HTONS(client_conn->rport), UIP_HTONS(client_conn->lport));
 
   /* First packet is sent randomly between 0 and SEND_INTERVAL */
   etimer_set(&et,  random_rand() % SEND_INTERVAL);
+
+  /* Main loop */
   while(1) {
     PROCESS_YIELD();
+
+    /* Send packet event */
     if(etimer_expired(&et)) {
-      if(ipaddr.u16 == 0x0)
-        if(lrp_get_sink_address(&ipaddr))
-          uip_ipaddr_copy(&client_conn->ripaddr, &ipaddr);
       timeout_handler();
       /* Reset timer, taking jitter into account */
       etimer_set(&et, SEND_INTERVAL + (random_rand() % SEND_JITTER) - SEND_JITTER / 2);
-    } else if(ev == tcpip_event) {
+    }
+
+    /* Incoming packet */
+    if(ev == tcpip_event) {
       tcpip_handler();
     }
   }
