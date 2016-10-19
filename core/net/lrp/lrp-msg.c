@@ -580,7 +580,7 @@ lrp_handle_incoming_msg(void)
     lrp_handle_incoming_rrep(&UIP_IP_BUF->srcipaddr, rrep);
     break;
   case LRP_RERR_TYPE:
-    PRINTF("Recieved RERR ");
+    PRINTF("Received RERR ");
     PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
     PRINTF(" -> ");
     PRINT6ADDR(&UIP_IP_BUF->destipaddr);
