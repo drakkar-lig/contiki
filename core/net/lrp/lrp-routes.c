@@ -302,7 +302,7 @@ lrp_handle_incoming_rerr(uip_ipaddr_t* neighbor, struct lrp_msg_rerr_t* rerr)
   }
 
 #if LRP_IS_COORDINATOR
-  if(uip_ds6_defrt_lookup(neighbor)) {
+  if(uip_ds6_defrt_lookup(neighbor) == NULL) {
     /* Forward packet upward, to completely remove the route */
     defrt = uip_ds6_defrt_choose();
     if(defrt != NULL) {
