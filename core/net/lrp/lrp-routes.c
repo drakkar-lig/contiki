@@ -222,7 +222,8 @@ lrp_handle_incoming_rreq(uip_ipaddr_t* neighbor, struct lrp_msg_rreq_t* rreq)
     /* Only coordinator forward RREQ */
   } else {
     PRINTF("Forward RREQ\n");
-    lrp_delayed_rreq(&rreq->searched_addr, rreq->source_seqno);
+    lrp_delayed_rreq(&rreq->searched_addr, &rreq->source_addr,
+                     rreq->source_seqno);
 #endif /* LRP_IS_COORDINATOR */
   }
 #else /* not !LRP_IS_SINK */
@@ -348,7 +349,7 @@ lrp_request_route_to(uip_ipaddr_t *host)
 
   SEQNO_INCREASE(lrp_state.node_seqno);
   lrp_state_save();
-  lrp_delayed_rreq(host, lrp_state.node_seqno);
+  lrp_delayed_rreq(host, NULL, lrp_state.node_seqno);
 
 #if LRP_RREQ_MININTERVAL
   timer_set(&rreq_ratelimit_timer, LRP_RREQ_MININTERVAL);

@@ -57,6 +57,7 @@
 #if LRP_IS_COORDINATOR
 void
 lrp_send_rreq(const uip_ipaddr_t *searched_addr,
+              const uip_ipaddr_t *source_addr,
               const uint16_t source_seqno)
 {
   struct lrp_msg_rreq_t rreq;
@@ -69,7 +70,16 @@ lrp_send_rreq(const uip_ipaddr_t *searched_addr,
   rreq.type = (LRP_RREQ_TYPE << 4) | 0x0;
   rreq.addr_len = (0x0 << 4) | LRP_ADDR_LEN_IPV6;
   rreq.source_seqno = uip_htons(source_seqno);
-  uip_ipaddr_copy(&rreq.searched_addr, searched_addr);
+  if(searched_addr == NULL) {
+    uip_ip6addr(&rreq.searched_addr, 0, 0, 0, 0, 0, 0, 0, 0);
+  } else {
+    uip_ipaddr_copy(&rreq.searched_addr, searched_addr);
+  }
+  if(source_addr == NULL) {
+    uip_ipaddr_copy(&rreq.source_addr, &lrp_myipaddr);
+  } else {
+    uip_ipaddr_copy(&rreq.source_addr, source_addr);
+  }
 
   /* Send packet */
   uip_create_linklocal_lln_routers_mcast(&lrp_udpconn->ripaddr);
@@ -78,22 +88,35 @@ lrp_send_rreq(const uip_ipaddr_t *searched_addr,
 }
 struct send_rreq_params_t {
   uip_ipaddr_t searched_addr;
+  uip_ipaddr_t source_addr;
   uint16_t source_seqno;
 };
-
+/** Just a wrapper for `lrp_send_rreq`, to make it callable from the ctimer
+ *  library. */
 static void
 wrap_send_rreq(struct send_rreq_params_t *params)
 {
-  lrp_send_rreq(&params->searched_addr, params->source_seqno);
+  lrp_send_rreq(&params->searched_addr, &params->source_addr,
+                params->source_seqno);
 }
 void
 lrp_delayed_rreq(const uip_ipaddr_t *searched_addr,
+                 const uip_ipaddr_t *source_addr,
                  const uint16_t source_seqno)
 {
   static struct ctimer delayed_rreq_timer = { 0 };
   static struct send_rreq_params_t params;
   if(ctimer_expired(&delayed_rreq_timer)) {
-    uip_ipaddr_copy(&params.searched_addr, searched_addr);
+    if(searched_addr == NULL) {
+      uip_ip6addr(&params.searched_addr, 0, 0, 0, 0, 0, 0, 0, 0);
+    } else {
+      uip_ipaddr_copy(&params.searched_addr, searched_addr);
+    }
+    if(source_addr == NULL) {
+      uip_ipaddr_copy(&params.source_addr, &lrp_myipaddr);
+    } else {
+      uip_ipaddr_copy(&params.source_addr, source_addr);
+    }
     params.source_seqno = source_seqno;
     ctimer_set(&delayed_rreq_timer, rand_wait_duration_before_broadcast(),
                (void (*)(void *)) &wrap_send_rreq, &params);

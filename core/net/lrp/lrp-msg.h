@@ -60,12 +60,20 @@ struct lrp_msg_rreq_t {
   uint8_t type;
   uint8_t addr_len;
   uint16_t source_seqno;
+  uip_ipaddr_t source_addr;
   uip_ipaddr_t searched_addr;
 };
 #if LRP_IS_COORDINATOR
+/** Send a RREQ packet. The packet is always broadcast; if searched_addr (resp.
+ *  source_seqno) is NULL, use all-zero address (resp. the node address)
+ *  instead. */
 void lrp_send_rreq(const uip_ipaddr_t *searched_addr,
+                   const uip_ipaddr_t *source_addr,
                    const uint16_t source_seqno);
+/** Same as `lrp_send_rreq`, but delay the RREQ emission (see
+ *  `rand_wait_duration_before_broadcast`) */
 void lrp_delayed_rreq(const uip_ipaddr_t *searched_addr,
+                      const uip_ipaddr_t *source_addr,
                       const uint16_t source_seqno);
 #endif /* LRP_IS_COORDINATOR */
 
