@@ -479,6 +479,43 @@ lrp_send_hello(const uip_ipaddr_t *nexthop,
                         nexthop, lrp_udpconn->rport);
 }
 
+#define HELLO_BUFFER_SIZE 5
+struct send_hello_params_t {
+  struct ctimer delayed_timer;
+  uip_ipaddr_t nexthop;
+  uint8_t link_cost_type;
+  uint16_t link_cost_value;
+  uint8_t options;
+};
+static struct send_hello_params_t delayed_hello_buffer[HELLO_BUFFER_SIZE];
+
+void wrap_send_hello(struct send_hello_params_t* entry) {
+  lrp_send_hello(&entry->nexthop, entry->link_cost_type, entry->link_cost_value, entry->options);
+}
+
+void
+lrp_delayed_hello(const uip_ipaddr_t *nexthop,
+                  const uint8_t link_cost_type,
+                  const uint16_t link_cost_value,
+                  const uint8_t options)
+{
+  int free_space = 0;
+  while(free_space < HELLO_BUFFER_SIZE && !ctimer_expired(&delayed_hello_buffer[free_space].delayed_timer))
+    free_space++;
+  if(free_space == HELLO_BUFFER_SIZE) {
+    PRINTF("Dropping HELLO to ");
+    PRINT6ADDR(nexthop);
+    PRINTF(": no more space in buffer\n");
+    return;
+  }
+  uip_ipaddr_copy(&delayed_hello_buffer[free_space].nexthop, nexthop);
+  delayed_hello_buffer[free_space].link_cost_type = link_cost_type;
+  delayed_hello_buffer[free_space].link_cost_value = link_cost_value;
+  delayed_hello_buffer[free_space].options = options;
+  ctimer_set(&delayed_hello_buffer[free_space].delayed_timer, rand_wait_duration_before_broadcast(),
+             (void (*)(void *)) &wrap_send_hello, &delayed_hello_buffer[free_space]);
+}
+
 /*---------------------------------------------------------------------------*/
 /* Handle an incoming LRP message. */
 void
@@ -513,7 +550,7 @@ lrp_handle_incoming_msg(void)
     PRINTF(" source=");
     PRINT6ADDR(&rrep->source_addr);
     PRINTF(" seqno/metric/value=%u/0x%x/%u",
-        uip_ntohs(rrep->source_seqno), rrep->metric_type, rrep->metric_value);
+        rrep->source_seqno, rrep->metric_type, rrep->metric_value);
     PRINTF(" dest=");
     PRINT6ADDR(&rrep->dest_addr);
     PRINTF("\n");
@@ -539,7 +576,7 @@ lrp_handle_incoming_msg(void)
     dio->tree_seqno = uip_ntohs(dio->tree_seqno);
     dio->metric_value = uip_ntohs(dio->metric_value);
     PRINTF(" seqno/metric/value=%u/0x%x/%u",
-        uip_ntohs(dio->tree_seqno), dio->metric_type, dio->metric_value);
+        dio->tree_seqno, dio->metric_type, dio->metric_value);
     PRINTF(" sink=");
     PRINT6ADDR(&dio->sink_addr);
     PRINTF(" options=%02x\n", dio->options);
@@ -556,7 +593,7 @@ lrp_handle_incoming_msg(void)
     PRINTF(" initial=");
     PRINT6ADDR(&brk->initial_sender);
     PRINTF(" seqno/metric/value=%u/0x%x/%u",
-        uip_ntohs(brk->node_seqno), brk->metric_type, brk->metric_value);
+        brk->node_seqno, brk->metric_type, brk->metric_value);
     PRINTF(" ring=%d", brk->ring_size);
     PRINTF("\n");
     lrp_handle_incoming_brk(&UIP_IP_BUF->srcipaddr, brk);
@@ -573,8 +610,8 @@ lrp_handle_incoming_msg(void)
     PRINTF(" sink=");
     PRINT6ADDR(&upd->sink_addr);
     PRINTF(" seqno/metric/value=%u/0x%x/%u",
-        uip_ntohs(upd->tree_seqno), upd->metric_type, upd->metric_value);
-    PRINTF(" repair_seqno=%d", uip_ntohs(upd->repair_seqno));
+        upd->tree_seqno, upd->metric_type, upd->metric_value);
+    PRINTF(" repair_seqno=%d", upd->repair_seqno);
     PRINTF(" lost_node=");
     PRINT6ADDR(&upd->lost_node);
     PRINTF("\n");

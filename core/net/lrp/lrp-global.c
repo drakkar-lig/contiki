@@ -237,6 +237,8 @@ enum path_length_comparison_result_t
 path_length_compare(uint16_t seqno_1, uint8_t metric_type_1, uint16_t metric_value_1,
                     uint16_t seqno_2, uint8_t metric_type_2, uint16_t metric_value_2)
 {
+  if(seqno_1 == 0 && seqno_2 == 0)
+    return PLC_OLDER_SEQNO;
   if(SEQNO_GREATER_THAN(seqno_1, seqno_2))
     return PLC_NEWER_SEQNO;
   if(SEQNO_GREATER_THAN(seqno_2, seqno_1))

@@ -319,13 +319,14 @@ lrp_handle_incoming_dio(uip_ipaddr_t* neighbor, struct lrp_msg_dio_t* dio)
     }
   }
 
-  if(nbr == NULL || nbr->reachability == UNKNOWN) {
+  if((nbr == NULL || nbr->reachability == UNKNOWN) && (lrp_state.metric_type != LRP_METRIC_NONE || dio->metric_type != LRP_METRIC_NONE)) {
     /* Unknown neighbor. Check the link and postpone the message processing */
     PRINTF("Postpone DIO processing\n");
+    uint8_t metric_type = (lrp_state.metric_type != LRP_METRIC_NONE ? lrp_state.metric_type : dio->metric_type);
     hello_callback_add(neighbor, (hello_callback_f) lrp_handle_incoming_dio,
                        (struct lrp_msg*) dio);
-    lrp_send_hello(neighbor, lrp_state.metric_type,
-        lrp_link_cost(neighbor, lrp_state.metric_type),
+    lrp_delayed_hello(neighbor, metric_type,
+        lrp_link_cost(neighbor, metric_type),
         LRP_MSG_FLAG_PLEASE_REPLY);
     return;
   }
@@ -412,13 +413,13 @@ lrp_handle_incoming_brk(uip_ipaddr_t* neighbor, struct lrp_msg_brk_t* brk)
     }
   }
 
-  if(nbr == NULL || nbr->reachability == UNKNOWN) {
+  if(nbr == NULL || nbr->reachability == UNKNOWN || brk->metric_type != nbr->link_cost_type) {
     /* Unknown neighbor. Check the link and postpone the message processing */
     PRINTF("Postpone BRK processing\n");
     hello_callback_add(neighbor, (hello_callback_f) lrp_handle_incoming_brk,
                       (struct lrp_msg*) brk);
-    lrp_send_hello(neighbor, lrp_state.metric_type,
-        lrp_link_cost(neighbor, lrp_state.metric_type),
+    lrp_delayed_hello(neighbor, brk->metric_type,
+        lrp_link_cost(neighbor, brk->metric_type),
         LRP_MSG_FLAG_PLEASE_REPLY);
     return;
   }
@@ -436,15 +437,6 @@ lrp_handle_incoming_brk(uip_ipaddr_t* neighbor, struct lrp_msg_brk_t* brk)
                lrp_state.metric_type, 0);
 
 #else /* LRP_IS_SINK */
-  /* We must be sure that the metric are compatible before summing them */
-  if(brk->metric_type != nbr->link_cost_type) {
-    PRINTF("Skip BRK forwarding: unable to determine path cost (metric are "
-           "incompatibles)\n");
-    return;
-    // Here, we might request a compatible metric by sending a HELLO message
-    // with the required metric type.
-  }
-
   if(uip_ds6_defrt_lookup(neighbor) != NULL) {
     /* BRK comes from our default next hop. Should be broadcast, but check the
      * ring size before. */
@@ -572,6 +564,13 @@ hello_callback_add(const uip_ipaddr_t* neighbor, const hello_callback_f callback
 void
 lrp_handle_incoming_hello(uip_ipaddr_t* neighbor, struct lrp_msg_hello_t* hello)
 {
+  if(hello->link_cost_type == LRP_METRIC_NONE) {
+    if(lrp_state.metric_type == LRP_METRIC_NONE) return;
+    lrp_send_hello(neighbor, lrp_state.metric_type,
+                   lrp_link_cost(neighbor, lrp_state.metric_type), LRP_MSG_FLAG_PLEASE_REPLY);
+    return;
+  }
+
   uint16_t local_link_cost = lrp_link_cost(neighbor, hello->link_cost_type);
 
   /* Save the information in the neighbor table */
