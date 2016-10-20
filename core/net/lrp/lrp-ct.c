@@ -143,12 +143,12 @@ lrp_brc_add(const uip_ipaddr_t *brk_sender, const uint16_t seqno,
 #endif /* LRP_IS_COORDINATOR */
 
 /*---------------------------------------------------------------------------*/
+#if !LRP_IS_SINK
 /* Change the default route. `successor` is the neighbor to use as successor ;
  * `link_cost` is the link cost value to this neighbor (types are not checked,
  * and are supposed to be equal between this variable and the information in
  * `msg`). `msg` is a DIO or UPD message from which the decision was taken to
  * select this neighbor as successor. */
-#if !LRP_IS_SINK
 static void
 select_default_route(uip_ipaddr_t *successor, uint16_t link_cost,
                      struct lrp_msg *msg)
@@ -319,10 +319,17 @@ lrp_handle_incoming_dio(uip_ipaddr_t* neighbor, struct lrp_msg_dio_t* dio)
     }
   }
 
-  if((nbr == NULL || nbr->reachability == UNKNOWN) && (lrp_state.metric_type != LRP_METRIC_NONE || dio->metric_type != LRP_METRIC_NONE)) {
-    /* Unknown neighbor. Check the link and postpone the message processing */
+  if(nbr == NULL || nbr->reachability == UNKNOWN ||
+     (dio->metric_type != LRP_METRIC_NONE && dio->metric_type != nbr->link_cost_type)) {
+    /* Unknown neighbor, or different metric. Check the link and postpone the
+       message processing */
+    /* Ensure the either me or the neighbor has a metric ! */
+    if(lrp_state.metric_type == LRP_METRIC_NONE && dio->metric_type == LRP_METRIC_NONE) {
+      PRINTF("Skip DIO processing: neither us nor the neighbor have a usable metric\n");
+      return;
+    }
     PRINTF("Postpone DIO processing\n");
-    uint8_t metric_type = (lrp_state.metric_type != LRP_METRIC_NONE ? lrp_state.metric_type : dio->metric_type);
+    uint8_t metric_type = (dio->metric_type != LRP_METRIC_NONE ? dio->metric_type : lrp_state.metric_type);
     hello_callback_add(neighbor, (hello_callback_f) lrp_handle_incoming_dio,
                        (struct lrp_msg*) dio);
     lrp_delayed_hello(neighbor, metric_type,
@@ -337,19 +344,13 @@ lrp_handle_incoming_dio(uip_ipaddr_t* neighbor, struct lrp_msg_dio_t* dio)
   plc = path_length_compare(
       dio->tree_seqno, dio->metric_type, dio->metric_value + nbr->link_cost_value,
       lrp_state.repair_seqno, lrp_state.metric_type, lrp_state.metric_value);
-  // Note: here, if the metrics types are not compatible, `dio->metric_value +
-  // nbr->link_cost_value` does not mean anything. However, in this situation,
-  // we do not take care to PLC_EQUAL nor to PLC_*_METRIC returned values, so it
-  // doesn't matter.
-  if(plc == PLC_NEWER_SEQNO ||
-     (dio->metric_type == nbr->link_cost_type &&
-      (plc == PLC_SHORTER_METRIC ||
-       (plc == PLC_EQUAL && uip_ds6_defrt_choose() == NULL)))) {
+  if(plc == PLC_NEWER_SEQNO || plc == PLC_SHORTER_METRIC ||
+     (plc == PLC_EQUAL && uip_ds6_defrt_choose() == NULL)) {
     /* Accept the neighbor as new successor */
     PRINTF("Neighbor ");
     PRINT6ADDR(neighbor);
     PRINTF(" accepted as successor from DIO\n");
-    select_default_route(neighbor, nbr->link_cost_value, (struct lrp_msg*)dio); /* TODO Warning: no verification is done here for metric types. */
+    select_default_route(neighbor, nbr->link_cost_value, (struct lrp_msg*)dio);
 #if LRP_IS_COORDINATOR
     /* Schedule broadcasting of this new information */
     lrp_delayed_dio(NULL, 0);
@@ -379,7 +380,7 @@ lrp_handle_incoming_dio(uip_ipaddr_t* neighbor, struct lrp_msg_dio_t* dio)
   // However, in this situation, we do not take care to PLC_EQUAL nor to
   // PLC_*_METRIC returned values, so it doesn't matter.
   if(plc == PLC_NEWER_SEQNO ||
-     (lrp_state.metric_type == dio->metric_type &&
+     (lrp_state.metric_type == nbr->link_cost_type &&
       (plc == PLC_SHORTER_METRIC ||
        (plc == PLC_EQUAL && dio->options & LRP_DIO_OPTION_DETECT_ALL_SUCCESSORS)))) {
     PRINTF("Sender node may be interested by our DIO => will send one back\n");
@@ -482,13 +483,14 @@ lrp_handle_incoming_upd(uip_ipaddr_t* neighbor, struct lrp_msg_upd_t* upd)
   /* Find link cost between ourself and this neighbor */
   lrp_neighbor_t* nbr = nbr_table_get_from_lladdr(
       lrp_neighbors, (linkaddr_t*) uip_ds6_nbr_lladdr_from_ipaddr(neighbor));
-  if(nbr == NULL) {
-    /* Unknown neighbor. Check the link and postpone the message processing */
+  if(nbr == NULL || nbr->reachability == UNKNOWN || nbr->link_cost_type != upd->metric_type) {
+    /* Unknown neighbor, or different metric. Check the link and postpone the
+       message processing */
     PRINTF("Postpone UPD processing\n");
     hello_callback_add(neighbor, (hello_callback_f) lrp_handle_incoming_upd,
                       (struct lrp_msg*) upd);
-    lrp_send_hello(neighbor, lrp_state.metric_type,
-        lrp_link_cost(neighbor, lrp_state.metric_type),
+    lrp_send_hello(neighbor, upd->metric_type,
+        lrp_link_cost(neighbor, upd->metric_type),
         LRP_MSG_FLAG_PLEASE_REPLY);
     return;
   }
@@ -497,15 +499,10 @@ lrp_handle_incoming_upd(uip_ipaddr_t* neighbor, struct lrp_msg_upd_t* upd)
   enum path_length_comparison_result_t plc = path_length_compare(
       upd->repair_seqno, upd->metric_type, upd->metric_value + nbr->link_cost_value,
       lrp_state.repair_seqno, lrp_state.metric_type, lrp_state.metric_value);
-  // Note: here, if the metrics types are not compatible, `upd->metric_value +
-  // nbr->link_cost_value` does not mean anything. However, in this situation,
-  // we do not take care to PLC_EQUAL nor to PLC_*_METRIC returned values, so it
-  // doesn't matter.
-  if(plc == PLC_NEWER_SEQNO ||
-     (upd->metric_type == nbr->link_cost_type && plc == PLC_SHORTER_METRIC)) {
+  if(plc == PLC_NEWER_SEQNO || plc == PLC_SHORTER_METRIC) {
     /* The offer in the UPD message is better than previous successor. Select
      * it as new successor */
-    select_default_route(neighbor, nbr->link_cost_value, (struct lrp_msg*)upd); /* TODO Warning: no verification is done here for metric types. */
+    select_default_route(neighbor, nbr->link_cost_value, (struct lrp_msg*)upd);
 
     if(lrp_is_my_global_address(&upd->lost_node)) {
       /* We are the BRK originator. UPD has reach its final destination */
@@ -513,7 +510,7 @@ lrp_handle_incoming_upd(uip_ipaddr_t* neighbor, struct lrp_msg_upd_t* upd)
       return;
     }
 
-    /* Find the neighbor we have to forward the UPD message to */
+    /* Find the neighbor to which we have to forward the UPD message */
     uip_ipaddr_t* nexthop = lrp_brc_lookup(&upd->lost_node);
     if(nexthop == NULL) {
       PRINTF("Skip UPD forwarding: No route to transmit UPD towards ");
@@ -522,16 +519,7 @@ lrp_handle_incoming_upd(uip_ipaddr_t* neighbor, struct lrp_msg_upd_t* upd)
       return;
     }
 
-    /* We must be sure that the metric are compatible before summing them */
-    if(upd->metric_type != nbr->link_cost_type) {
-      PRINTF("Skip UPD forwarding: unable to determine path cost (metric are "
-             "incompatibles)\n");
-      return;
-      // Here, we might request a compatible metric by sending a HELLO message
-      // with the required metric type.
-    }
-
-    /* Forward the UPD message further to this neighbor */
+    /* Forward the UPD message to this neighbor */
     lrp_send_upd(&upd->lost_node, &upd->sink_addr, nexthop,
                  upd->tree_seqno, upd->repair_seqno,
                  upd->metric_type, upd->metric_value + nbr->link_cost_value);
