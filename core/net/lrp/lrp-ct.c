@@ -502,6 +502,17 @@ lrp_handle_incoming_upd(uip_ipaddr_t* neighbor, struct lrp_msg_upd_t* upd)
   if(plc == PLC_NEWER_SEQNO || plc == PLC_SHORTER_METRIC) {
     /* The offer in the UPD message is better than previous successor. Select
      * it as new successor */
+
+    if(!lrp_is_predecessor(neighbor) && uip_ds6_defrt_lookup(neighbor) == NULL) {
+      /* Neighbor is nor a predecessor nor a successor => We are the new subtree
+         root. Ask all our predecessors to recreate their host route, as it has
+         been broken by the local repair. */
+      PRINTF("Schedule a null-RREQ\n");
+      SEQNO_INCREASE(lrp_state.node_seqno);
+      lrp_state_save();
+      lrp_delayed_rreq(NULL, NULL, lrp_state.node_seqno);
+    }
+
     select_default_route(neighbor, nbr->link_cost_value, (struct lrp_msg*)upd);
 
     if(lrp_is_my_global_address(&upd->lost_node)) {

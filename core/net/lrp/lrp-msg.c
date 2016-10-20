@@ -63,7 +63,17 @@ lrp_send_rreq(const uip_ipaddr_t *searched_addr,
   struct lrp_msg_rreq_t rreq;
 
   PRINTF("Send RREQ (broadcast) for ");
-  PRINT6ADDR(searched_addr);
+  if(searched_addr != NULL) {
+    PRINT6ADDR(searched_addr);
+  } else {
+    PRINTF("(all)");
+  }
+  PRINTF(" source=");
+  if(source_addr != NULL) {
+    PRINT6ADDR(source_addr);
+  } else {
+    PRINTF("(myself)");
+  }
   PRINTF(" seqno=%u\n", source_seqno);
 
   /* Fill message */

@@ -188,44 +188,60 @@ offer_route(uip_ipaddr_t *orig_addr, const uint8_t length,
 
 /*---------------------------------------------------------------------------*/
 /* Handle an incoming RREQ type message. */
+#define RREQ_CACHE_SIZE 2
 void
 lrp_handle_incoming_rreq(uip_ipaddr_t* neighbor, struct lrp_msg_rreq_t* rreq)
 {
 #if !LRP_IS_SINK
-  static seqno_t last_seen_rreq_seqno = 0;
+  static struct {
+    uip_ipaddr_t source;
+    uint16_t seqno;
+  } rreq_cache[RREQ_CACHE_SIZE];
+  static int last_used_entry;
+  int i;
+
+    /* Ensure the RREQ follows the DODAG */
+    if(uip_ds6_defrt_lookup(neighbor) == NULL) {
+      /* This is not a upstream neighbor */
+      PRINTF("Skip: RREQ does not come from upstream neighbor\n");
+      return;
+    }
 
   /* Check if it is a new RREQ message */
-  if(SEQNO_GREATER_THAN(last_seen_rreq_seqno, rreq->source_seqno) ||
-     last_seen_rreq_seqno == rreq->source_seqno) {
-    PRINTF("Skip: RREQ too old\n");
-    return;
+  for (i = 0; i < RREQ_CACHE_SIZE; i++) {
+    if(uip_ipaddr_cmp(&rreq->source_addr, &rreq_cache[i].source) &&
+       (SEQNO_GREATER_THAN(rreq_cache[i].seqno, rreq->source_seqno) ||
+        rreq_cache[i].seqno == rreq->source_seqno)) {
+      PRINTF("Skip: RREQ too old\n");
+      return;
+    }
   }
 
-  /* Ensure the RREQ follows the DODAG */
-  if(uip_ds6_defrt_lookup(neighbor) == NULL) {
-    /* This is not a upstream neighbor */
-    PRINTF("Skip: RREQ does not come from upstream neighbor\n");
-    return;
-  }
+  /* Record the RREQ in cache */
+  last_used_entry = (last_used_entry + 1) % RREQ_CACHE_SIZE;
+  rreq_cache[last_used_entry].seqno = rreq->source_seqno;
+  uip_ipaddr_copy(&rreq_cache[last_used_entry].source, &rreq->source_addr);
 
-  last_seen_rreq_seqno = rreq->source_seqno;
-
-  /* Answer to RREQ if the searched address is our address */
-  if(lrp_is_my_global_address(&rreq->searched_addr)) {
+  /* Answer by a RREP if:
+     + We are explicitely mentionned as searched_addr.
+     + The searched address is void: a successor has broken our host route. */
+  if(lrp_is_my_global_address(&rreq->searched_addr) ||
+     lrp_ipaddr_is_empty(&rreq->searched_addr)) {
+    PRINTF("Answer by a RREP\n");
     SEQNO_INCREASE(lrp_state.node_seqno);
     lrp_state_save();
-    lrp_send_rrep(&lrp_state.sink_addr, uip_ds6_defrt_choose(),
-                  &rreq->searched_addr,
+    lrp_send_rrep(&lrp_state.sink_addr, uip_ds6_defrt_choose(), &lrp_myipaddr,
                   lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
+  }
 
 #if LRP_IS_COORDINATOR
-    /* Only coordinator forward RREQ */
-  } else {
+  /* Forward RREQ, except if the searched address was our. */
+  if(!lrp_is_my_global_address(&rreq->searched_addr)) {
     PRINTF("Forward RREQ\n");
     lrp_delayed_rreq(&rreq->searched_addr, &rreq->source_addr,
                      rreq->source_seqno);
-#endif /* LRP_IS_COORDINATOR */
   }
+#endif /* LRP_IS_COORDINATOR */
 #else /* not !LRP_IS_SINK */
   PRINTF("Skip RREQ processing: is a sink\n");
 #endif /* !LRP_IS_SINK */

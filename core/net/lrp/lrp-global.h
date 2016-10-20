@@ -136,5 +136,8 @@ enum path_length_comparison_result_t {
 enum path_length_comparison_result_t path_length_compare(
     uint16_t seqno_1, uint8_t metric_type_1, uint16_t metric_value_1,
     uint16_t seqno_2, uint8_t metric_type_2, uint16_t metric_value_2);
+/* Return true if `addr` is a predecessor, that is, is used as next hop into
+ * the routing table */
+uint8_t lrp_is_predecessor(uip_ipaddr_t *addr);
 #endif /* UIP_CONF_IPV6_LRP */
 #endif /* __LRP_GLOBAL_H__ */

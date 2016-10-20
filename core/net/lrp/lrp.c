@@ -106,29 +106,6 @@ get_global_addr(uip_ipaddr_t *addr)
   return 0;
 }
 /*---------------------------------------------------------------------------*/
-/* Return true if `addr` is a predecessor, that is, is used as next hop into
- * the routing table */
-#if !LRP_IS_SINK && LRP_IS_COORDINATOR
-static uint8_t
-lrp_is_predecessor(uip_ipaddr_t *addr)
-{
-  uip_ds6_route_t *r;
-
-  if(addr == NULL) {
-    /* Unknown neighor, not a predecessor */
-    return 0 == 1;
-  }
-  for(r = uip_ds6_route_head(); r != NULL; r = uip_ds6_route_next(r)) {
-    if(memcmp(uip_ds6_route_nexthop(r), addr, sizeof(uip_ipaddr_t)) == 0) {
-      /* Found as route's next hop => is a predecessor */
-      return 1 == 1;
-    }
-  }
-  return 0 == 1;
-}
-#endif /* !LRP_IS_SINK && LRP_IS_COORDINATOR */
-
-/*---------------------------------------------------------------------------*/
 void
 lrp_set_local_prefix(uip_ipaddr_t *prefix, uint8_t len)
 {

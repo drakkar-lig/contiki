@@ -123,10 +123,10 @@ lrp_ipaddr_is_empty(uip_ipaddr_t *addr)
   uint8_t i;
   for(i = 0; i < 8; i++) {
     if(((uint16_t *)addr)[i] != 0x0000) {
-      return 0 == 1;
+      return 0; /* FALSE */
     }
   }
-  return 1 == 1;
+  return 1; /* TRUE */
 }
 /*---------------------------------------------------------------------------*/
 /* Return the cost of the this link, as seen by this node. This does not take
@@ -252,3 +252,22 @@ path_length_compare(uint16_t seqno_1, uint8_t metric_type_1, uint16_t metric_val
   return PLC_EQUAL;
 }
 #endif /* UIP_CONF_IPV6_LRP */
+/*---------------------------------------------------------------------------*/
+/* Return true if `addr` is a predecessor, that is, is used as next hop into
+ * the routing table */
+uint8_t lrp_is_predecessor(uip_ipaddr_t *addr)
+{
+  uip_ds6_route_t *r;
+
+  if(addr == NULL) {
+    /* Unknown neighor, not a predecessor */
+    return 0 == 1;
+  }
+  for(r = uip_ds6_route_head(); r != NULL; r = uip_ds6_route_next(r)) {
+    if(memcmp(uip_ds6_route_nexthop(r), addr, sizeof(uip_ipaddr_t)) == 0) {
+      /* Found as route's next hop => is a predecessor */
+      return 1 == 1;
+    }
+  }
+  return 0 == 1;
+}
