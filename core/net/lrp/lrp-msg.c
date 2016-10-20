@@ -657,8 +657,9 @@ lrp_handle_incoming_msg(void)
     PRINT6ADDR(&UIP_IP_BUF->destipaddr);
     struct lrp_msg_hello_t* hello = (struct lrp_msg_hello_t*)uip_appdata;
     hello->link_cost_value = uip_ntohs(hello->link_cost_value);
-    PRINTF(" link cost metric/value=0x%x/%u\n",
-        hello->link_cost_type, hello->link_cost_value);
+    PRINTF(" link cost metric/value=0x%x/%u, options=%s\n",
+        hello->link_cost_type, hello->link_cost_value,
+        (hello->options & LRP_MSG_FLAG_PLEASE_REPLY ? "PLEASE_REPLY" : "(0)"));
     lrp_handle_incoming_hello(&UIP_IP_BUF->srcipaddr, hello);
     break;
   default:
