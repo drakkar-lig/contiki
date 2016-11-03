@@ -40,8 +40,8 @@
 #define DEBUG DEBUG_PRINT
 #include "net/ip/uip-debug.h"
 
-#define SEND_INTERVAL    60 * CLOCK_SECOND
-#define SEND_JITTER      5 * CLOCK_SECOND
+#define SEND_INTERVAL    300 * CLOCK_SECOND
+#define SEND_JITTER      30 * CLOCK_SECOND
 #define MAX_PAYLOAD_LEN  40
 
 /* IP address of the udp-server node */
