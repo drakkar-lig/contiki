@@ -63,7 +63,7 @@ lrp_send_rreq(const uip_ipaddr_t *searched_addr,
   struct lrp_msg_rreq_t rreq;
 
   PRINTF("Send RREQ (broadcast) for ");
-  if(searched_addr != NULL) {
+  if(searched_addr != NULL && !lrp_ipaddr_is_empty(searched_addr)) {
     PRINT6ADDR(searched_addr);
   } else {
     PRINTF("(all)");
