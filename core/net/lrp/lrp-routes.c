@@ -222,6 +222,15 @@ lrp_handle_incoming_rreq(uip_ipaddr_t* neighbor, struct lrp_msg_rreq_t* rreq)
   rreq_cache[last_used_entry].seqno = rreq->source_seqno;
   uip_ipaddr_copy(&rreq_cache[last_used_entry].source, &rreq->source_addr);
 
+#if LRP_IS_COORDINATOR
+  /* Forward RREQ, except if the searched address was our. */
+  if(!lrp_is_my_global_address(&rreq->searched_addr)) {
+    PRINTF("Forward RREQ\n");
+    lrp_delayed_rreq(&rreq->searched_addr, &rreq->source_addr,
+                     rreq->source_seqno);
+  }
+#endif /* LRP_IS_COORDINATOR */
+
   /* Answer by a RREP if:
      + We are explicitely mentionned as searched_addr.
      + The searched address is void: a successor has broken our host route. */
@@ -233,15 +242,6 @@ lrp_handle_incoming_rreq(uip_ipaddr_t* neighbor, struct lrp_msg_rreq_t* rreq)
     lrp_send_rrep(&lrp_state.sink_addr, uip_ds6_defrt_choose(), &lrp_myipaddr,
                   lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
   }
-
-#if LRP_IS_COORDINATOR
-  /* Forward RREQ, except if the searched address was our. */
-  if(!lrp_is_my_global_address(&rreq->searched_addr)) {
-    PRINTF("Forward RREQ\n");
-    lrp_delayed_rreq(&rreq->searched_addr, &rreq->source_addr,
-                     rreq->source_seqno);
-  }
-#endif /* LRP_IS_COORDINATOR */
 #else /* not !LRP_IS_SINK */
   PRINTF("Skip RREQ processing: is a sink\n");
 #endif /* !LRP_IS_SINK */
