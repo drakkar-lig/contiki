@@ -93,7 +93,7 @@
 
 /* Wait randomly this given time (in ticks) before sending a message, when
  * flooding the network */
-#define LRP_RANDOM_WAIT        500 * CLOCK_SECOND / 1000
+#define LRP_RANDOM_WAIT        10 * CLOCK_SECOND
 
 /* If NUD is deactivated, unacked messages are counted, and next hop is deleted
  * when the number of consecutive noacked messages reach this constant. */
