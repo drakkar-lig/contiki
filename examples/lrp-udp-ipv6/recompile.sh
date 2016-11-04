@@ -31,8 +31,3 @@ if ! make -q udp-client >/dev/null; then
   make udp-client || exit 1
   rm -f $LRP_OBJECT_FILES
 fi
-
-if ! make -q relay >/dev/null; then
-  make relay || exit 1
-  rm -f $LRP_OBJECT_FILES
-fi
