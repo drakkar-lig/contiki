@@ -128,8 +128,10 @@ lrp_delayed_rreq(const uip_ipaddr_t *searched_addr,
       uip_ipaddr_copy(&params.source_addr, source_addr);
     }
     params.source_seqno = source_seqno;
-    ctimer_set(&delayed_rreq_timer, rand_wait_duration_before_broadcast(),
+    uint32_t wait_delay = rand_wait_duration_before_broadcast();
+    ctimer_set(&delayed_rreq_timer, wait_delay,
                (void (*)(void *)) &wrap_send_rreq, &params);
+    PRINTF("RREQ scheduled in %0.3f seconds\n", ((float)wait_delay) / CLOCK_SECOND);
   } else {
     PRINTF("RREQ to ");
     PRINT6ADDR(searched_addr);
@@ -218,8 +220,10 @@ lrp_delayed_rrep(const uip_ipaddr_t *dest_addr,
     delayed_rrep_buffer[position].args.metric_type = metric_type;
     delayed_rrep_buffer[position].args.metric_value = metric_value;
     /* Configure timer */
-    ctimer_set(&delayed_rrep_buffer[position].timer, rand_wait_duration_before_broadcast(),
+    uint32_t wait_delay = rand_wait_duration_before_broadcast();
+    ctimer_set(&delayed_rrep_buffer[position].timer, wait_delay,
                (void (*)(void *))&wrap_send_rrep, &delayed_rrep_buffer[position].args);
+    PRINTF("RREP scheduled in %0.3f seconds\n", ((float)wait_delay) / CLOCK_SECOND);
   } else {
     PRINTF("RREP from ");
     PRINT6ADDR(source_addr);
@@ -362,8 +366,10 @@ lrp_delayed_dio(uip_ipaddr_t *destination, uint8_t options)
     uip_ipaddr_copy(&delayed_dio_buffer[free_space].params.destination, destination);
   }
   delayed_dio_buffer[free_space].params.options = options;
-  ctimer_set(&delayed_dio_buffer[free_space].timer, rand_wait_duration_before_broadcast(),
+  uint32_t wait_delay = rand_wait_duration_before_broadcast();
+  ctimer_set(&delayed_dio_buffer[free_space].timer, wait_delay,
              (void (*)(void *)) &wrap_send_dio, &delayed_dio_buffer[free_space].params);
+  PRINTF("DIO scheduled in %0.3f seconds\n", ((float)wait_delay) / CLOCK_SECOND);
 }
 #endif /* LRP_IS_COORDINATOR */
 
@@ -444,8 +450,10 @@ lrp_delayed_brk(const uip_ipaddr_t *initial_sender,
     params.metric_type = metric_type;
     params.metric_value = metric_value;
     params.ring_size = ring_size;
-    ctimer_set(&delayed_brk_timer, rand_wait_duration_before_broadcast(),
+    uint32_t wait_delay = rand_wait_duration_before_broadcast();
+    ctimer_set(&delayed_brk_timer, wait_delay,
                (void (*)(void *)) &wrap_send_brk, &params);
+    PRINTF("BRK scheduled in %0.3f seconds\n", ((float)wait_delay) / CLOCK_SECOND);
   } else {
     PRINTF("Dropping BRK from ");
     PRINT6ADDR(initial_sender);
@@ -545,8 +553,10 @@ lrp_delayed_hello(const uip_ipaddr_t *nexthop,
   delayed_hello_buffer[free_space].link_cost_type = link_cost_type;
   delayed_hello_buffer[free_space].link_cost_value = link_cost_value;
   delayed_hello_buffer[free_space].options = options;
-  ctimer_set(&delayed_hello_buffer[free_space].delayed_timer, rand_wait_duration_before_broadcast(),
+  uint32_t wait_delay = rand_wait_duration_before_broadcast();
+  ctimer_set(&delayed_hello_buffer[free_space].delayed_timer, wait_delay,
              (void (*)(void *)) &wrap_send_hello, &delayed_hello_buffer[free_space]);
+  PRINTF("HELLO scheduled in %0.3f seconds\n", ((float)wait_delay) / CLOCK_SECOND);
 }
 
 /*---------------------------------------------------------------------------*/
