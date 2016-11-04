@@ -200,12 +200,13 @@ lrp_handle_incoming_rreq(uip_ipaddr_t* neighbor, struct lrp_msg_rreq_t* rreq)
   static int last_used_entry;
   int i;
 
-    /* Ensure the RREQ follows the DODAG */
+  /* For confined RREQ, ensure it follows the DODAG */
+  if(lrp_ipaddr_is_empty(&rreq->searched_addr)) {
     if(uip_ds6_defrt_lookup(neighbor) == NULL) {
-      /* This is not a upstream neighbor */
-      PRINTF("Skip: RREQ does not come from upstream neighbor\n");
+      PRINTF("Skip: Confined RREQ does not come from upstream neighbor\n");
       return;
     }
+  }
 
   /* Check if it is a new RREQ message */
   for (i = 0; i < RREQ_CACHE_SIZE; i++) {
