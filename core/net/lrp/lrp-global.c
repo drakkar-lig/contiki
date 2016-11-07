@@ -118,7 +118,7 @@ lrp_state_restore(void)
 
 /*---------------------------------------------------------------------------*/
 uint8_t
-lrp_ipaddr_is_empty(uip_ipaddr_t *addr)
+lrp_ipaddr_is_empty(const uip_ipaddr_t *addr)
 {
   uint8_t i;
   for(i = 0; i < 8; i++) {
@@ -132,7 +132,7 @@ lrp_ipaddr_is_empty(uip_ipaddr_t *addr)
 /* Return the cost of the this link, as seen by this node. This does not take
  * care of the remote node vision of the link. */
 uint16_t
-lrp_link_cost(uip_ipaddr_t *link, uint8_t metric_type)
+lrp_link_cost(const uip_ipaddr_t *link, uint8_t metric_type)
 {
   switch(metric_type) {
     case LRP_METRIC_NONE:
@@ -148,7 +148,7 @@ lrp_link_cost(uip_ipaddr_t *link, uint8_t metric_type)
 }
 /*---------------------------------------------------------------------------*/
 uint8_t
-lrp_is_my_global_address(uip_ipaddr_t *addr)
+lrp_is_my_global_address(const uip_ipaddr_t *addr)
 {
   int i;
   int state;
@@ -167,7 +167,7 @@ lrp_is_my_global_address(uip_ipaddr_t *addr)
 /*---------------------------------------------------------------------------*/
 #if LRP_IS_SINK
 uint8_t
-lrp_addr_match_local_prefix(uip_ipaddr_t *host)
+lrp_addr_match_local_prefix(const uip_ipaddr_t *host)
 {
   return uip_ipaddr_prefixcmp(&lrp_local_prefix.prefix, host,
                               lrp_local_prefix.len);
@@ -180,7 +180,7 @@ lrp_addr_match_local_prefix(uip_ipaddr_t *host)
  * neighbor is entred as "incomplete" entry, and NS/NA will be performed to
  * confirm neighbor presence and get its lladdr. */
 void
-lrp_nbr_add(uip_ipaddr_t *next_hop)
+lrp_nbr_add(const uip_ipaddr_t *next_hop)
 {
 #if !UIP_ND6_SEND_NA
   uip_lladdr_t nbr_lladdr;
@@ -255,7 +255,7 @@ path_length_compare(uint16_t seqno_1, uint8_t metric_type_1, uint16_t metric_val
 /*---------------------------------------------------------------------------*/
 /* Return true if `addr` is a predecessor, that is, is used as next hop into
  * the routing table */
-uint8_t lrp_is_predecessor(uip_ipaddr_t *addr)
+uint8_t lrp_is_predecessor(const uip_ipaddr_t *addr)
 {
   uip_ds6_route_t *r;
 

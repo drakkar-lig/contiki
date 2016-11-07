@@ -202,11 +202,15 @@ struct lrp_msg_hello_t {
   uint8_t link_cost_type;
   uint16_t link_cost_value;
 };
+#define LRP_MSG_FLAG_PLEASE_REPLY 0x80
 void lrp_send_hello(const uip_ipaddr_t* nexthop,
                     const uint8_t link_cost_type,
                     const uint16_t link_cost_value,
                     const uint8_t options);
-#define LRP_MSG_FLAG_PLEASE_REPLY 0x80
+void lrp_delayed_hello(const uip_ipaddr_t *nexthop,
+                       const uint8_t link_cost_type,
+                       const uint16_t link_cost_value,
+                       const uint8_t options);
 
 #define LRP_MAX_MSG_SIZE sizeof(union{ \
   struct lrp_msg_rreq_t a; struct lrp_msg_rrep_t b; struct lrp_msg_rerr_t c; \

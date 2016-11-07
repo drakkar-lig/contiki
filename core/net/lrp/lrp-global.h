@@ -55,7 +55,9 @@ struct uip_udp_conn *lrp_udpconn;
   uip_ip6addr(a, 0xff02, 0, 0, 0, 0, 0, 0, 0x001b)
 #define uip_create_linklocal_empty_addr(a) \
   uip_ip6addr(a, 0, 0, 0, 0, 0, 0, 0, 0)
-uint8_t lrp_ipaddr_is_empty(uip_ipaddr_t *addr);
+uint8_t lrp_ipaddr_is_empty(const uip_ipaddr_t *);
+uint8_t lrp_is_my_global_address(const uip_ipaddr_t *);
+uint8_t lrp_addr_match_local_prefix(const uip_ipaddr_t *);
 
 uip_ipaddr_t lrp_myipaddr;
 
@@ -111,11 +113,8 @@ void lrp_state_restore(void);
 #define lrp_state_restore() lrp_state_new()
 #endif /* LRP_USE_CFS */
 
-uint8_t lrp_ipaddr_is_empty(uip_ipaddr_t *);
-uint16_t lrp_link_cost(uip_ipaddr_t *link, uint8_t metric_type);
-uint8_t lrp_is_my_global_address(uip_ipaddr_t *);
-uint8_t lrp_addr_match_local_prefix(uip_ipaddr_t *);
-void lrp_nbr_add(uip_ipaddr_t *next_hop);
+uint16_t lrp_link_cost(const uip_ipaddr_t *link, uint8_t metric_type);
+void lrp_nbr_add(const uip_ipaddr_t *next_hop);
 uint32_t rand_wait_duration_before_broadcast();
 
 enum path_length_comparison_result_t {
@@ -136,8 +135,11 @@ enum path_length_comparison_result_t {
 enum path_length_comparison_result_t path_length_compare(
     uint16_t seqno_1, uint8_t metric_type_1, uint16_t metric_value_1,
     uint16_t seqno_2, uint8_t metric_type_2, uint16_t metric_value_2);
-/* Return true if `addr` is a predecessor, that is, is used as next hop into
- * the routing table */
-uint8_t lrp_is_predecessor(uip_ipaddr_t *addr);
+
+/** Return true if `addr` is a predecessor, that is, is used as next hop into
+ * the routing table
+ */
+uint8_t lrp_is_predecessor(const uip_ipaddr_t *addr);
+
 #endif /* UIP_CONF_IPV6_LRP */
 #endif /* __LRP_GLOBAL_H__ */
