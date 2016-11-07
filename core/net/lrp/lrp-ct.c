@@ -346,6 +346,16 @@ lrp_handle_incoming_dio(uip_ipaddr_t* neighbor, struct lrp_msg_dio_t* dio)
       lrp_state.repair_seqno, lrp_state.metric_type, lrp_state.metric_value);
   if(plc == PLC_NEWER_SEQNO || plc == PLC_SHORTER_METRIC ||
      (plc == PLC_EQUAL && uip_ds6_defrt_choose() == NULL)) {
+     if (lrp_state.tree_seqno != 0 && uip_ds6_defrt_choose() == NULL) {
+       PRINTF("Trivial local repair finished\n");
+       /* We have just finished a trivial local repair => ask all our
+       predecessors to recreate their host route, as it has been broken by
+       the local repair. */
+       PRINTF("Schedule a confined RREQ\n");
+       SEQNO_INCREASE(lrp_state.node_seqno);
+       lrp_state_save();
+       lrp_delayed_rreq(NULL, NULL, lrp_state.node_seqno);
+    }
     /* Accept the neighbor as new successor */
     PRINTF("Neighbor ");
     PRINT6ADDR(neighbor);
@@ -507,7 +517,7 @@ lrp_handle_incoming_upd(uip_ipaddr_t* neighbor, struct lrp_msg_upd_t* upd)
       /* Neighbor is nor a predecessor nor a successor => We are the new subtree
          root. Ask all our predecessors to recreate their host route, as it has
          been broken by the local repair. */
-      PRINTF("Schedule a null-RREQ\n");
+      PRINTF("Schedule a confined RREQ\n");
       SEQNO_INCREASE(lrp_state.node_seqno);
       lrp_state_save();
       lrp_delayed_rreq(NULL, NULL, lrp_state.node_seqno);
@@ -517,7 +527,7 @@ lrp_handle_incoming_upd(uip_ipaddr_t* neighbor, struct lrp_msg_upd_t* upd)
 
     if(lrp_is_my_global_address(&upd->lost_node)) {
       /* We are the BRK originator. UPD has reach its final destination */
-      PRINTF("Route successfully repaired !\n");
+      PRINTF("Local repair finished\n");
       return;
     }
 
