@@ -170,8 +170,9 @@ PROCESS_THREAD(udp_client_process, ev, data)
   PRINTF("]:%u (local port %u)\n",
          UIP_HTONS(client_conn->rport), UIP_HTONS(client_conn->lport));
 
-  /* First packet is sent randomly between 0 and SEND_INTERVAL */
-  etimer_set(&et,  random_rand() % SEND_INTERVAL);
+  /* First packet is sent randomly between SEND_INTERVAL and SEND_INTERVAL * 2
+   * (let the node to start, do not stress it at the beginning) */
+  etimer_set(&et, SEND_INTERVAL + random_rand() % SEND_INTERVAL);
 
   /* Main loop */
   while(1) {
