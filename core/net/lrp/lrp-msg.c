@@ -131,7 +131,7 @@ lrp_delayed_rreq(const uip_ipaddr_t *searched_addr,
     uint32_t wait_delay = rand_wait_duration_before_broadcast();
     ctimer_set(&delayed_rreq_timer, wait_delay,
                (void (*)(void *)) &wrap_send_rreq, &params);
-    PRINTF("RREQ scheduled in %0.3f seconds\n", ((float)wait_delay) / CLOCK_SECOND);
+    PRINTF("RREQ scheduled in %lums\n", wait_delay * 1000 / CLOCK_SECOND);
   } else {
     PRINTF("RREQ to ");
     PRINT6ADDR(searched_addr);
@@ -223,7 +223,7 @@ lrp_delayed_rrep(const uip_ipaddr_t *dest_addr,
     uint32_t wait_delay = rand_wait_duration_before_broadcast();
     ctimer_set(&delayed_rrep_buffer[position].timer, wait_delay,
                (void (*)(void *))&wrap_send_rrep, &delayed_rrep_buffer[position].args);
-    PRINTF("RREP scheduled in %0.3f seconds\n", ((float)wait_delay) / CLOCK_SECOND);
+    PRINTF("RREP scheduled in %lums\n", wait_delay * 1000 / CLOCK_SECOND);
   } else {
     PRINTF("RREP from ");
     PRINT6ADDR(source_addr);
@@ -369,7 +369,7 @@ lrp_delayed_dio(uip_ipaddr_t *destination, uint8_t options)
   uint32_t wait_delay = rand_wait_duration_before_broadcast();
   ctimer_set(&delayed_dio_buffer[free_space].timer, wait_delay,
              (void (*)(void *)) &wrap_send_dio, &delayed_dio_buffer[free_space].params);
-  PRINTF("DIO scheduled in %0.3f seconds\n", ((float)wait_delay) / CLOCK_SECOND);
+  PRINTF("DIO scheduled in %lums\n", wait_delay * 1000 / CLOCK_SECOND);
 }
 #endif /* LRP_IS_COORDINATOR */
 
@@ -453,7 +453,7 @@ lrp_delayed_brk(const uip_ipaddr_t *initial_sender,
     uint32_t wait_delay = rand_wait_duration_before_broadcast();
     ctimer_set(&delayed_brk_timer, wait_delay,
                (void (*)(void *)) &wrap_send_brk, &params);
-    PRINTF("BRK scheduled in %0.3f seconds\n", ((float)wait_delay) / CLOCK_SECOND);
+    PRINTF("BRK scheduled in %lums\n", wait_delay * 1000 / CLOCK_SECOND);
   } else {
     PRINTF("Dropping BRK from ");
     PRINT6ADDR(initial_sender);
@@ -556,7 +556,7 @@ lrp_delayed_hello(const uip_ipaddr_t *nexthop,
   uint32_t wait_delay = rand_wait_duration_before_broadcast();
   ctimer_set(&delayed_hello_buffer[free_space].delayed_timer, wait_delay,
              (void (*)(void *)) &wrap_send_hello, &delayed_hello_buffer[free_space]);
-  PRINTF("HELLO scheduled in %0.3f seconds\n", ((float)wait_delay) / CLOCK_SECOND);
+  PRINTF("HELLO scheduled in %lums\n", wait_delay * 1000 / CLOCK_SECOND);
 }
 
 /*---------------------------------------------------------------------------*/

@@ -178,7 +178,6 @@ select_default_route(uip_ipaddr_t *successor, uint16_t link_cost,
     return;
   }
 
-
   /* Check if we are actually changing of next hop */
   if(old_defrt == NULL) {
     /* Remove previous default route */
@@ -242,12 +241,15 @@ reconnect_callback()
        * reconnection algorithm. */
       stop_reconnect_callback();
       return;
-    }
-    /* Else, we do not have send enough DIO messages. Maybe a neighbour has
-     * not send us a DIO message successfully. We thus continue sending
-     * DIO messages. */
+    } else {
+      /* We do not have send enough DIO messages. Maybe a neighbour has
+       * not send us a DIO message successfully. We thus continue sending
+       * DIO messages. */
+       PRINTF("Connected, but sending again a DIO: we might have missed one "
+              "neighbor\n");
+     }
   }
-  /* Send infinite-rank DIO/BRK message. */
+  /* Send DIO/BRK message. */
 #if !LRP_IS_COORDINATOR
   /* Is a leaf: only use DR. */
   lrp_send_dio(NULL, LRP_DIO_OPTION_DETECT_ALL_SUCCESSORS);
