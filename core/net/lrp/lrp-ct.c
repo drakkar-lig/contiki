@@ -362,8 +362,12 @@ lrp_handle_incoming_dio(uip_ipaddr_t* neighbor, struct lrp_msg_dio_t* dio)
     PRINTF(" accepted as successor from DIO\n");
     select_default_route(neighbor, nbr->link_cost_value, (struct lrp_msg*)dio);
 #if LRP_IS_COORDINATOR
-    /* Schedule broadcasting of this new information */
-    lrp_delayed_dio(NULL, 0);
+    if(plc != PLC_EQUAL) {
+      /* Schedule broadcasting of this new information */
+      lrp_delayed_dio(NULL, 0);
+    }
+    /* else, we have selected a new successor, but with the same metric as the
+    * old one: do not perturb vicinity with that info. */
 #endif /* LRP_IS_COORDINATOR */
     return;
   } else {
