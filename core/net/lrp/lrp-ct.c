@@ -44,6 +44,7 @@
 #include "net/lrp/lrp.h"
 #include "net/lrp/lrp-def.h"
 #include "net/lrp/lrp-ct.h"
+#include "net/lrp/lrp-routes.h"
 #include "net/lrp/lrp-global.h"
 #include "net/lrp/lrp-msg.h"
 #include "net/ip/uip-debug.h"
@@ -192,11 +193,8 @@ select_default_route(uip_ipaddr_t *successor, uint16_t link_cost,
     PRINTF("\n");
     uip_ds6_defrt_add(successor, LRP_DEFRT_LIFETIME);
 
-    /* Schedule RREP */
-    PRINTF("Will send RREP to new successor\n");
-    SEQNO_INCREASE(lrp_state.node_seqno);
-    lrp_delayed_rrep(&lrp_state.sink_addr, successor, &lrp_myipaddr,
-                     lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
+    /* Update the host route from the sink to this node. */
+    update_host_route();
   } else {
     /* We just need to refresh this route */
     PRINTF("Refreshing default route (through ");

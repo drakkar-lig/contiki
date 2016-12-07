@@ -106,6 +106,15 @@ void lrp_delayed_rrep(const uip_ipaddr_t *dest_addr,
 #endif /* !LRP_IS_SINK */
 
 /*-------------------------------------------------------------------*/
+/* LRP RREP_ACK message: end-to-end RREP acknowledgment. */
+#define LRP_RREP_ACK_TYPE   2
+struct lrp_msg_rrep_ack_t {
+  uint8_t type;
+  uint8_t addr_len;
+};
+void lrp_send_rrep_ack(const uip_ipaddr_t *dest);
+
+/*-------------------------------------------------------------------*/
 /* LRP RERR message */
 #define LRP_RERR_TYPE     3
 struct lrp_msg_rerr_t {
@@ -213,9 +222,10 @@ void lrp_delayed_hello(const uip_ipaddr_t *nexthop,
                        const uint8_t options);
 
 #define LRP_MAX_MSG_SIZE sizeof(union{ \
-  struct lrp_msg_rreq_t a; struct lrp_msg_rrep_t b; struct lrp_msg_rerr_t c; \
-  struct lrp_msg_dio_t d; struct lrp_msg_brk_t e; struct lrp_msg_upd_t f; \
-  struct lrp_msg_hello_t g;})
+  struct lrp_msg_rreq_t a; struct lrp_msg_rrep_t b; \
+  struct lrp_msg_rrep_ack_t c; struct lrp_msg_rerr_t d; \
+  struct lrp_msg_dio_t e; struct lrp_msg_brk_t f; \
+  struct lrp_msg_upd_t g; struct lrp_msg_hello_t h;})
 
 #endif /* UIP_CONF_IPV6_LRP */
 #endif /* __LRP_MSG_H__ */

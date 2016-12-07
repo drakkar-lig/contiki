@@ -233,6 +233,30 @@ lrp_delayed_rrep(const uip_ipaddr_t *dest_addr,
 #endif /* !LRP_IS_SINK */
 
 /*---------------------------------------------------------------------------*/
+/* Format and send a RREP_ACK. This packet is sent to the destination, using
+ * the host route of the destination node. */
+void
+lrp_send_rrep_ack(const uip_ipaddr_t *destination) {
+  struct lrp_msg_rrep_ack_t rrep_ack;
+
+  PRINTF("Send RREP_ACK -> ");
+  PRINT6ADDR(destination);
+  PRINTF("\n");
+
+  rrep_ack.type = (LRP_RREP_ACK_TYPE << 4) | 0x0;
+  rrep_ack.addr_len = (0x0 << 4) | LRP_ADDR_LEN_IPV6;
+
+  // Default socket lifetime is set to 1 (routing application should speak to
+  // the node neighbor); however, the RREP ACK is intended for the RREP emitter,
+  // so we must temporary change it.
+  lrp_udpconn->ttl = 0x80;
+  uip_udp_packet_sendto(lrp_udpconn, &rrep_ack,
+                        sizeof(struct lrp_msg_rrep_ack_t),
+                        destination, lrp_udpconn->rport);
+  lrp_udpconn->ttl = 1;
+}
+
+/*---------------------------------------------------------------------------*/
 /* Format and send a RERR type to `nexthop`. */
 #if !LRP_IS_SINK
 void
@@ -598,6 +622,16 @@ lrp_handle_incoming_msg(void)
     PRINT6ADDR(&rrep->dest_addr);
     PRINTF("\n");
     lrp_handle_incoming_rrep(&UIP_IP_BUF->srcipaddr, rrep);
+    break;
+  case LRP_RREP_ACK_TYPE:
+    PRINTF("Received RREP_ACK ");
+    PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
+    PRINTF(" -> ");
+    PRINT6ADDR(&UIP_IP_BUF->destipaddr);
+    PRINTF("\n");
+    struct lrp_msg_rrep_ack_t *rrep_ack =
+        (struct lrp_msg_rrep_ack_t *)uip_appdata;
+    lrp_handle_incoming_rrep_ack(&UIP_IP_BUF->srcipaddr, rrep_ack);
     break;
   case LRP_RERR_TYPE:
     PRINTF("Received RERR ");

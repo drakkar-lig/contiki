@@ -102,6 +102,10 @@
 /* Use contiki filesystem to save state, or do not save state. */
 #define LRP_USE_CFS            0
 
+/* The frequency at which the current node host route will be updated if no
+ * RREP_ACK has been received. Set it to 0 to deactivate this mechanism. */
+#define UPDATE_HOST_ROUTE_DELAY 60 * CLOCK_SECOND
+
 #define LRP_ADDR_LEN_IPV6      15
 
 /* Is a sink node */

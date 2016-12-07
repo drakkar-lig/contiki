@@ -43,9 +43,12 @@
 
 #include "net/lrp/lrp-msg.h"
 
+/* LRP message handlers. Neighbor is the node we have received the message from,
+ * and the second argument is the message itself, already parsed */
 void lrp_handle_incoming_rreq(uip_ipaddr_t* neighbor, struct lrp_msg_rreq_t* rreq);
 void lrp_handle_incoming_rrep(uip_ipaddr_t* neighbor, struct lrp_msg_rrep_t* rrep);
 void lrp_handle_incoming_rerr(uip_ipaddr_t* neighbor, struct lrp_msg_rerr_t* rerr);
+void lrp_handle_incoming_rrep_ack(uip_ipaddr_t* neighbor, struct lrp_msg_rrep_ack_t* rrep_ack);
 
 #if LRP_RREQ_RETRIES && LRP_IS_SINK
 void rrc_check_expired_rreq(void);
@@ -60,6 +63,7 @@ void lrp_routing_error(uip_ipaddr_t *source, uip_ipaddr_t *destination,
                        uip_lladdr_t *previoushop);
 #endif /* LRP_IS_COORDINATOR && !LRP_IS_SINK */
 
+void update_host_route();
 void lrp_request_route_to(uip_ipaddr_t *host);
 
 #endif /* UIP_CONF_IPV6_LRP */

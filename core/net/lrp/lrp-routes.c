@@ -275,24 +275,61 @@ lrp_handle_incoming_rrep(uip_ipaddr_t* neighbor, struct lrp_msg_rrep_t* rrep)
     PRINTF("Route inserted from RREP\n");
   } else {
     PRINTF("Former route is better\n");
+    return;
   }
 #if LRP_RREQ_RETRIES && LRP_IS_SINK
   /* Clean route request cache */
   rrc_remove(&rrep->source_addr);
 #endif /* LRP_RREQ_RETRIES && LRP_IS_SINK */
 
-#if !LRP_IS_SINK
-  /* Forward RREP to upstream neighbor */
-  upstream_neighbor = uip_ds6_defrt_choose();
-  if(upstream_neighbor != NULL) {
-    lrp_send_rrep(&rrep->dest_addr, upstream_neighbor, &rrep->source_addr,
-                  rrep->source_seqno, rrep->metric_type, rrep->metric_value);
+  if(lrp_is_my_global_address(&rrep->dest_addr)) {
+    /* Ack RREP */
+    lrp_send_rrep_ack(&rrep->source_addr);
   } else {
-    PRINTF("Unable to forward RREP: no defaut route\n");
-    return;
-  }
+#if !LRP_IS_SINK
+    /* Forward RREP to upstream neighbor */
+    upstream_neighbor = uip_ds6_defrt_choose();
+    if(upstream_neighbor != NULL) {
+      lrp_send_rrep(&rrep->dest_addr, upstream_neighbor, &rrep->source_addr,
+                    rrep->source_seqno, rrep->metric_type, rrep->metric_value);
+    } else {
+      PRINTF("Unable to forward RREP: no defaut route\n");
+      return;
+    }
 #endif /* !LRP_IS_SINK */
+  }
 #endif /* LRP_IS_COORDINATOR */
+}
+#if !LRP_IS_SINK
+static struct ctimer update_hr_timer;
+void
+update_host_route()
+{
+  PRINTF("Update self host route\n");
+  SEQNO_INCREASE(lrp_state.node_seqno);
+  lrp_delayed_rrep(&lrp_state.sink_addr, uip_ds6_defrt_choose(), &lrp_myipaddr,
+                   lrp_state.node_seqno, LRP_METRIC_HOP_COUNT, 0);
+
+#if UPDATE_HOST_ROUTE_DELAY
+  /* Schedule next emission. The timer will be stopped if we receive a RREP_ACK
+   * from the sink. */
+  uint32_t wait_delay = UPDATE_HOST_ROUTE_DELAY;
+  PRINTF("If no RREP_ACK has been received, update host route in %lums\n",
+         wait_delay * 1000 / CLOCK_SECOND);
+  ctimer_set(&update_hr_timer, wait_delay,
+             (void (*)(void *)) &update_host_route, NULL);
+#endif /* UPDATE_HOST_ROUTE_DELAY */
+}
+#endif /* !LRP_IS_SINK */
+/*---------------------------------------------------------------------------*/
+void
+lrp_handle_incoming_rrep_ack(uip_ipaddr_t* neighbor,
+                             struct lrp_msg_rrep_ack_t* rrep_ack)
+{
+#if !LRP_IS_SINK
+  PRINTF("Host route successfully created\n");
+  ctimer_stop(&update_hr_timer);
+#endif /* LRP_IS_SINK */
 }
 /*---------------------------------------------------------------------------*/
 /* Handle an incoming RERR type message. */
