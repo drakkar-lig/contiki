@@ -674,7 +674,7 @@ global_repair()
 #endif /* LRP_IS_SINK */
 /* Layer II callback. Used to discover neighbors unreachability */
 void
-lrp_neighbor_callback(const linkaddr_t *addr, int status, int mutx)
+lrp_neighbor_callback(const linkaddr_t *addr, int status, int numtx)
 {
 #if !UIP_ND6_SEND_NA
   uip_ipaddr_t *nbr_ipaddr = uip_ds6_nbr_ipaddr_from_lladdr((uip_lladdr_t *) addr);
@@ -690,7 +690,7 @@ lrp_neighbor_callback(const linkaddr_t *addr, int status, int mutx)
 
   if(status == MAC_TX_NOACK) {
     /* Message is not received by neighbor. Count unacked messages */
-    nbr->nb_consecutive_noack_msg += 1;
+    nbr->nb_consecutive_noack_msg += numtx;
     PRINTF("No ack received from next hop ");
     PRINTLLADDR((uip_lladdr_t *)addr);
     PRINTF(" (counter is %d/%d)\n",
@@ -723,8 +723,8 @@ lrp_neighbor_callback(const linkaddr_t *addr, int status, int mutx)
       PRINTLLADDR((uip_lladdr_t *)addr);
       PRINTF(": reset noack counter");
       PRINTF("\n");
+      nbr->nb_consecutive_noack_msg = 0;
     }
-    nbr->nb_consecutive_noack_msg = 0;
     nbr->reachability = REACHABLE;
   }
 #endif /* !UIP_ND6_SEND_NA */
