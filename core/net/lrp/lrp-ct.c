@@ -497,6 +497,16 @@ lrp_handle_incoming_upd(uip_ipaddr_t* neighbor, struct lrp_msg_upd_t* upd)
   /* Find link cost between ourself and this neighbor */
   lrp_neighbor_t* nbr = nbr_table_get_from_lladdr(
       lrp_neighbors, (linkaddr_t*) uip_ds6_nbr_lladdr_from_ipaddr(neighbor));
+
+  if(nbr != NULL && nbr->reachability == UNREACHABLE) {
+    if(is_still_unreachable(nbr)) {
+      PRINTF("Skip DIO processing: neighbor is marked as unreachable.\n");
+      return;
+    } else {
+      PRINTF("Unreachable timer has stopped, trying to use this neighbor again\n");
+    }
+  }
+
   if(nbr == NULL || nbr->reachability == UNKNOWN || nbr->link_cost_type != upd->metric_type) {
     /* Unknown neighbor, or different metric. Check the link and postpone the
        message processing */
