@@ -97,7 +97,7 @@
 
 /* If NUD is deactivated, unacked messages are counted, and next hop is deleted
  * when the number of consecutive noacked messages reach this constant. */
-#define LRP_MAX_CONSECUTIVE_NOACKED_MESSAGES  3
+#define LRP_MAX_CONSECUTIVE_NOACKED_MESSAGES  9
 
 /* Use contiki filesystem to save state, or do not save state. */
 #define LRP_USE_CFS            0
