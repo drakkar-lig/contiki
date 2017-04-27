@@ -589,7 +589,12 @@ void
 lrp_handle_incoming_msg(void)
 {
   /* Record neighbor */
-  lrp_nbr_add(&((struct uip_udpip_hdr *)&uip_buf[UIP_LLH_LEN])->srcipaddr);
+  /* Sometimes, the sender is another LRP node into the network, not a
+   * neighbor one (e.g. for a RREP_ACK message). */
+  if(UIP_IP_BUF->srcipaddr.u8[0] == 0xfe && UIP_IP_BUF->srcipaddr.u8[1] == 0x80) {
+    lrp_nbr_add(&UIP_IP_BUF->srcipaddr);
+  }
+
   /* Compute message type */
   uint8_t type = ((struct lrp_msg *)uip_appdata)->type >> 4;
   /* Check message type */
