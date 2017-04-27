@@ -120,6 +120,16 @@ lrp_select_nexthop_for(uip_ipaddr_t *source, uip_ipaddr_t *destination,
   uip_ds6_route_t *route_to_dest;
   uip_ipaddr_t *nexthop;
 
+  PRINTF("Should route a packet to ");
+  PRINT6ADDR(destination);
+  PRINTF(" from ");
+  PRINT6ADDR(source);
+  if(previoushop != NULL) {
+    PRINTF(" received from ");
+    PRINTLLADDR(previoushop);
+  }
+  PRINTF("\n");
+
   route_to_dest = uip_ds6_route_lookup(destination);
 #if LRP_IS_COORDINATOR && !LRP_IS_SINK
   /* Do not forward through default route a packet that comes from higher */
