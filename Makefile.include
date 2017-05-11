@@ -87,12 +87,19 @@ endif
 
 ifeq ($(CONTIKI_WITH_IPV6),1)
   CFLAGS += -DNETSTACK_CONF_WITH_IPV6=1
+  # Use only one routing protocol
   ifneq ($(CONTIKI_WITH_RPL),0)
     CONTIKI_WITH_RPL = 1
     CONTIKI_WITH_LRP = 0
+    CONTIKI_WITH_LOADNG = 0
   endif
   ifeq ($(CONTIKI_WITH_LRP),1)
     CONTIKI_WITH_RPL = 0
+    CONTIKI_WITH_LOADNG = 0
+  endif
+  ifeq ($(CONTIKI_WITH_LOADNG),1)
+    CONTIKI_WITH_RPL = 0
+    CONTIKI_WITH_LRP = 0
   endif
   MODULES += core/net/ipv6 core/net/ip
 endif
@@ -111,10 +118,17 @@ else
     CFLAGS += -DUIP_CONF_IPV6_LRP=0
 endif
 
+ifeq ($(CONTIKI_WITH_LOADNG),1)
+    CFLAGS += -DUIP_CONF_IPV6_LOADNG=1
+    MODULES += core/net/loadng
+else
+    CFLAGS += -DUIP_CONF_IPV6_LOADNG=0
+endif
+
 CONTIKI_SOURCEFILES += $(CONTIKIFILES)
 
 CONTIKIDIRS += ${addprefix $(CONTIKI)/core/,dev lib net net/llsec net/mac net/rime \
-                 net/rpl net/lrp sys cfs ctk lib/ctk loader . }
+                 net/rpl net/lrp net/loadng sys cfs ctk lib/ctk loader . }
 
 oname = ${patsubst %.c,%.o,${patsubst %.S,%.o,$(1)}}
 

@@ -1,0 +1,221 @@
+/*
+ * Copyright (c) 2005, Swedish Institute of Computer Science.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. Neither the name of the Institute nor the names of its contributors
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE INSTITUTE AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE INSTITUTE OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ *
+ * This file is part of the Contiki operating system.
+ */
+
+/**
+ * \file
+ *         Collection Tree maintenance algorithm
+ * \author Chi-Anh La <la@imag.fr>
+ * \author Martin Heusse <martin.heusse@imag.fr>
+ * \author Audéoud Henry-Joseph <henry-joseph.audeoud@imag.fr>
+ */
+
+#if UIP_CONF_IPV6_LOADNG
+
+#define DEBUG DEBUG_PRINT
+
+#include "net/loadng/loadng.h"
+#include "net/loadng/loadng-global.h"
+#include "net/loadng/loadng-def.h"
+#include "net/ip/uip-debug.h"
+#include "contiki-net.h"
+#include "cfs/cfs.h"
+#include <string.h>
+
+/*---------------------------------------------------------------------------*/
+/* State saving managment. If macro LOADNG_USE_CFS is set to true, the variable
+ * `loadng_state` content is stored into the file system to save its value beyond
+ * reboots. */
+void
+loadng_state_new(void)
+{
+  loadng_state.node_seqno = 1;
+}
+#if LOADNG_USE_CFS
+void
+loadng_state_save(void)
+{
+  int fd, written = 0, rcode;
+  fd = cfs_open(STATE_SVFILE, CFS_WRITE);
+  if(fd != -1) {
+    do {
+      rcode = cfs_write(fd, ((uint8_t *)&loadng_state) + written,
+                        sizeof(loadng_state) - written);
+      written += rcode;
+    } while(rcode != -1 && written != sizeof(loadng_state));
+    cfs_close(fd);
+  }
+
+  if(fd == -1 || rcode == -1) {
+    PRINTF("Error: Unable to save state into \"" STATE_SVFILE "\"\n");
+  } else {
+    PRINTF("State saved\n");
+  }
+}
+void
+loadng_state_restore(void)
+{
+  int fd, read = 0, rcode;
+  fd = cfs_open(STATE_SVFILE, CFS_READ);
+  if(fd != -1) {
+    do {
+      rcode = cfs_read(fd, ((uint8_t *)&loadng_state) + read,
+                       sizeof(loadng_state) - read);
+      read += rcode;
+    } while(rcode != -1 && read != sizeof(loadng_state));
+    cfs_close(fd);
+  }
+
+  if(fd != -1 && rcode != -1) {
+    PRINTF("State restored\n");
+    return;
+  }
+
+  PRINTF("Creating new state\n");
+  loadng_state_new();
+}
+#endif /* LOADNG_USE_CFS */
+
+/*---------------------------------------------------------------------------*/
+uint8_t
+loadng_ipaddr_is_empty(uip_ipaddr_t *addr)
+{
+  uint8_t i;
+  for(i = 0; i < 8; i++) {
+    if(((uint16_t *)addr)[i] != 0x0000) {
+      return 0 == 1;
+    }
+  }
+  return 1 == 1;
+}
+/*---------------------------------------------------------------------------*/
+/* Return the cost of the this link, as seen by this node. This does not take
+ * care of the remote node vision of the link. */
+uint16_t
+loadng_link_cost(uip_ipaddr_t *link, uint8_t metric_type)
+{
+  switch(metric_type) {
+    case LOADNG_METRIC_NONE:
+      return 0;
+    default:
+      PRINTF("WARNING: unknown metric type (%x). "
+             "Using hop count instead.\n", metric_type);
+      /* Consider the metric is HOP_COUNT */
+    case LOADNG_METRIC_HOP_COUNT:
+      return 1;
+  }
+  return 1;
+}
+/*---------------------------------------------------------------------------*/
+uint8_t
+loadng_is_my_global_address(uip_ipaddr_t *addr)
+{
+  int i;
+  int state;
+
+  for(i = 0; i < UIP_DS6_ADDR_NB; i++) {
+    state = uip_ds6_if.addr_list[i].state;
+    if(uip_ds6_if.addr_list[i].isused &&
+       (state == ADDR_TENTATIVE || state == ADDR_PREFERRED)) {
+      if(uip_ipaddr_cmp(addr, &uip_ds6_if.addr_list[i].ipaddr)) {
+        return 1;
+      }
+    }
+  }
+  return 0;
+}
+/*---------------------------------------------------------------------------*/
+uint8_t
+loadng_addr_match_local_prefix(uip_ipaddr_t *host)
+{
+  return uip_ipaddr_prefixcmp(&loadng_local_prefix.prefix, host,
+                              loadng_local_prefix.len);
+}
+
+/*---------------------------------------------------------------------------*/
+/* Signal to neighbor table a new neighbor. If node cannot send NA
+ * (!UIP_ND6_SEND_NA), then remote lladdr is automatically computed. Else,
+ * neighbor is entred as "incomplete" entry, and NS/NA will be performed to
+ * confirm neighbor presence and get its lladdr. */
+void
+loadng_nbr_add(uip_ipaddr_t *next_hop)
+{
+#if !UIP_ND6_SEND_NA
+  uip_lladdr_t nbr_lladdr;
+#endif
+  uip_ds6_nbr_t *nbr = uip_ds6_nbr_lookup(next_hop);
+
+  if(nbr == NULL) {
+    PRINTF("Adding ");
+    PRINT6ADDR(next_hop);
+    PRINTF(" to neighbor table");
+#if !UIP_ND6_SEND_NA
+    /* it's my responsability to create+maintain neighbor */
+    PRINTF(" (without NA),");
+    memcpy(&nbr_lladdr, &next_hop->u8[8],
+           UIP_LLADDR_LEN);
+    nbr_lladdr.addr[0] ^= 2;
+    PRINTF(" with lladdress ");
+    PRINTLLADDR(&nbr_lladdr);
+    PRINTF("\n");
+    uip_ds6_nbr_add(next_hop, &nbr_lladdr, 0, NBR_REACHABLE);
+/*    nbr->nscount = 1; */
+#else /* !UIP_ND6_SEND_NA */
+    PRINTF(" (waiting for a NA)\n");
+    uip_ds6_nbr_add(next_hop, NULL, 0, NBR_INCOMPLETE);
+#endif /* !UIP_ND6_SEND_NA */
+  }
+}
+/*---------------------------------------------------------------------------*/
+/* Return a random duration (in ticks). `scale` is the interval (in
+ * milliseconds) where the random duration must be taken into. */
+uint32_t
+rand_wait_duration_before_broadcast()
+{
+  return (random_rand() % 256) * LOADNG_RANDOM_WAIT / 256;
+}
+/*---------------------------------------------------------------------------*/
+enum path_length_comparison_result_t
+path_length_compare(uint16_t seqno_1, uint8_t metric_type_1, uint16_t metric_value_1,
+                    uint16_t seqno_2, uint8_t metric_type_2, uint16_t metric_value_2)
+{
+  if(SEQNO_GREATER_THAN(seqno_1, seqno_2))
+    return PLC_NEWER_SEQNO;
+  if(SEQNO_GREATER_THAN(seqno_2, seqno_1))
+    return PLC_OLDER_SEQNO;
+  if(metric_type_1 != metric_type_2)
+    return PLC_UNCOMPARABLE_METRICS;
+  if(metric_value_1 < metric_value_2)
+    return PLC_SHORTER_METRIC;
+  if(metric_value_1 > metric_value_2)
+    return PLC_LONGER_METRIC;
+  return PLC_EQUAL;
+}
+#endif /* UIP_CONF_IPV6_LOADNG */

@@ -45,6 +45,10 @@
 #include "net/lrp/lrp.h"
 #endif
 
+#if UIP_CONF_IPV6_LOADNG
+#include "net/loadng/loadng.h"
+#endif
+
 #include "lib/list.h"
 #include "lib/memb.h"
 #include "net/nbr-table.h"

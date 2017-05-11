@@ -208,6 +208,9 @@ typedef struct uip_ds6_maddr {
 #if UIP_CONF_IPV6_LRP
 #define UIP_CONF_DS6_LINK_NEIGHBOR_CALLBACK lrp_neighbor_callback
 #endif /* UIP_CONF_IPV6_LRP */
+#if UIP_CONF_IPV6_LOADNG
+#define UIP_CONF_DS6_LINK_NEIGHBOR_CALLBACK loadng_neighbor_callback
+#endif /* UIP_CONF_IPV6_LOADNG */
 #endif /* UIP_CONF_DS6_NEIGHBOR_STATE_CHANGED */
 
 

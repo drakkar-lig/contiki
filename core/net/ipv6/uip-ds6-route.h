@@ -47,6 +47,10 @@
 #include "net/lrp/lrp.h"
 #endif /* UIP_CONF_IPV6_LRP */
 
+#if UIP_CONF_IPV6_LOADNG
+#include "net/loadng/loadng.h"
+#endif /* UIP_CONF_IPV6_LOADNG */
+
 void uip_ds6_route_init(void);
 
 #ifndef UIP_CONF_UIP_DS6_NOTIFICATIONS

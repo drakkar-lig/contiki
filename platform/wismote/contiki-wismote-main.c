@@ -95,6 +95,10 @@ static uint8_t is_gateway;
 #include "net/lrp/lrp.h"
 #endif
 
+#if UIP_CONF_IPV6_LOADNG
+#include "net/loadng/loadng.h"
+#endif
+
 void init_platform(void);
 
 /*---------------------------------------------------------------------------*/
@@ -327,6 +331,10 @@ main(int argc, char **argv)
 
 #if UIP_CONF_IPV6_LRP
   process_start(&lrp_process, NULL);
+#endif
+
+#if UIP_CONF_IPV6_LOADNG
+  process_start(&loadng_process, NULL);
 #endif
 
   if(!UIP_CONF_IPV6_RPL) {

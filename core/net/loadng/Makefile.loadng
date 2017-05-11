@@ -1,0 +1,1 @@
+CONTIKI_SOURCEFILES += loadng.c loadng-routes.c loadng-msg.c loadng-global.c
