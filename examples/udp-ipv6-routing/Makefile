@@ -1,0 +1,29 @@
+CFLAGS += -DPROJECT_CONF_H=\"project-conf.h\"
+
+CONTIKI_WITH_IPV6=1
+
+ifeq ($(UIP_CONF_IPV6_RPL),1)
+  UIP_CONF_IPV6_LRP = 0
+  UIP_CONF_IPV6_LOADNG = 0
+endif
+ifeq ($(UIP_CONF_IPV6_LRP),1)
+  UIP_CONF_IPV6_RPL = 0
+  UIP_CONF_IPV6_LOADNG = 0
+endif
+ifeq ($(UIP_CONF_IPV6_LOADNG),1)
+  UIP_CONF_IPV6_RPL = 0
+  UIP_CONF_IPV6_LRP = 0
+endif
+
+CONTIKI_WITH_RPL = $(UIP_CONF_IPV6_RPL)
+CONTIKI_WITH_LRP = $(UIP_CONF_IPV6_LRP)
+CONTIKI_WITH_LOADNG = $(UIP_CONF_IPV6_LOADNG)
+
+ifeq ($(UIP_CONF_IPV6_LRP),1)
+udp-server udp-client: CFLAGS += -DLRP_IS_COORDINATOR=1
+udp-server: CFLAGS += -DLRP_IS_SINK=1
+udp-client: CFLAGS += -DLRP_IS_SINK=0
+endif
+
+CONTIKI = ../..
+include $(CONTIKI)/Makefile.include

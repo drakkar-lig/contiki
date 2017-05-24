@@ -27,64 +27,93 @@
  *
  */
 /*
- * This file describe a UDP client.
+ * This file describe a UDP server.
  *
- * Its comportement is to send a packet one time every SEND_INTERVAL, with a
- * jitter (SEND_JITTER), to the destination [aaaa::1]:3000.
+ * Its comportement is to receive a packet from all clients and to answer to
+ * them. It is also the network sink.
  */
 
 #include "contiki.h"
 #include "contiki-net.h"
+#if UIP_CONF_IPV6_RPL
+#include "net/rpl/rpl.h"
+#endif
+#if UIP_CONF_IPV6_LRP
+#include "net/lrp/lrp.h"
+#endif
+#if UIP_CONF_IPV6_LOADNG
+#include "net/loadng/loadng.h"
+#endif
 
 #include <string.h>
-#include <stdbool.h>
-#include <inttypes.h>
 
-#include "net/ip/uip.h"
 #define DEBUG DEBUG_PRINT
 #include "net/ip/uip-debug.h"
 
-#define SEND_INTERVAL    300 * CLOCK_SECOND
-#define SEND_JITTER      30 * CLOCK_SECOND
+#define UIP_IP_BUF   ((struct uip_ip_hdr *)&uip_buf[UIP_LLH_LEN])
 
-static struct uip_udp_conn *client_conn;
-static uip_ipaddr_t server_ipaddr;
+static struct uip_udp_conn *server_conn;
+
+PROCESS(udp_server_process, "UDP server process");
+
+#if UIP_CONF_IPV6_RPL
+AUTOSTART_PROCESSES(&udp_server_process);
+#endif
+#if UIP_CONF_IPV6_LRP
+AUTOSTART_PROCESSES(&lrp_process, &udp_server_process);
+#endif
+#if UIP_CONF_IPV6_LOADNG
+AUTOSTART_PROCESSES(&loadng_process, &udp_server_process);
+#endif
 /*---------------------------------------------------------------------------*/
-PROCESS(udp_client_process, "UDP client process");
-AUTOSTART_PROCESSES(&udp_client_process);
-/*---------------------------------------------------------------------------*/
+#if UIP_CONF_IPV6_RPL
 static void
-tcpip_handler(void)
+create_rpl_dag(uip_ipaddr_t *ipaddr)
 {
-  char *str;
+  struct uip_ds6_addr *root_if;
+  root_if = uip_ds6_addr_lookup(ipaddr);
+  if(root_if != NULL) {
+    rpl_dag_t *dag;
+    uip_ipaddr_t prefix;
 
-  if(uip_newdata()) {
-    str = uip_appdata;
-    str[uip_datalen()] = '\0';
-    PRINTF("Response from the server: '%s'\n", str);
+    rpl_set_root(RPL_DEFAULT_INSTANCE, ipaddr);
+    dag = rpl_get_any_dag();
+    uip_ip6addr(&prefix, 0xaaaa, 0, 0, 0, 0, 0, 0, 0);
+    rpl_set_prefix(dag, &prefix, 64);
+    PRINTF("created a new RPL dag\n");
+  } else {
+    PRINTF("failed to create a new RPL DAG\n");
   }
 }
+#endif
 /*---------------------------------------------------------------------------*/
 #define MAX_PAYLOAD_LEN  40
 static char buf[MAX_PAYLOAD_LEN];
 static void
-timeout_handler(void)
+tcpip_handler(void)
 {
-  static uint16_t seq_id = 0;
-  uip_ipaddr_t my_ipaddr = {{ 0 }};
-  int i;
-  for(i = 0; i < UIP_DS6_ADDR_NB; i++)
-    if(uip_ds6_if.addr_list[i].isused &&
-       uip_ds6_if.addr_list[i].state == ADDR_PREFERRED)
-      uip_ipaddr_copy(&my_ipaddr, &uip_ds6_if.addr_list[i].ipaddr);
+  static int seq_id = 0;
 
-  sprintf(buf, "Hello %" PRIu16 " from client %02x%02x", ++seq_id, my_ipaddr.u8[14], my_ipaddr.u8[15]);
+  if(uip_newdata()) {
+    ((char *)uip_appdata)[uip_datalen()] = '\0';
+    PRINTF("Server received '%s' from ", (char *)uip_appdata);
+    PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
+    PRINTF("\n");
 
-  PRINTF("Client sending to: ");
-  PRINT6ADDR(&server_ipaddr);
-  PRINTF(" (msg: %s)\n", buf);
+    /* Ensure we answer with the correct IP address. Contiki does not keep
+     * track of the local IP address of sockets ; and the server have more
+     * than one address (minima aaaa::1 and the EUI-64-based one). */
+    uip_ipaddr_copy(&server_conn->ripaddr, &UIP_IP_BUF->srcipaddr);
 
-  uip_udp_packet_sendto(client_conn, buf, strlen(buf), &server_ipaddr, UIP_HTONS(3000));
+    sprintf(buf, "Hello from the server! (%d)", ++seq_id);
+
+    PRINTF("Responding with message: '%s'\n", buf);
+
+    uip_udp_packet_send(server_conn, buf, strlen(buf));
+
+    /* Restore server connection to allow data from any node */
+    memset(&server_conn->ripaddr, 0, sizeof(server_conn->ripaddr));
+  }
 }
 /*---------------------------------------------------------------------------*/
 static void
@@ -102,17 +131,19 @@ print_local_addresses(void)
   PRINTF("\n");
 }
 /*---------------------------------------------------------------------------*/
-PROCESS_THREAD(udp_client_process, ev, data)
+PROCESS_THREAD(udp_server_process, ev, data)
 {
-  static struct etimer et;
   uip_ipaddr_t ipaddr;
 
   PROCESS_BEGIN();
-  PRINTF("UDP client process started\n");
+  PRINTF("UDP server process started\n");
 
   /* Listen aaaa::<EUI64> address */
   uip_ip6addr(&ipaddr, 0xaaaa, 0, 0, 0, 0, 0, 0, 0);
   uip_ds6_set_addr_iid(&ipaddr, &uip_lladdr);
+  uip_ds6_addr_add(&ipaddr, 0, ADDR_AUTOCONF);
+
+  uip_ip6addr(&ipaddr, 0xaaaa, 0, 0, 0, 0, 0, 0, 1);
   uip_ds6_addr_add(&ipaddr, 0, ADDR_AUTOCONF);
 
   print_local_addresses();
@@ -139,31 +170,19 @@ PROCESS_THREAD(udp_client_process, ev, data)
   }
 #endif
 
+#if UIP_CONF_IPV6_RPL
+  create_rpl_dag(&ipaddr);
+#endif
+
   /* New connection with remote host */
-  uip_ip6addr(&server_ipaddr, 0xaaaa, 0, 0, 0, 0, 0, 0, 1);
-  client_conn = udp_new(NULL, UIP_HTONS(3000), NULL);
-  udp_bind(client_conn, UIP_HTONS(3001));
-  PRINTF("Created a connection with the server [");
-  PRINT6ADDR(&server_ipaddr);
-  PRINTF("]:%u (local port %u)\n",
-         UIP_HTONS(client_conn->rport), UIP_HTONS(client_conn->lport));
+  server_conn = udp_new(NULL, UIP_HTONS(3001), NULL);
+  udp_bind(server_conn, UIP_HTONS(3000));
+  PRINTF("Listening clients on UDP port %u\n", UIP_HTONS(server_conn->lport));
 
-  /* First packet is sent randomly between 0 and SEND_INTERVAL */
-  etimer_set(&et,  random_rand() % SEND_INTERVAL);
-
-  /* Main loop */
   while(1) {
     PROCESS_YIELD();
 
-    /* Send packet event */
-    if(etimer_expired(&et)) {
-      /* Outgoing packet */
-      timeout_handler();
-      /* Reset timer, taking jitter into account */
-      etimer_set(&et, SEND_INTERVAL + (random_rand() % SEND_JITTER) - SEND_JITTER / 2);
-    }
-
-    /* Incoming server packet */
+    /* Incoming client packet */
     if(ev == tcpip_event) {
       tcpip_handler();
     }
