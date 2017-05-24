@@ -255,9 +255,30 @@ void
 loadng_handle_incoming_rerr(uip_ipaddr_t* neighbor, struct loadng_msg_rerr_t* rerr)
 {
   uip_ipaddr_t *nexthop;
+  uip_ds6_route_t *route;
+
+  route = uip_ds6_route_lookup(&rerr->addr_in_error);
+  nexthop = uip_ds6_route_nexthop(route);
+  if(nexthop == NULL || uip_ipaddr_cmp(nexthop, neighbor)) {
+    /* Incorrect next hop / local route */
+    PRINTF("Local route does not match RERR's one: ");
+    if(route == NULL) {
+      PRINTF("no local route\n");
+    } else {
+      PRINTF("next hops does not match (local=");
+      PRINT6ADDR(nexthop);
+      PRINTF(" v.s. rerr=");
+      PRINT6ADDR(neighbor);
+      PRINTF(")\n");
+    }
+    return;
+  }
 
   /* Remove described route */
-  uip_ds6_route_rm(uip_ds6_route_lookup(&rerr->addr_in_error));
+  PRINTF("Remove route towards ");
+  PRINT6ADDR(&rerr->addr_in_error);
+  PRINTF("\n");
+  uip_ds6_route_rm(route);
 
   if(loadng_is_my_global_address(&rerr->dest_addr)) {
     /* RERR has reach its destination */
@@ -267,10 +288,15 @@ loadng_handle_incoming_rerr(uip_ipaddr_t* neighbor, struct loadng_msg_rerr_t* re
   /* Forward RERR to dest_addr */
   nexthop = uip_ds6_route_nexthop(uip_ds6_route_lookup(&rerr->dest_addr));
   if(nexthop == NULL) {
-    PRINTF("Unable to forward RERR: unknown destination\n");
+    PRINTF("Unable to forward RERR: no route towards ");
+    PRINT6ADDR(&rerr->dest_addr);
+    PRINTF("\n");
     return;
   }
 
+  PRINTF("Forwarding RERR to ");
+  PRINT6ADDR(nexthop);
+  PRINTF("\n");
   loadng_send_rerr(&rerr->dest_addr, &rerr->addr_in_error, nexthop);
 }
 /*---------------------------------------------------------------------------*/
