@@ -142,12 +142,17 @@ loadng_neighbor_callback(const linkaddr_t *addr, int status, int mutx)
     nbr = nbr_table_add_lladdr(loadng_neighbors, addr);
   }
 
+#if DEBUG & DEBUG_PRINT != 0
+  const static char* mac_status_names[] = {"OK", "COLLISION", "NOACK", "DEFERRED", "ERR", "ERR_FATAL"};
+  PRINTF("LL: %s from ", mac_status_names[status]);
+  PRINTLLADDR((uip_lladdr_t *)addr);
+  PRINTF("\n");
+#endif
+
   if(status == MAC_TX_NOACK) {
     /* Message is not received by neighbor. Count unacked messages */
     nbr->nb_consecutive_noack_msg += 1;
-    PRINTF("No ack received from next hop ");
-    PRINTLLADDR((uip_lladdr_t *)addr);
-    PRINTF(" (counter is %d/%d)\n",
+    PRINTF("Noack counter is %d/%d\n",
            nbr->nb_consecutive_noack_msg, LOADNG_MAX_CONSECUTIVE_NOACKED_MESSAGES);
 
     if(nbr->nb_consecutive_noack_msg >= LOADNG_MAX_CONSECUTIVE_NOACKED_MESSAGES) {
@@ -162,12 +167,9 @@ loadng_neighbor_callback(const linkaddr_t *addr, int status, int mutx)
     if(nbr->nb_consecutive_noack_msg != 0) {
       /* The neighbor has not received our last message, but has received this
        * one. It is now reachable */
-      PRINTF("Received ack from ");
-      PRINTLLADDR((uip_lladdr_t *)addr);
-      PRINTF(": reset noack counter");
-      PRINTF("\n");
+      PRINTF("Reset noack counter\n");
+      nbr->nb_consecutive_noack_msg = 0;
     }
-    nbr->nb_consecutive_noack_msg = 0;
     nbr->reachability = REACHABLE;
   }
 #endif /* !UIP_ND6_SEND_NA */
