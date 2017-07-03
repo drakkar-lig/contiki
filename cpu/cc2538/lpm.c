@@ -39,10 +39,10 @@
 #include "sys/energest.h"
 #include "sys/process.h"
 #include "dev/sys-ctrl.h"
-#include "dev/scb.h"
 #include "dev/rfcore-xreg.h"
 #include "rtimer-arch.h"
 #include "lpm.h"
+#include "cc2538_cm3.h"
 #include "reg.h"
 
 #include <stdbool.h>
@@ -101,7 +101,7 @@ static uint8_t max_pm;
 #ifdef LPM_CONF_PERIPH_PERMIT_PM1_FUNCS_MAX
 #define LPM_PERIPH_PERMIT_PM1_FUNCS_MAX LPM_CONF_PERIPH_PERMIT_PM1_FUNCS_MAX
 #else
-#define LPM_PERIPH_PERMIT_PM1_FUNCS_MAX 4
+#define LPM_PERIPH_PERMIT_PM1_FUNCS_MAX 5
 #endif
 
 static lpm_periph_permit_pm1_func_t
@@ -379,7 +379,7 @@ lpm_init()
    * By default, we will enter PM0 unless lpm_enter() decides otherwise
    */
   REG(SYS_CTRL_PMCTL) = SYS_CTRL_PMCTL_PM0;
-  REG(SCB_SYSCTRL) |= SCB_SYSCTRL_SLEEPDEEP;
+  SCB->SCR |= SCB_SCR_SLEEPDEEP_Msk;
 
   max_pm = LPM_CONF_MAX_PM;
 

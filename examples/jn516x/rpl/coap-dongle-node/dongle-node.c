@@ -33,6 +33,7 @@
  */
 #include "contiki.h"
 #include "net/ip/uip.h"
+#include "net/ipv6/uip-ds6.h"
 #include "tools/rpl-tools.h"
 #include "rest-engine.h"
 #include "sys/ctimer.h"
@@ -79,8 +80,6 @@ static void
 put_post_led_toggle_handler(void *request, void *response, uint8_t *buffer, uint16_t preferred_size, int32_t *offset)
 {
   static int led_state = 0;
-  const uint8_t *request_content;
-  int request_content_len;
   unsigned int accept = -1;
 
   /* Given the way the LEDs are connected to the DIO ports, the LEDs are controlled via direct DIO access. */
@@ -132,7 +131,7 @@ PROCESS_THREAD(start_app, ev, data)
   /* Start net stack */
   if(is_coordinator) {
     uip_ipaddr_t prefix;
-    uip_ip6addr(&prefix, 0xaaaa, 0, 0, 0, 0, 0, 0, 0);
+    uip_ip6addr(&prefix, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 0);
     rpl_tools_init(&prefix);
   } else {
     rpl_tools_init(NULL);

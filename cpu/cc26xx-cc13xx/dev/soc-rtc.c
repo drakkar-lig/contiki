@@ -50,6 +50,8 @@
 /*---------------------------------------------------------------------------*/
 /* Prototype of a function in clock.c. Called every time the handler fires */
 void clock_update(void);
+
+static rtimer_clock_t last_isr_time;
 /*---------------------------------------------------------------------------*/
 #define COMPARE_INCREMENT (RTIMER_SECOND / CLOCK_SECOND)
 #define MULTIPLE_512_MASK 0xFFFFFE00
@@ -79,11 +81,13 @@ soc_rtc_init(void)
 
   ti_lib_aon_rtc_event_clear(AON_RTC_CH0);
   ti_lib_aon_rtc_event_clear(AON_RTC_CH1);
+  ti_lib_aon_rtc_event_clear(AON_RTC_CH2);
 
   /* Setup the wakeup event */
   ti_lib_aon_event_mcu_wake_up_set(AON_EVENT_MCU_WU0, AON_EVENT_RTC_CH0);
   ti_lib_aon_event_mcu_wake_up_set(AON_EVENT_MCU_WU1, AON_EVENT_RTC_CH1);
-  ti_lib_aon_rtc_combined_event_config(AON_RTC_CH0 | AON_RTC_CH1);
+  ti_lib_aon_event_mcu_wake_up_set(AON_EVENT_MCU_WU2, AON_EVENT_RTC_CH2);
+  ti_lib_aon_rtc_combined_event_config(AON_RTC_CH0 | AON_RTC_CH1 | AON_RTC_CH2);
 
   HWREG(AON_RTC_BASE + AON_RTC_O_SEC) = SOC_RTC_START_TICK_COUNT;
 
@@ -96,7 +100,7 @@ soc_rtc_init(void)
   ti_lib_aon_rtc_channel_enable(AON_RTC_CH1);
   ti_lib_aon_rtc_enable();
 
-  ti_lib_int_enable(INT_AON_RTC);
+  ti_lib_rom_int_enable(INT_AON_RTC_COMB);
 
   /* Re-enable interrupts */
   if(!interrupts_disabled) {
@@ -121,7 +125,7 @@ soc_rtc_get_next_trigger()
 void
 soc_rtc_schedule_one_shot(uint32_t channel, uint32_t ticks)
 {
-  if((channel != AON_RTC_CH0) && (channel != AON_RTC_CH1)) {
+  if((channel != AON_RTC_CH0) && (channel != AON_RTC_CH1) && (channel != AON_RTC_CH2)) {
     return;
   }
 
@@ -130,15 +134,21 @@ soc_rtc_schedule_one_shot(uint32_t channel, uint32_t ticks)
   ti_lib_aon_rtc_channel_enable(channel);
 }
 /*---------------------------------------------------------------------------*/
+rtimer_clock_t
+soc_rtc_last_isr_time(void)
+{
+  return last_isr_time;
+}
+/*---------------------------------------------------------------------------*/
 /* The AON RTC interrupt handler */
 void
 soc_rtc_isr(void)
 {
-  uint32_t now, next;
+  uint32_t next;
 
   ENERGEST_ON(ENERGEST_TYPE_IRQ);
 
-  now = ti_lib_aon_rtc_current_compare_value_get();
+  last_isr_time = RTIMER_NOW();
 
   /* Adjust the s/w tick counter irrespective of which event trigger this */
   clock_update();
@@ -151,7 +161,8 @@ soc_rtc_isr(void)
      * event on the next 512 tick boundary. If we drop to deep sleep before it
      * happens, lpm_drop() will reschedule us in the 'distant' future
      */
-    next = (now + COMPARE_INCREMENT) & MULTIPLE_512_MASK;
+    next = ((ti_lib_aon_rtc_current_compare_value_get() + 5) +
+            COMPARE_INCREMENT) & MULTIPLE_512_MASK;
     ti_lib_aon_rtc_compare_value_set(AON_RTC_CH1, next);
   }
 
@@ -159,6 +170,12 @@ soc_rtc_isr(void)
     ti_lib_aon_rtc_channel_disable(AON_RTC_CH0);
     HWREG(AON_RTC_BASE + AON_RTC_O_EVFLAGS) = AON_RTC_EVFLAGS_CH0;
     rtimer_run_next();
+  }
+
+  if(ti_lib_aon_rtc_event_get(AON_RTC_CH2)) {
+    /* after sleep; since a rtimer is already scheduled, do nothing */
+    ti_lib_aon_rtc_channel_disable(AON_RTC_CH2);
+    HWREG(AON_RTC_BASE + AON_RTC_O_EVFLAGS) = AON_RTC_EVFLAGS_CH2;
   }
 
   ENERGEST_OFF(ENERGEST_TYPE_IRQ);

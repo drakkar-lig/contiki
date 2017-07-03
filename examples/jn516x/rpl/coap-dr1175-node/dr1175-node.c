@@ -34,13 +34,16 @@
 
 #include "contiki.h"
 #include "net/ip/uip.h"
+#include "net/ipv6/uip-ds6.h"
 #include "tools/rpl-tools.h"
 #include "rest-engine.h"
 #include "light-sensor.h"
 #include "ht-sensor.h"
 #include "dev/leds.h"
+#include "dev/leds-extension.h"
 #include "sys/etimer.h"
 #include <stdio.h>
+#include <stdlib.h>
 
 static void event_sensors_dr1175_handler(void);
 static void get_sensors_dr1175_handler(void *request, void *response, uint8_t *buffer, uint16_t preferred_size, int32_t *offset);
@@ -247,13 +250,12 @@ static void
 put_post_white_led_handler(void *request, void *response, uint8_t *buffer, uint16_t preferred_size, int32_t *offset)
 {
   const uint8_t *request_content = NULL;
-  int request_content_len;
   int level;
 
   unsigned int accept = -1;
   REST.get_header_accept(request, &accept);
   if(accept == -1 || accept == REST.type.TEXT_PLAIN) {
-    request_content_len = REST.get_request_payload(request, &request_content);
+    REST.get_request_payload(request, &request_content);
     level = atoi((const char *)request_content);
     CLIP(level, 255)
     leds_set_level(level, LEDS_WHITE);
@@ -272,7 +274,6 @@ static void
 put_post_rgb_led_handler(void *request, void *response, uint8_t *buffer, uint16_t preferred_size, int32_t *offset)
 {
   const uint8_t *request_content = NULL;
-  int request_content_len;
   char *pch;
   int RGB[] = { 0, 0, 0 };
   int index = 0;
@@ -280,7 +281,7 @@ put_post_rgb_led_handler(void *request, void *response, uint8_t *buffer, uint16_
   unsigned int accept = -1;
   REST.get_header_accept(request, &accept);
   if(accept == -1 || accept == REST.type.TEXT_PLAIN) {
-    request_content_len = REST.get_request_payload(request, &request_content);
+    REST.get_request_payload(request, &request_content);
     pch = strtok((char *)request_content, " ");
     while((pch != NULL) && (index != sizeof(RGB) / sizeof(int))) {
       /* Convert token to int */
@@ -308,11 +309,10 @@ static void
 put_post_led_d3_1174_handler(void *request, void *response, uint8_t *buffer, uint16_t preferred_size, int32_t *offset)
 {
   const uint8_t *request_content;
-  int request_content_len;
   unsigned int accept = -1;
   REST.get_header_accept(request, &accept);
   if(accept == -1 || accept == REST.type.TEXT_PLAIN) {
-    request_content_len = REST.get_request_payload(request, &request_content);
+    REST.get_request_payload(request, &request_content);
     SET_LED(LEDS_GP0);
   }
 }
@@ -329,11 +329,10 @@ static void
 put_post_led_d6_1174_handler(void *request, void *response, uint8_t *buffer, uint16_t preferred_size, int32_t *offset)
 {
   const uint8_t *request_content;
-  int request_content_len;
   unsigned int accept = -1;
   REST.get_header_accept(request, &accept);
   if(accept == -1 || accept == REST.type.TEXT_PLAIN) {
-    request_content_len = REST.get_request_payload(request, &request_content);
+    REST.get_request_payload(request, &request_content);
     SET_LED(LEDS_GP1);
   }
 }
@@ -352,7 +351,7 @@ PROCESS_THREAD(start_app, ev, data)
   /* Start net stack */
   if(is_coordinator) {
     uip_ipaddr_t prefix;
-    uip_ip6addr(&prefix, 0xaaaa, 0, 0, 0, 0, 0, 0, 0);
+    uip_ip6addr(&prefix, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 0);
     rpl_tools_init(&prefix);
   } else {
     rpl_tools_init(NULL);

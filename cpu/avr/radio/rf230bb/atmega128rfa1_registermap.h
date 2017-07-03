@@ -71,6 +71,7 @@
 #define RG_PHY_ED_LEVEL       PHY_ED_LEVEL
 #define RG_RX_SYN             RX_SYN
 #define SR_RSSI               0x146, 0x1f, 0
+#define SR_RX_CRC_VALID       0x146, 0x80, 7
 #define SR_PLL_CF_START       0x15a, 0x80, 7
 #define SR_PLL_DCU_START      0x15b, 0x80, 7
 #define SR_MAX_CSMA_RETRIES   0x16c, 0x0e, 1
@@ -82,7 +83,10 @@
 #define SR_CCA_DONE            0x141, 0x80, 7
 #define SR_CCA_STATUS          0x141, 0x40, 6
 #define SR_AACK_SET_PD         0x16e, 0x20, 5
+#define SR_AACK_DIS_ACK        0x16e, 0x10, 4
 
+#define RG_XAH_CTRL_1         (0x157)
+#define SR_AACK_PROM_MODE     0x157, 0x02, 1
 
 /* RF230 register assignments, for reference */
 #if 0

@@ -110,9 +110,6 @@ typedef unsigned short uip_stats_t;
 #define SICSLOWPAN_CONF_MAXAGE                  8
 #endif /* SICSLOWPAN_CONF_FRAG */
 #define SICSLOWPAN_CONF_MAX_ADDR_CONTEXTS       2
-#ifndef SICSLOWPAN_CONF_MAX_MAC_TRANSMISSIONS
-#define SICSLOWPAN_CONF_MAX_MAC_TRANSMISSIONS   5
-#endif /* SICSLOWPAN_CONF_MAX_MAC_TRANSMISSIONS */
 
 #define UIP_CONF_IPV6_CHECKS     1
 #define UIP_CONF_IPV6_QUEUE_PKT  1
@@ -144,7 +141,9 @@ typedef unsigned short uip_stats_t;
 #define UIP_CONF_ICMP_DEST_UNREACH 1
 
 #define UIP_CONF_DHCP_LIGHT
+#ifndef UIP_CONF_RECEIVE_WINDOW
 #define UIP_CONF_RECEIVE_WINDOW  48
+#endif
 #define UIP_CONF_TCP_MSS         48
 #define UIP_CONF_UDP_CONNS       12
 #define UIP_CONF_FWCACHE_SIZE    30

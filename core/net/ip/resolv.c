@@ -111,6 +111,9 @@ strcasecmp(const char *s1, const char *s2)
   /* TODO: Add case support! */
   return strcmp(s1, s2);
 }
+#else
+int strcasecmp(const char *s1, const char *s2);
+int strncasecmp(const char *s1, const char *s2, size_t n);
 #endif /* __SDCC */
 
 #define UIP_UDP_BUF ((struct uip_udpip_hdr *)&uip_buf[UIP_LLH_LEN])
@@ -783,9 +786,9 @@ check_entries(void)
 static void
 newdata(void)
 {
-  static uint8_t nquestions, nanswers;
+  uint8_t nquestions, nanswers;
 
-  static int8_t i;
+  int8_t i;
 
   register struct namemap *namemapptr = NULL;
 
@@ -872,7 +875,7 @@ newdata(void)
         }
         return;
       } else {
-        static uint8_t nauthrr;
+        uint8_t nauthrr;
         PRINTF("resolver: But we are still probing. Waiting...\n");
         /* We are still probing. We need to do the mDNS
          * probe race condition check here and make sure
@@ -960,7 +963,7 @@ newdata(void)
 #endif /* !ARCH_DOESNT_NEED_ALIGNED_STRUCTS */
 
 #if VERBOSE_DEBUG
-    static char debug_name[40];
+    char debug_name[40];
     decode_name(queryptr, debug_name, uip_appdata);
     DEBUG_PRINTF("resolver: Answer %d: \"%s\", type %d, class %d, ttl %d, length %d\n",
                  ++i, debug_name, uip_ntohs(ans->type),
@@ -1091,7 +1094,7 @@ resolv_set_hostname(const char *hostname)
   /* Add the .local suffix if it isn't already there */
   if(strlen(resolv_hostname) < 7 ||
      strcasecmp(resolv_hostname + strlen(resolv_hostname) - 6, ".local") != 0) {
-    strncat(resolv_hostname, ".local", RESOLV_CONF_MAX_DOMAIN_NAME_SIZE);
+    strncat(resolv_hostname, ".local", RESOLV_CONF_MAX_DOMAIN_NAME_SIZE - strlen(resolv_hostname));
   }
 
   PRINTF("resolver: hostname changed to \"%s\"\n", resolv_hostname);
@@ -1245,8 +1248,8 @@ remove_trailing_dots(const char *name) {
   static char dns_name_without_dots[RESOLV_CONF_MAX_DOMAIN_NAME_SIZE + 1];
   size_t len = strlen(name);
 
-  if(name[len - 1] == '.') {
-    strncpy(dns_name_without_dots, name, sizeof(dns_name_without_dots));
+  if(len && name[len - 1] == '.') {
+    strncpy(dns_name_without_dots, name, RESOLV_CONF_MAX_DOMAIN_NAME_SIZE);
     while(len && (dns_name_without_dots[len - 1] == '.')) {
       dns_name_without_dots[--len] = 0;
     }
@@ -1266,9 +1269,9 @@ remove_trailing_dots(const char *name) {
 void
 resolv_query(const char *name)
 {
-  static uint8_t i;
+  uint8_t i;
 
-  static uint8_t lseq, lseqi;
+  uint8_t lseq, lseqi;
 
   register struct namemap *nameptr = 0;
 
@@ -1306,7 +1309,7 @@ resolv_query(const char *name)
 
   memset(nameptr, 0, sizeof(*nameptr));
 
-  strncpy(nameptr->name, name, sizeof(nameptr->name));
+  strncpy(nameptr->name, name, sizeof(nameptr->name) - 1);
   nameptr->state = STATE_NEW;
   nameptr->seqno = seqno;
   ++seqno;
@@ -1315,7 +1318,7 @@ resolv_query(const char *name)
   {
     size_t name_len = strlen(name);
 
-    static const char local_suffix[] = "local";
+    const char local_suffix[] = "local";
 
     if((name_len > (sizeof(local_suffix) - 1)) &&
        (0 == strcasecmp(name + name_len - (sizeof(local_suffix) - 1), local_suffix))) {
@@ -1347,7 +1350,7 @@ resolv_lookup(const char *name, uip_ipaddr_t ** ipaddr)
 {
   resolv_status_t ret = RESOLV_STATUS_UNCACHED;
 
-  static uint8_t i;
+  uint8_t i;
 
   struct namemap *nameptr;
 
@@ -1476,7 +1479,7 @@ resolv_found(char *name, uip_ipaddr_t * ipaddr)
       }
 
       /* Re-add the .local suffix */
-      strncat(resolv_hostname, ".local", RESOLV_CONF_MAX_DOMAIN_NAME_SIZE);
+      strncat(resolv_hostname, ".local", RESOLV_CONF_MAX_DOMAIN_NAME_SIZE - strlen(resolv_hostname));
 
       start_name_collision_check(CLOCK_SECOND * 5);
     } else if(mdns_state == MDNS_STATE_READY) {

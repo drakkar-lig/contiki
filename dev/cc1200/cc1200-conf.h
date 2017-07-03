@@ -73,15 +73,15 @@
 #define CC1200_MAX_PAYLOAD_LEN           127
 #endif
 /*---------------------------------------------------------------------------*/
-/* 
+/*
  * The RX watchdog is used to check whether the radio is in RX mode at regular
  * intervals (once per second). Can be used to improve reliability especially
- * if NullRDC is used. Turned of by default. 
- */ 
+ * if NullRDC is used. Turned of by default.
+ */
 #ifdef CC1200_CONF_USE_RX_WATCHDOG
-#define CC1200_USE_RX_WATCHDOG CC1200_CONF_USE_RX_WATCHDOG
+#define CC1200_USE_RX_WATCHDOG          CC1200_CONF_USE_RX_WATCHDOG
 #else
-#define CC1200_USE_RX_WATCHDOG 0 
+#define CC1200_USE_RX_WATCHDOG          0
 #endif
 /*---------------------------------------------------------------------------*/
 /*
@@ -122,18 +122,6 @@
 #endif
 /*---------------------------------------------------------------------------*/
 /*
- * The RSSI offset in dBm (int8_t)
- *
- * Might be hardware dependent, so we make it a configuration parameter.
- * This parameter is written to AGC_GAIN_ADJUST.GAIN_ADJUSTMENT
- */
-#ifdef CC1200_CONF_RSSI_OFFSET
-#define CC1200_RSSI_OFFSET              CC1200_CONF_RSSI_OFFSET
-#else
-#define CC1200_RSSI_OFFSET              (-81)
-#endif
-/*---------------------------------------------------------------------------*/
-/*
  * The frequency offset
  *
  * Might be hardware dependent (e.g. depending on crystal load capacitances),
@@ -159,9 +147,7 @@
 #define CC1200_DEFAULT_CHANNEL          CC1200_CONF_DEFAULT_CHANNEL
 #else
 /* 868.325 MHz */
-//#define CC1200_DEFAULT_CHANNEL      26
-/* 865.725 MHz */
-#define CC1200_DEFAULT_CHANNEL          13
+#define CC1200_DEFAULT_CHANNEL          26
 #endif
 /*---------------------------------------------------------------------------*/
 /*
@@ -182,11 +168,19 @@
 #endif
 /*---------------------------------------------------------------------------*/
 /*
- * If CC1200_AUTOCAL is 0, a timeout is used to decide when to calibrate when
- * going to TX.
+ * If CC1200_AUTOCAL is not set, we use this parameter to defer 
+ * calibration until a certain amount of time has expired. 
  *
- * Therefore, we don't calibrate every time we transmit. Set this parameter
- * to 0 when this feature is not used.
+ * This is what happens in detail:
+ *
+ * - We (manually) calibrate once after initialization
+ * - We (manually) calibrate every time we change the channel
+ * - We (manually) calibrate when the radio is turned on() only if
+ *   the timeout has expired
+ * - We (manually) calibrate when transmitting only of the timeout has expired
+ * 
+ * Set this parameter to 0 when this feature is not used. In this case we 
+ * (manually) calibrate in all situations mentioned above.
  */
 #ifdef CC1200_CONF_CAL_TIMEOUT_SECONDS
 #define CC1200_CAL_TIMEOUT_SECONDS      CC1200_CONF_CAL_TIMEOUT_SECONDS
@@ -214,16 +208,6 @@
  */
 #ifdef CC1200_CONF_RX_LED
 #define CC1200_RX_LEDS                  CC1200_CONF_RX_LEDS
-#endif
-/*---------------------------------------------------------------------------*/
-/*
- * If set, enable sniff mode: turn radio on (and keep it on), disable
- * address filter and auto ack
- */
-#ifdef CC1200_CONF_SNIFFER
-#define CC1200_SNIFFER                  CC1200_CONF_SNIFFER
-#else
-#define CC1200_SNIFFER                  0
 #endif
 /*---------------------------------------------------------------------------*/
 

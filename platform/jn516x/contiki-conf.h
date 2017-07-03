@@ -44,11 +44,11 @@
 #endif /* CCM_STAR_CONF */
 
 #ifndef NETSTACK_CONF_MAC
-#define NETSTACK_CONF_MAC     tschmac_driver
+#define NETSTACK_CONF_MAC     csma_driver
 #endif /* NETSTACK_CONF_MAC */
 
 #ifndef NETSTACK_CONF_RDC
-#define NETSTACK_CONF_RDC     nordc_driver
+#define NETSTACK_CONF_RDC     nullrdc_driver
 #endif /* NETSTACK_CONF_RDC */
 
 #ifndef NETSTACK_CONF_RADIO
@@ -112,6 +112,16 @@
 /* Configure NullRDC for when it is selected */
 #define NULLRDC_CONF_802154_AUTOACK_HW  1
 
+/* Configure ContikiMAC for when it's selected */
+#define CONTIKIMAC_CONF_WITH_CONTIKIMAC_HEADER  0
+#define CONTIKIMAC_CONF_WITH_PHASE_OPTIMIZATION 0
+#define WITH_FAST_SLEEP                         1
+
+#ifndef NETSTACK_CONF_RDC_CHANNEL_CHECK_RATE
+#define NETSTACK_CONF_RDC_CHANNEL_CHECK_RATE    8
+#endif
+#define RDC_CONF_HARDWARE_ACK        1
+
 #define UIP_CONF_LL_802154              1
 #define UIP_CONF_LLH_LEN                0
 
@@ -154,9 +164,6 @@
 #define SICSLOWPAN_CONF_MAXAGE                  8
 #endif /* SICSLOWPAN_CONF_FRAG */
 #define SICSLOWPAN_CONF_MAX_ADDR_CONTEXTS       2
-#ifndef SICSLOWPAN_CONF_MAX_MAC_TRANSMISSIONS
-#define SICSLOWPAN_CONF_MAX_MAC_TRANSMISSIONS   5
-#endif /* SICSLOWPAN_CONF_MAX_MAC_TRANSMISSIONS */
 #define UIP_CONF_ICMP_DEST_UNREACH 1
 
 #define UIP_CONF_DHCP_LIGHT

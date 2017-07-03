@@ -40,6 +40,7 @@
 #include "rest-engine.h"
 #include "board-peripherals.h"
 #include "rf-core/rf-ble.h"
+#include "cc26xx-web-demo.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -63,6 +64,9 @@ extern resource_t res_parent_ip;
 extern resource_t res_ble_advd;
 #endif
 
+extern resource_t res_toggle_red;
+extern resource_t res_toggle_green;
+
 /* Board-specific resources */
 #if BOARD_SENSORTAG
 extern resource_t res_bmp280_temp;
@@ -78,13 +82,13 @@ extern resource_t res_mpu_acc_z;
 extern resource_t res_mpu_gyro_x;
 extern resource_t res_mpu_gyro_y;
 extern resource_t res_mpu_gyro_z;
-extern resource_t res_toggle_red;
-extern resource_t res_toggle_green;
 #else
-extern resource_t res_toggle_red;
-extern resource_t res_toggle_green;
 extern resource_t res_toggle_orange;
 extern resource_t res_toggle_yellow;
+#endif
+
+#if CC26XX_WEB_DEMO_ADC_DEMO
+extern resource_t res_adc_dio23;
 #endif
 /*---------------------------------------------------------------------------*/
 const char *coap_server_not_found_msg = "Resource not found";
@@ -96,6 +100,11 @@ const char *coap_server_supported_msg = "Supported:"
 static void
 start_board_resources(void)
 {
+
+  rest_activate_resource(&res_toggle_green, "lt/g");
+  rest_activate_resource(&res_toggle_red, "lt/r");
+  rest_activate_resource(&res_leds, "lt");
+
 #if BOARD_SENSORTAG
   rest_activate_resource(&res_bmp280_temp, "sen/bar/temp");
   rest_activate_resource(&res_bmp280_press, "sen/bar/pres");
@@ -110,14 +119,8 @@ start_board_resources(void)
   rest_activate_resource(&res_mpu_gyro_x, "sen/mpu/gyro/x");
   rest_activate_resource(&res_mpu_gyro_y, "sen/mpu/gyro/y");
   rest_activate_resource(&res_mpu_gyro_z, "sen/mpu/gyro/z");
-  rest_activate_resource(&res_leds, "lt");
-  rest_activate_resource(&res_toggle_green, "lt/g");
-  rest_activate_resource(&res_toggle_red, "lt/r");
 #elif BOARD_SMARTRF06EB
-  rest_activate_resource(&res_leds, "lt");
-  rest_activate_resource(&res_toggle_red, "lt/r");
   rest_activate_resource(&res_toggle_yellow, "lt/y");
-  rest_activate_resource(&res_toggle_green, "lt/g");
   rest_activate_resource(&res_toggle_orange, "lt/o");
 #endif
 }
@@ -135,6 +138,10 @@ PROCESS_THREAD(coap_server_process, ev, data)
 
   rest_activate_resource(&res_batmon_temp, "sen/batmon/temp");
   rest_activate_resource(&res_batmon_volt, "sen/batmon/voltage");
+
+#if CC26XX_WEB_DEMO_ADC_DEMO
+  rest_activate_resource(&res_adc_dio23, "sen/adc/dio23");
+#endif
 
   rest_activate_resource(&res_device_hw, "dev/mdl/hw");
   rest_activate_resource(&res_device_sw, "dev/mdl/sw");

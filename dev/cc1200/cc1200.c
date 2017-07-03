@@ -40,6 +40,7 @@
 #include "net/netstack.h"
 #include "net/packetbuf.h"
 #include "net/rime/rimestats.h"
+#include "dev/watchdog.h"
 
 #include "dev/leds.h"
 
@@ -57,7 +58,6 @@
  * - 3: Print errors + warnings + information (what's going on...)
  */
 #define DEBUG_LEVEL                     2
-
 /*
  * RF test mode. Blocks inside "configure()".
  * - Set this parameter to 1 in order to produce an modulated carrier (PN9)
@@ -68,6 +68,7 @@
 #ifndef CC1200_RF_TESTMODE
 #define CC1200_RF_TESTMODE              0
 #endif
+
 #if CC1200_RF_TESTMODE
 #undef CC1200_RF_CFG
 #if CC1200_RF_TESTMODE == 1
@@ -248,6 +249,12 @@ extern const cc1200_rf_cfg_t CC1200_RF_CFG;
 #define RF_UPDATE_CHANNEL               0x10
 /* SPI was locked when calling RX interrupt, let the pollhandler do the job */
 #define RF_POLL_RX_INTERRUPT            0x20
+/* Force calibration in case we don't use CC1200 AUTOCAL + timeout */
+#if !CC1200_AUTOCAL
+#if CC1200_CAL_TIMEOUT_SECONDS
+#define RF_FORCE_CALIBRATION            0x40
+#endif
+#endif
 /*---------------------------------------------------------------------------*/
 /* Length of 802.15.4 ACK. We discard packets with a smaller size */
 #define ACK_LEN                         3
@@ -283,7 +290,9 @@ extern const cc1200_rf_cfg_t CC1200_RF_CFG;
   do { \
     rtimer_clock_t t0; \
     t0 = RTIMER_NOW(); \
-    while(!(cond) && RTIMER_CLOCK_LT(RTIMER_NOW(), t0 + (max_time))) {} \
+    while(!(cond) && RTIMER_CLOCK_LT(RTIMER_NOW(), t0 + (max_time))) { \
+      watchdog_periodic(); \
+    } \
   } while(0)
 /*---------------------------------------------------------------------------*/
 #if CC1200_USE_GPIO2
@@ -403,10 +412,10 @@ static uint8_t rf_flags = 0;
 /* Use a timeout to decide when to calibrate */
 static unsigned long cal_timer;
 #endif
-#if USE_RX_WATCHDOG
+#if CC1200_USE_RX_WATCHDOG
 /* Timer used for RX watchdog */
 static struct etimer et;
-#endif
+#endif /* #if CC1200_USE_RX_WATCHDOG */
 /*---------------------------------------------------------------------------*/
 /* Prototypes for Netstack API radio driver functions */
 /*---------------------------------------------------------------------------*/
@@ -536,11 +545,6 @@ calculate_freq(uint8_t channel);
 /* Update rf channel if possible, else postpone it (-> pollhandler). */
 static int
 set_channel(uint8_t channel);
-#if !CC1200_SNIFFER
-/* Check broadcast address. */
-static int
-is_broadcast_addr(uint8_t mode, uint8_t *addr);
-#endif /* CC1200_SNIFFER */
 /* Validate address and send ACK if requested. */
 static int
 addr_check_auto_ack(uint8_t *frame, uint16_t frame_len);
@@ -557,14 +561,13 @@ PROCESS_THREAD(cc1200_process, ev, data)
 
   PROCESS_BEGIN();
 
-#if USE_RX_WATCHDOG && !CC1200_SNIFFER
-  /* RX watchdog interferes with sniffer. Reason unknown... */
+#if CC1200_USE_RX_WATCHDOG
   while(1) {
 
-    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
-    etimer_reset(&et);
-
     if((rf_flags & (RF_ON | RF_TX_ACTIVE)) == RF_ON) {
+
+      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+      etimer_reset(&et);
 
       /*
        * We are on and not in TX. As every function of this driver
@@ -593,10 +596,12 @@ PROCESS_THREAD(cc1200_process, ev, data)
 
       }
 
+    } else {
+      PROCESS_YIELD();
     }
 
   }
-#endif /* #if USE_RX_WATCHDOG */
+#endif /* #if CC1200_USE_RX_WATCHDOG */
 
   PROCESS_YIELD_UNTIL(ev == PROCESS_EVENT_EXIT);
 
@@ -689,20 +694,14 @@ init(void)
 
     RELEASE_SPI();
 
-    /* Set default channel */
+    /* Set default channel. This will also force initial calibration! */
     set_channel(CC1200_DEFAULT_CHANNEL);
 
     /*
      * We have to call off() before on() because on() relies on the
-     * configuration of the GPIO0 pin (even if we turn the radio on in
-     * sniffer mode afterwards)
+     * configuration of the GPIO0 pin
      */
     off();
-
-#if CC1200_SNIFFER
-    on();
-#endif
-
   }
 
   return 1;
@@ -787,14 +786,7 @@ transmit(unsigned short transmit_len)
 #if !CC1200_AUTOCAL
   /* Perform manual calibration unless just turned on */
   if(!was_off) {
-#if CC1200_CAL_TIMEOUT_SECONDS
-    /* Calibrate after a delay defined by CC1200_CAL_TIMEOUT_SECONDS */
-    if((clock_seconds() - cal_timer) > CC1200_CAL_TIMEOUT_SECONDS) {
-      calibrate();
-    }
-#else
     calibrate();
-#endif
   }
 #endif
 
@@ -810,7 +802,7 @@ transmit(unsigned short transmit_len)
      */
 
     BUSYWAIT_UNTIL_STATE(STATE_RX,
-                         RTIMER_SECOND / 100);
+        CC1200_RF_CFG.tx_rx_turnaround);
 
     ENABLE_GPIO_INTERRUPTS();
 
@@ -824,6 +816,9 @@ transmit(unsigned short transmit_len)
 
     ret = RADIO_TX_ERR;
     if(!was_off) {
+#ifdef RF_FORCE_CALIBRATION
+      rf_flags |= RF_FORCE_CALIBRATION;
+#endif
       idle_calibrate_rx();
     }
   }
@@ -894,7 +889,6 @@ read(void *buf, unsigned short buf_len)
                          crc_lqi & ~(1 << 7));
 
       RIMESTATS_ADD(llrx);
-
     }
 
   }
@@ -1059,9 +1053,11 @@ on(void)
 
     RELEASE_SPI();
 
-#if USE_RX_WATCHDOG
+#if CC1200_USE_RX_WATCHDOG
+    PROCESS_CONTEXT_BEGIN(&cc1200_process);
     etimer_set(&et, CLOCK_SECOND);
-#endif
+    PROCESS_CONTEXT_END(&cc1200_process);
+#endif /* #if CC1200_USE_RX_WATCHDOG */
 
   } else {
     INFO("RF: Already on\n");
@@ -1103,9 +1099,9 @@ off(void)
 
     RELEASE_SPI();
 
-#if USE_RX_WATCHDOG
+#if CC1200_USE_RX_WATCHDOG
     etimer_stop(&et);
-#endif
+#endif /* #if CC1200_USE_RX_WATCHDOG */
 
   } else {
     INFO("RF: Already off\n");
@@ -1466,7 +1462,7 @@ configure(void)
 #endif
 
   /* RSSI offset */
-  single_write(CC1200_AGC_GAIN_ADJUST, (int8_t)CC1200_RSSI_OFFSET);
+  single_write(CC1200_AGC_GAIN_ADJUST, (int8_t)CC1200_RF_CFG.rssi_offset);
 
   /***************************************************************************
    * RF test modes needed during hardware development
@@ -1664,6 +1660,15 @@ static void
 calibrate(void)
 {
 
+#ifdef RF_FORCE_CALIBRATION
+  if (!(rf_flags & RF_FORCE_CALIBRATION) 
+      && ((clock_seconds() - cal_timer) < CC1200_CAL_TIMEOUT_SECONDS)) {
+    /* Timeout not reached, defer calibration... */
+    return;
+  }
+  rf_flags &= ~RF_FORCE_CALIBRATION;
+#endif
+
   INFO("RF: Calibrate\n");
 
   strobe(CC1200_SCAL);
@@ -1738,11 +1743,7 @@ rx_rx(void)
 
   uint8_t s = state();
 
-  if(s == STATE_RX) {
-    /* Already in RX. Flush RX FIFO */
-    single_write(CC1200_RXFIRST,
-                 single_read(CC1200_RXLAST));
-  } else if(s == STATE_IDLE) {
+  if(s == STATE_IDLE) {
     /* Proceed to rx */
   } else if(s == STATE_RX_FIFO_ERR) {
     WARNING("RF: RX FIFO error!\n");
@@ -1762,11 +1763,9 @@ rx_rx(void)
   /* Clear pending GPIO interrupts */
   ENABLE_GPIO_INTERRUPTS();
 
-  if(s != STATE_RX) {
-    strobe(CC1200_SFRX);
-    strobe(CC1200_SRX);
-    BUSYWAIT_UNTIL_STATE(STATE_RX, RTIMER_SECOND / 100);
-  }
+  strobe(CC1200_SFRX);
+  strobe(CC1200_SRX);
+  BUSYWAIT_UNTIL_STATE(STATE_RX, RTIMER_SECOND / 100);
 
 }
 /*---------------------------------------------------------------------------*/
@@ -2017,7 +2016,7 @@ calculate_freq(uint8_t channel)
 
   uint32_t freq;
 
-  freq = CC1200_RF_CFG.chan_center_freq0 + channel * CC1200_RF_CFG.chan_spacing;
+  freq = CC1200_RF_CFG.chan_center_freq0 + (channel * CC1200_RF_CFG.chan_spacing) / 1000 /* /1000 because chan_spacing is in Hz */;
   freq *= FREQ_MULTIPLIER;
   freq /= FREQ_DIVIDER;
 
@@ -2083,6 +2082,9 @@ set_channel(uint8_t channel)
 
   /* Turn on RX again unless we turn off anyway */
   if(!was_off) {
+#ifdef RF_FORCE_CALIBRATION
+    rf_flags |= RF_FORCE_CALIBRATION;
+#endif
     idle_calibrate_rx();
   }
 
@@ -2097,7 +2099,6 @@ set_channel(uint8_t channel)
 }
 /*---------------------------------------------------------------------------*/
 /* Check broadcast address. */
-#if !CC1200_SNIFFER
 static int
 is_broadcast_addr(uint8_t mode, uint8_t *addr)
 {
@@ -2113,30 +2114,7 @@ is_broadcast_addr(uint8_t mode, uint8_t *addr)
   return 1;
 
 }
-#endif /* CC12100_SNIFFER */
 /*---------------------------------------------------------------------------*/
-/* Validate address and send ACK if requested. */
-#if CC1200_SNIFFER
-static int
-addr_check_auto_ack(uint8_t *frame, uint16_t frame_len)
-{
-
-  frame802154_t info154;
-
-  if(frame802154_parse(frame, frame_len, &info154) != 0) {
-
-    /* We accept all 802.15.4 frames ... */
-    return ADDR_CHECK_OK;
-
-  } else {
-
-    /* .. and discard others. */
-    return INVALID_FRAME;
-
-  }
-
-}
-#else /* CC1200_SNIFFER */
 static int
 addr_check_auto_ack(uint8_t *frame, uint16_t frame_len)
 {
@@ -2205,7 +2183,6 @@ addr_check_auto_ack(uint8_t *frame, uint16_t frame_len)
   return INVALID_FRAME;
 
 }
-#endif /* CC1200_SNIFFER */
 /*---------------------------------------------------------------------------*/
 /*
  * The CC1200 interrupt handler: called by the hardware interrupt

@@ -79,6 +79,12 @@
 #else
 #define CC26XX_WEB_DEMO_NET_UART 1
 #endif
+
+#ifdef CC26XX_WEB_DEMO_CONF_ADC_DEMO
+#define CC26XX_WEB_DEMO_ADC_DEMO CC26XX_WEB_DEMO_CONF_ADC_DEMO
+#else
+#define CC26XX_WEB_DEMO_ADC_DEMO 0
+#endif
 /*---------------------------------------------------------------------------*/
 /* Active probing of RSSI from our preferred parent */
 #if (CC26XX_WEB_DEMO_COAP_SERVER || CC26XX_WEB_DEMO_MQTT_CLIENT)
@@ -100,6 +106,8 @@
 #if BOARD_SENSORTAG
 /* Force an MQTT publish on sensor event */
 #define CC26XX_WEB_DEMO_MQTT_PUBLISH_TRIGGER &reed_relay_sensor
+#elif BOARD_LAUNCHPAD
+#define CC26XX_WEB_DEMO_MQTT_PUBLISH_TRIGGER &button_left_sensor
 #else
 #define CC26XX_WEB_DEMO_MQTT_PUBLISH_TRIGGER &button_down_sensor
 #endif
@@ -144,6 +152,7 @@
 #define CC26XX_WEB_DEMO_SENSOR_MPU_GYRO_X    12
 #define CC26XX_WEB_DEMO_SENSOR_MPU_GYRO_Y    13
 #define CC26XX_WEB_DEMO_SENSOR_MPU_GYRO_Z    14
+#define CC26XX_WEB_DEMO_SENSOR_ADC_DIO23     15
 /*---------------------------------------------------------------------------*/
 extern process_event_t cc26xx_web_demo_publish_event;
 extern process_event_t cc26xx_web_demo_config_loaded_event;
