@@ -305,6 +305,11 @@ static struct ctimer update_hr_timer;
 void
 update_host_route()
 {
+  if(uip_ds6_defrt_choose() == NULL) {
+    PRINTF("Aborting host route update: no more default route\n");
+    return;
+  }
+
   PRINTF("Update self host route\n");
   SEQNO_INCREASE(lrp_state.node_seqno);
   lrp_delayed_rrep(&lrp_state.sink_addr, uip_ds6_defrt_choose(), &lrp_myipaddr,
