@@ -139,7 +139,7 @@ loadng_neighbor_callback(const linkaddr_t *addr, int status, int mutx)
     PRINTF("Add neighbor ");
     PRINTLLADDR((uip_lladdr_t *) addr);
     PRINTF(" in neighbor list\n");
-    nbr = nbr_table_add_lladdr(loadng_neighbors, addr);
+    nbr = nbr_table_add_lladdr(loadng_neighbors, addr, NBR_TABLE_REASON_MAC, NULL);
   }
 
 #if DEBUG & DEBUG_PRINT != 0

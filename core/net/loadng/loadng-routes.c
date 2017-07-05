@@ -354,7 +354,7 @@ loadng_routing_error(uip_ipaddr_t *source, uip_ipaddr_t *destination,
      * even if it does not really use it). */
     uip_create_linklocal_prefix(&ipaddr);
     uip_ds6_set_addr_iid(&ipaddr, previoushop);
-    uip_ds6_nbr_add(&ipaddr, previoushop, 0, NBR_REACHABLE);
+    uip_ds6_nbr_add(&ipaddr, previoushop, 0, 0, NBR_TABLE_REASON_UNDEFINED, NULL);
     prevhop = &ipaddr;
   }
   if(prevhop != NULL) {

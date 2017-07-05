@@ -185,7 +185,7 @@ loadng_nbr_add(uip_ipaddr_t *next_hop)
     PRINTF(" with lladdress ");
     PRINTLLADDR(&nbr_lladdr);
     PRINTF("\n");
-    uip_ds6_nbr_add(next_hop, &nbr_lladdr, 0, NBR_REACHABLE);
+    uip_ds6_nbr_add(next_hop, &nbr_lladdr, 0, 0, NBR_TABLE_REASON_UNDEFINED, NULL);
 /*    nbr->nscount = 1; */
 #else /* !UIP_ND6_SEND_NA */
     PRINTF(" (waiting for a NA)\n");
