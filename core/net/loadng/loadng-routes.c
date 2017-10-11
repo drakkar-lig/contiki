@@ -173,7 +173,7 @@ offer_route(uip_ipaddr_t *orig_addr, const uint8_t length,
     PRINT6ADDR(&rt->ipaddr);
     PRINTF("/%d through ", rt->length);
     PRINT6ADDR(uip_ds6_route_nexthop(rt));
-    PRINTF(" inserted)\n");
+    PRINTF(" inserted\n");
     return rt;
   } else {
     /* Offered route is worse, refusing route */

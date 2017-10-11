@@ -31,11 +31,8 @@
 
 /**
  * \file
- *         The Lightweight Routing Protocol
- *         This protocol is evolved from
- *         the LOADng routing protocol
- *         IETF draft draft-clausen-lln-loadng-00.txt
- *         Version for slotted 802.15.4
+ *         LOADng routing protocol implementation.
+ *         The implementation is derived from the implementation of LRP.
  * \author Chi-Anh La <la@imag.fr>
  * \author Martin Heusse <martin.heusse@imag.fr>
  * \author Audéoud Henry-Joseph <henry-joseph.audeoud@imag.fr>
