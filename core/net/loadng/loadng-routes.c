@@ -186,17 +186,21 @@ offer_route(uip_ipaddr_t *orig_addr, const uint8_t length,
 void
 loadng_handle_incoming_rreq(uip_ipaddr_t* neighbor, struct loadng_msg_rreq_t* rreq)
 {
+  /* Filter out our own RREQs */
+  if(loadng_is_my_global_address(&rreq->source_addr)) {
+    PRINTF("Skip: our RREQ\n");
+    return;
+  }
+
   /* Add local link to described metric */
   rreq->metric_value += loadng_link_cost(neighbor, rreq->metric_type);
 
   /* Try to add route to source */
-  if(!loadng_is_my_global_address(&rreq->source_addr)) {
-    if(offer_route(&rreq->source_addr, HOST_ROUTE_PREFIX_LEN, neighbor,
-                   rreq->metric_type, rreq->metric_value, rreq->source_seqno)
-         == NULL) {
-      PRINTF("Skip: RREQ is too bad\n");
-      return;
-    }
+  if(offer_route(&rreq->source_addr, HOST_ROUTE_PREFIX_LEN, neighbor,
+                 rreq->metric_type, rreq->metric_value, rreq->source_seqno)
+       == NULL) {
+    PRINTF("Skip: RREQ is too bad\n");
+    return;
   }
 
   /* Answer to RREQ if the searched address is our address */
