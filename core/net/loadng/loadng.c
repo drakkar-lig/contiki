@@ -183,23 +183,35 @@ loadng_select_nexthop_for(uip_ipaddr_t *source, uip_ipaddr_t *destination,
   nexthop = uip_ds6_route_nexthop(route_to_dest);
 
   if(nexthop == NULL) {
-    /* No host route, send RREQ */
-    PRINTF("Discarding packet: unknown destination\n");
+    /* No host route. Drop packet. */
+    nexthop = NULL;
     if (route_to_dest != NULL) {
       uip_ds6_route_rm(route_to_dest);
     }
-    /* Change the context to ensure that timers set in this code wake up the
-     * LOADNG process, and not the routing process */
-    PROCESS_CONTEXT_BEGIN(&loadng_process);
-    loadng_request_route_to(destination);
-    PROCESS_CONTEXT_END();
-    return NULL;
-  }
 
-  /* Use provided host route */
-  PRINTF("Routing data packet through ");
-  PRINT6ADDR(nexthop);
-  PRINTF("\n");
+    if(loadng_is_my_global_address(source)) {
+      /* Send RREQ */
+      PRINTF("Discarding packet: unknown destination\n");
+      /* Change the context to ensure that timers set in this code wake up the
+       * LOADNG process, and not the routing process */
+      PROCESS_CONTEXT_BEGIN(&loadng_process);
+      loadng_request_route_to(destination);
+      PROCESS_CONTEXT_END();
+    } else {
+      /* Send RERR */
+      PRINTF("Discarding packet: broken host route\n");
+      /* Change the context to ensure that timers set in this code wake up the
+       * LOADNG process, and not the routing process */
+      PROCESS_CONTEXT_BEGIN(&loadng_process);
+      loadng_routing_error(source, destination, previoushop);
+      PROCESS_CONTEXT_END();
+    }
+  } else {
+    /* Use provided host route */
+    PRINTF("Routing data packet through ");
+    PRINT6ADDR(nexthop);
+    PRINTF("\n");
+  }
   return nexthop;
 }
 /*---------------------------------------------------------------------------*/
