@@ -355,6 +355,7 @@ uip_icmp6_echo_reply_callback_rm(struct uip_icmp6_echo_reply_notification *n)
 }
 
 /*---------------------------------------------------------------------------*/
+#if DEBUG & DEBUG_PRINT
 static void
 destination_unreachable_input(void)
 {
@@ -383,14 +384,17 @@ destination_unreachable_input(void)
 
   return;
 }
+#endif
 
 /*---------------------------------------------------------------------------*/
 UIP_ICMP6_HANDLER(echo_request_handler, ICMP6_ECHO_REQUEST,
                   UIP_ICMP6_HANDLER_CODE_ANY, echo_request_input);
 UIP_ICMP6_HANDLER(echo_reply_handler, ICMP6_ECHO_REPLY,
                   UIP_ICMP6_HANDLER_CODE_ANY, echo_reply_input);
+#if DEBUG & DEBUG_PRINT
 UIP_ICMP6_HANDLER(destination_unreachable_handler, ICMP6_DST_UNREACH,
                   UIP_ICMP6_HANDLER_CODE_ANY, destination_unreachable_input);
+#endif
 /*---------------------------------------------------------------------------*/
 void
 uip_icmp6_init()
@@ -398,7 +402,9 @@ uip_icmp6_init()
   /* Register Echo Request and Reply handlers */
   uip_icmp6_register_input_handler(&echo_request_handler);
   uip_icmp6_register_input_handler(&echo_reply_handler);
+#if DEBUG & DEBUG_PRINT
   uip_icmp6_register_input_handler(&destination_unreachable_handler);
+#endif
 }
 /*---------------------------------------------------------------------------*/
 /** @} */
